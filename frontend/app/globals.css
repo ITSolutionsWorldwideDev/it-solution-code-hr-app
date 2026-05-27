@@ -1,0 +1,142 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --app-bg: #090c10;
+  --app-surface: #141a20;
+  --app-surface-strong: #0d1116;
+  --app-line: rgba(255, 255, 255, 0.08);
+  --app-text: #f5f9ff;
+  --app-muted: #8fa2b5;
+  --app-accent: #63e7ff;
+  --app-accent-strong: #93efff;
+}
+
+html {
+  scroll-behavior: smooth;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(99, 231, 255, 0.12), transparent 26%),
+    radial-gradient(circle at 100% 0%, rgba(154, 234, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, #06090d 0%, #10161c 100%);
+}
+
+body {
+  @apply font-sans antialiased;
+  color: var(--app-text);
+  background-image:
+    radial-gradient(circle at 8% 0%, rgba(99, 231, 255, 0.12), transparent 26%),
+    radial-gradient(circle at 100% 0%, rgba(154, 234, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, #06090d 0%, #10161c 100%);
+}
+
+* {
+  @apply border-line;
+}
+
+@layer base {
+  input,
+  textarea,
+  select {
+    color: var(--app-text);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #76889a;
+  }
+
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  textarea:-webkit-autofill:hover,
+  textarea:-webkit-autofill:focus,
+  select:-webkit-autofill,
+  select:-webkit-autofill:hover,
+  select:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--app-text);
+    -webkit-box-shadow: 0 0 0px 1000px #10161c inset;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: linear-gradient(180deg, rgba(99, 231, 255, 0.72), rgba(67, 181, 255, 0.72));
+  }
+}
+
+select,
+option,
+optgroup {
+  color: #edf4fa;
+  background-color: #10161c;
+}
+
+select:focus,
+select:focus-visible {
+  color: #edf4fa;
+  background-color: #10161c;
+}
+
+option:checked,
+option:hover,
+option:focus {
+  color: #edf4fa;
+  background-color: #17212b;
+}
+
+::selection {
+  background: rgba(99, 231, 255, 0.28);
+}
+
+.organogram-canvas {
+  background-image:
+    radial-gradient(circle at 0% 0%, rgba(126, 185, 223, 0.08), transparent 24%),
+    radial-gradient(circle at 100% 0%, rgba(126, 185, 223, 0.05), transparent 22%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.015) 100%);
+}
+
+.organogram-children-wrap {
+  position: relative;
+  width: 100%;
+  padding-top: 0.45rem;
+}
+
+.organogram-horizontal-line {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 0.7rem;
+  width: calc(100% - 6rem);
+  transform: translateX(-50%);
+  border-top: 1px solid rgba(147, 185, 211, 0.38);
+  border-left: 1px solid rgba(147, 185, 211, 0.38);
+  border-right: 1px solid rgba(147, 185, 211, 0.38);
+  border-top-left-radius: 9999px;
+  border-top-right-radius: 9999px;
+}
+
+.organogram-children-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.organogram-child {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 170px;
+}
