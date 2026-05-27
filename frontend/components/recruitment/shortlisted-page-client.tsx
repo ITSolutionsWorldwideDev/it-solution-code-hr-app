@@ -877,38 +877,36 @@ export function ShortlistedPageClient() {
     }
   };
 
-  const handleApproveShortlistedCandidate = async (applicationId: number) => {
+  const handleSendHrInvite = async (applicationId: number) => {
     setBusy(true);
-    setCardBusyAction(`approve-candidate-${applicationId}`);
+    setCardBusyAction(`send-hr-invite-${applicationId}`);
     setErrorMessage(null);
     setSuccessMessage(null);
 
     try {
       const user = await ensureDemoUser(role, name);
       await apiRequest<ApplicationApiRecord>({
-        path: `/applications/${applicationId}/stage`,
+        path: `/applications/${applicationId}/invite-selection`,
         method: "PATCH",
         body: JSON.stringify({
-          to_stage: "hr_passed",
+          invite_selected: true,
           changed_by_id: user.id,
-          notes: "Candidate handed off from HR to the technical interview queue.",
         }),
       });
       const response = await apiRequest<ApplicationSendInviteResponse>({
-        path: `/applications/${applicationId}/send-email`,
+        path: `/applications/${applicationId}/send-hr-invite`,
         method: "POST",
         body: JSON.stringify({
           sent_by_id: user.id,
-          email_type: "hr_passed",
           allow_resend: true,
-          template_variant: "technical_interview_invite",
         }),
       });
+      setPendingInviteIds((current) => [...new Set([...current, applicationId])]);
       setRejectionEmailSentIds((current) => current.filter((id) => id !== applicationId));
       await loadVacancyShortlist(selectedVacancyId, false);
       setSuccessMessage(response.message);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to approve candidate.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to send HR invite.");
     } finally {
       setBusy(false);
       setCardBusyAction(null);
@@ -1341,11 +1339,11 @@ export function ShortlistedPageClient() {
                                   type="button"
                                   variant="secondary"
                                   className="justify-center rounded-[16px] border-[#8bc9ea] bg-[#10202c] px-6 py-3 text-base text-[#d7f5ff] hover:bg-[#152b3a]"
-                                  onClick={() => handleApproveShortlistedCandidate(application.id)}
+                                  onClick={() => handleSendHrInvite(application.id)}
                                   disabled={busy}
-                                  loading={cardBusyAction === `approve-candidate-${application.id}`}
+                                  loading={cardBusyAction === `send-hr-invite-${application.id}`}
                                 >
-                                  Send To Technical
+                                  Approve Invite Mail
                                 </Button>
                                 <Button
                                   type="button"
@@ -1364,11 +1362,11 @@ export function ShortlistedPageClient() {
                                   type="button"
                                   variant="secondary"
                                   className="justify-center rounded-[16px] border-[#8bc9ea] bg-[#10202c] px-6 py-3 text-base text-[#d7f5ff] hover:bg-[#152b3a]"
-                                  onClick={() => handleApproveShortlistedCandidate(application.id)}
+                                  onClick={() => handleSendHrInvite(application.id)}
                                   disabled={busy}
-                                  loading={cardBusyAction === `approve-candidate-${application.id}`}
+                                  loading={cardBusyAction === `send-hr-invite-${application.id}`}
                                 >
-                                  Send To Technical
+                                  Approve Invite Mail
                                 </Button>
                                 <Button
                                   type="button"
