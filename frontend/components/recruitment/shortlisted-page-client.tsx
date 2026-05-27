@@ -894,11 +894,59 @@ export function ShortlistedPageClient() {
           notes: "Candidate handed off from HR to the technical interview queue.",
         }),
       });
+      const response = await apiRequest<ApplicationSendInviteResponse>({
+        path: `/applications/${applicationId}/send-email`,
+        method: "POST",
+        body: JSON.stringify({
+          sent_by_id: user.id,
+          email_type: "hr_passed",
+          allow_resend: true,
+          template_variant: "technical_interview_invite",
+        }),
+      });
       setRejectionEmailSentIds((current) => current.filter((id) => id !== applicationId));
       await loadVacancyShortlist(selectedVacancyId, false);
-      setSuccessMessage("Candidate was sent to Technical.");
+      setSuccessMessage(response.message);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to approve candidate.");
+    } finally {
+      setBusy(false);
+      setCardBusyAction(null);
+    }
+  };
+
+  const handleRestoreRejectedCandidate = async (applicationId: number) => {
+    setBusy(true);
+    setCardBusyAction(`restore-candidate-${applicationId}`);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const user = await ensureDemoUser(role, name);
+      const currentApplication = applications.find((application) => application.id === applicationId);
+
+      if (!currentApplication) {
+        throw new Error("Application not found.");
+      }
+
+      if (!["primary", "reserve"].includes(currentApplication.shortlist_bucket)) {
+        throw new Error("Only shortlisted candidates can be restored from rejection.");
+      }
+
+      await apiRequest<ApplicationApiRecord>({
+        path: `/applications/${applicationId}/shortlist`,
+        method: "PATCH",
+        body: JSON.stringify({
+          shortlist_bucket: currentApplication.shortlist_bucket,
+          changed_by_id: user.id,
+        }),
+      });
+
+      setRejectionEmailSentIds((current) => current.filter((id) => id !== applicationId));
+      await loadVacancyShortlist(selectedVacancyId, false);
+      setSuccessMessage("Candidate was restored to the shortlist.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to restore candidate.");
     } finally {
       setBusy(false);
       setCardBusyAction(null);
@@ -1283,9 +1331,9 @@ export function ShortlistedPageClient() {
                                   type="button"
                                   variant="secondary"
                                   className="justify-center rounded-[16px] border-white/20 bg-black px-6 py-3 text-base text-white"
-                                  onClick={() => handleApproveShortlistedCandidate(application.id)}
+                                  onClick={() => handleRestoreRejectedCandidate(application.id)}
                                   disabled={busy}
-                                  loading={cardBusyAction === `approve-candidate-${application.id}`}
+                                  loading={cardBusyAction === `restore-candidate-${application.id}`}
                                 >
                                   Approve Candidate
                                 </Button>
