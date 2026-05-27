@@ -273,3 +273,5 @@ If a LinkedIn preview or publish action fails, the first places to inspect are:
 ## Frontend Documentation
 
 See [frontend/README.md](frontend/README.md) for a frontend-specific breakdown of routes, components, and API integration patterns.
+
+Frontend environment updated for production backend.
