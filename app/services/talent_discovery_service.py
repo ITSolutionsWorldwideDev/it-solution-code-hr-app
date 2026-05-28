@@ -8,6 +8,7 @@ from functools import lru_cache
 from hashlib import sha256
 from typing import Any
 
+import requests
 from sqlalchemy import text
 from sqlmodel import Session, select
 
@@ -343,6 +344,9 @@ def _evaluate_candidates_with_vertex_ai(
     vacancy: Vacancy,
     candidates: list[Candidate],
 ) -> dict[int, dict[str, Any]] | None:
+    if settings.gemini_api_key:
+        return _evaluate_candidates_with_gemini(vacancy, candidates)
+
     if not settings.vertex_project_id:
         return None
 
@@ -384,6 +388,92 @@ def _evaluate_candidates_with_vertex_ai(
     except Exception:
         return None
 
+    results: dict[int, dict[str, Any]] = {}
+    for item in parsed:
+        try:
+            candidate_id = int(item["candidate_id"])
+            results[candidate_id] = {
+                "match_score": int(float(item["match_score"])),
+                "discovery_reason": str(item["discovery_reason"]).strip(),
+            }
+        except Exception:
+            continue
+
+    return results or None
+
+
+def _evaluate_candidates_with_gemini(
+    vacancy: Vacancy,
+    candidates: list[Candidate],
+) -> dict[int, dict[str, Any]] | None:
+    model_name = settings.vertex_generative_model or "gemini-2.5-flash"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+
+    candidate_payload = [
+        {
+            "candidate_id": candidate.id,
+            "name": candidate.name,
+            "skills": candidate.skills,
+            "experience": candidate.experience,
+            "education": candidate.education,
+            "parsed_data": candidate.parsed_data.get("parsed_fields", {}) if isinstance(candidate.parsed_data, dict) else {},
+        }
+        for candidate in candidates
+    ]
+
+    prompt = (
+        "You are an expert recruiting evaluator.\n"
+        "For the vacancy below, evaluate each candidate specifically for this role.\n"
+        "Be critical and conservative.\n"
+        "Return JSON only as an array of objects with keys: candidate_id, match_score, discovery_reason.\n"
+        "discovery_reason must be exactly one sentence and explain why the candidate is a hidden gem for this vacancy.\n\n"
+        f"VACANCY:\nTitle: {vacancy.title}\nDescription: {vacancy.description}\nRequired skills: {vacancy.required_skills}\nExperience level: {vacancy.experience_level}\n\n"
+        f"CANDIDATES:\n{json.dumps(candidate_payload, ensure_ascii=True)}"
+    )
+
+    try:
+        response = requests.post(
+            url,
+            params={"key": settings.gemini_api_key},
+            json={
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": prompt,
+                            }
+                        ]
+                    }
+                ]
+            },
+            timeout=90,
+        )
+    except requests.RequestException:
+        return None
+
+    if not response.ok:
+        return None
+
+    payload = response.json()
+    candidates_payload = payload.get("candidates")
+    if not isinstance(candidates_payload, list):
+        return None
+
+    raw_text = ""
+    for candidate in candidates_payload:
+        content = candidate.get("content") if isinstance(candidate, dict) else None
+        parts = content.get("parts") if isinstance(content, dict) else None
+        if not isinstance(parts, list):
+            continue
+        raw_text = "".join(
+            part.get("text", "")
+            for part in parts
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        ).strip()
+        if raw_text:
+            break
+
+    parsed = _extract_json_array(raw_text)
     results: dict[int, dict[str, Any]] = {}
     for item in parsed:
         try:
@@ -447,6 +537,11 @@ def _embed_text(text_value: str) -> list[float]:
         vector = model.encode(text_value or "", normalize_embeddings=True)
         return [float(value) for value in vector.tolist()]
 
+    if settings.gemini_api_key:
+        embedding = _embed_text_with_gemini(text_value or "")
+        if embedding:
+            return embedding
+
     if settings.vertex_project_id:
         try:
             import vertexai
@@ -461,6 +556,38 @@ def _embed_text(text_value: str) -> list[float]:
             pass
 
     return _hashed_embedding(text_value or "")
+
+
+def _embed_text_with_gemini(text_value: str) -> list[float] | None:
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent"
+
+    try:
+        response = requests.post(
+            url,
+            params={"key": settings.gemini_api_key},
+            json={
+                "model": "models/gemini-embedding-001",
+                "content": {
+                    "parts": [
+                        {
+                            "text": text_value,
+                        }
+                    ]
+                },
+            },
+            timeout=60,
+        )
+    except requests.RequestException:
+        return None
+
+    if not response.ok:
+        return None
+
+    payload = response.json()
+    values = payload.get("embedding", {}).get("values")
+    if isinstance(values, list) and values:
+        return [float(value) for value in values if isinstance(value, (float, int))]
+    return None
 
 
 def _candidate_embedding(candidate: Candidate) -> list[float]:

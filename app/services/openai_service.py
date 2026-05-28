@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
+import requests
 
 from app.config import settings
 from app.services.ai_service import parse_candidate_text, sanitize_text
@@ -174,6 +175,9 @@ def _extract_json_object(raw_text: str) -> dict[str, Any] | None:
 
 
 def _generate_vertex_text(prompt: str) -> str:
+    if settings.gemini_api_key:
+        return _generate_gemini_text(prompt)
+
     if not settings.vertex_project_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -212,6 +216,67 @@ def _generate_vertex_text(prompt: str) -> str:
             f"Vertex AI request failed for all configured models in region '{settings.vertex_location}'. "
             f"Attempted models: {attempted}. Last errors: {diagnostic}"
         ),
+    )
+
+
+def _generate_gemini_text(prompt: str) -> str:
+    model_name = settings.vertex_generative_model or "gemini-2.5-flash"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+
+    try:
+        response = requests.post(
+            url,
+            params={"key": settings.gemini_api_key},
+            json={
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": prompt,
+                            }
+                        ]
+                    }
+                ]
+            },
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Gemini API request failed: {exc}",
+        ) from exc
+
+    if not response.ok:
+        detail = sanitize_text(response.text) or f"status {response.status_code}"
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Gemini API returned an error for model '{model_name}': {detail}",
+        )
+
+    payload = response.json()
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Gemini API returned an invalid response payload.",
+        )
+
+    for candidate in candidates:
+        content = candidate.get("content") if isinstance(candidate, dict) else None
+        parts = content.get("parts") if isinstance(content, dict) else None
+        if not isinstance(parts, list):
+            continue
+        text = "".join(
+            part.get("text", "")
+            for part in parts
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        ).strip()
+        if text:
+            return text
+
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Gemini API returned no text content.",
     )
 
 

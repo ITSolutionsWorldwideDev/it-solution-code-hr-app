@@ -109,6 +109,9 @@ def dispatch_application_email(
 
 
 def _resolve_n8n_webhook_url(email_type: EmailType, template_variant: str | None = None) -> str:
+    if email_type == EmailType.HR_INVITE and settings.n8n_hr_approval_webhook_url:
+        return settings.n8n_hr_approval_webhook_url
+
     if email_type == EmailType.HR_PASSED and not template_variant and settings.n8n_hr_approval_webhook_url:
         return settings.n8n_hr_approval_webhook_url
 
