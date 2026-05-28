@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -10,6 +11,8 @@ import requests
 
 from app.config import settings
 from app.services.ai_service import parse_candidate_text, sanitize_text
+
+logger = logging.getLogger(__name__)
 
 
 class RoleSuggestionResult(BaseModel):
@@ -220,63 +223,69 @@ def _generate_vertex_text(prompt: str) -> str:
 
 
 def _generate_gemini_text(prompt: str) -> str:
-    model_name = settings.vertex_generative_model or "gemini-2.5-flash"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    attempted_models: list[str] = []
+    errors: list[str] = []
 
-    try:
-        response = requests.post(
-            url,
-            params={"key": settings.gemini_api_key},
-            json={
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "text": prompt,
-                            }
-                        ]
-                    }
-                ]
-            },
-            timeout=60,
-        )
-    except requests.RequestException as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gemini API request failed: {exc}",
-        ) from exc
+    for model_name in _configured_vertex_models():
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        attempted_models.append(model_name)
 
-    if not response.ok:
-        detail = sanitize_text(response.text) or f"status {response.status_code}"
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gemini API returned an error for model '{model_name}': {detail}",
-        )
-
-    payload = response.json()
-    candidates = payload.get("candidates")
-    if not isinstance(candidates, list):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Gemini API returned an invalid response payload.",
-        )
-
-    for candidate in candidates:
-        content = candidate.get("content") if isinstance(candidate, dict) else None
-        parts = content.get("parts") if isinstance(content, dict) else None
-        if not isinstance(parts, list):
+        try:
+            response = requests.post(
+                url,
+                params={"key": settings.gemini_api_key},
+                json={
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": prompt,
+                                }
+                            ]
+                        }
+                    ]
+                },
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            message = sanitize_text(str(exc)) or repr(exc)
+            errors.append(f"{model_name}: {message}")
             continue
-        text = "".join(
-            part.get("text", "")
-            for part in parts
-            if isinstance(part, dict) and isinstance(part.get("text"), str)
-        ).strip()
-        if text:
-            return text
 
+        if not response.ok:
+            detail = sanitize_text(response.text) or f"status {response.status_code}"
+            errors.append(f"{model_name}: {detail}")
+            continue
+
+        payload = response.json()
+        candidates = payload.get("candidates")
+        if not isinstance(candidates, list):
+            errors.append(f"{model_name}: invalid candidates payload")
+            continue
+
+        for candidate in candidates:
+            content = candidate.get("content") if isinstance(candidate, dict) else None
+            parts = content.get("parts") if isinstance(content, dict) else None
+            if not isinstance(parts, list):
+                continue
+            text = "".join(
+                part.get("text", "")
+                for part in parts
+                if isinstance(part, dict) and isinstance(part.get("text"), str)
+            ).strip()
+            if text:
+                return text
+
+        errors.append(f"{model_name}: no text content returned")
+
+    diagnostic = "; ".join(errors[-3:]) or "unknown Gemini error"
+    logger.warning("Gemini text generation failed. Attempted models: %s. Errors: %s", attempted_models, diagnostic)
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail="Gemini API returned no text content.",
+        detail=(
+            f"Gemini API request failed for all configured models. "
+            f"Attempted models: {', '.join(attempted_models)}. Last errors: {diagnostic}"
+        ),
     )
 
 
@@ -610,7 +619,7 @@ def _generate_matching_result_with_openai(
         vacancy_matches=vacancy_matches,
     )
 
-    if not settings.vertex_project_id:
+    if not settings.gemini_api_key and not settings.vertex_project_id:
         return fallback
 
     compact_matches = [
@@ -655,7 +664,8 @@ def _generate_matching_result_with_openai(
         raw_text = _generate_vertex_text(f"{system_prompt}\n\n{user_prompt}")
         payload = _extract_json_object(raw_text)
         parsed = CandidateMatchingResult.model_validate(payload) if payload else None
-    except Exception:
+    except Exception as exc:
+        logger.warning("Job description AI generation failed; using fallback. Reason: %s", exc)
         return fallback
 
     if not parsed:
