@@ -665,7 +665,7 @@ def _generate_matching_result_with_openai(
         payload = _extract_json_object(raw_text)
         parsed = CandidateMatchingResult.model_validate(payload) if payload else None
     except Exception as exc:
-        logger.warning("Job description AI generation failed; using fallback. Reason: %s", exc)
+        logger.warning("Candidate matching AI failed; using fallback. Reason: %s", exc)
         return fallback
 
     if not parsed:
@@ -907,7 +907,7 @@ def _build_candidate_summary(
 
 def _extract_candidate_details(cv_text: str) -> dict[str, Any]:
     fallback = parse_candidate_text(cv_text)
-    if not settings.vertex_project_id:
+    if not settings.vertex_project_id and not settings.gemini_api_key:
         return fallback
 
     system_prompt = (
@@ -944,7 +944,8 @@ def _extract_candidate_details(cv_text: str) -> dict[str, Any]:
         )
         payload = _extract_json_object(raw_text)
         extraction = CandidateExtractionResult.model_validate(payload) if payload else None
-    except Exception:
+    except Exception as exc:
+        logger.warning("Candidate extraction AI failed; using fallback. Reason: %s", exc)
         return fallback
 
     if not extraction:
@@ -969,7 +970,7 @@ def _extract_candidate_details(cv_text: str) -> dict[str, Any]:
 
 def format_resume_preview(cv_text: str) -> str:
     fallback = _fallback_resume_preview(cv_text)
-    if not settings.vertex_project_id:
+    if not settings.vertex_project_id and not settings.gemini_api_key:
         return fallback
 
     system_prompt = (
@@ -998,7 +999,8 @@ def format_resume_preview(cv_text: str) -> str:
             f"{system_prompt}\n\nReturn plain text only. Do not return JSON, markdown fences, or commentary.\n\n{user_prompt}"
         )
         return formatted or fallback
-    except Exception:
+    except Exception as exc:
+        logger.warning("Resume preview AI formatting failed; using fallback. Reason: %s", exc)
         return fallback
 
 
@@ -1203,7 +1205,7 @@ def generate_job_description_with_openai(
         seniority=seniority,
     )
 
-    if not settings.vertex_project_id:
+    if not settings.vertex_project_id and not settings.gemini_api_key:
         return fallback
 
     system_prompt = (
@@ -1240,7 +1242,8 @@ def generate_job_description_with_openai(
         )
         payload = _extract_json_object(raw_text)
         result = JobDescriptionGenerationResult.model_validate(payload) if payload else None
-    except Exception:
+    except Exception as exc:
+        logger.warning("Job description AI generation failed; using fallback. Reason: %s", exc)
         return fallback
 
     if not result:
