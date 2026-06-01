@@ -88,6 +88,7 @@ def trigger_talent_discovery_for_vacancy(
 
     new_discoveries = [
         HiddenPotentialDiscoveryRead(
+            candidate_id=item["candidate"].id,
             candidate_name=item["candidate"].name,
             original_role=application_lookup.get(
                 item["candidate"].id,
@@ -101,6 +102,7 @@ def trigger_talent_discovery_for_vacancy(
     ]
     top_candidates = [
         HiddenPotentialDiscoveryRead(
+            candidate_id=item["candidate"].id,
             candidate_name=item["candidate"].name,
             original_role=application_lookup.get(
                 item["candidate"].id,

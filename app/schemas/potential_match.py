@@ -4,6 +4,7 @@ from app.schemas.common import BaseSchema
 
 
 class HiddenPotentialDiscoveryRead(BaseSchema):
+    candidate_id: int
     candidate_name: str
     original_role: str = Field(description="Most recent role the candidate applied for before discovery.")
     potential_score: int = Field(description="Vacancy-specific hidden-potential match score from 0-100.")

@@ -4,13 +4,18 @@ from sqlmodel import Session
 
 from app.db import get_session
 from app.models.vacancy import Vacancy
-from app.schemas.application import ApplicationRead
+from app.schemas.application import ApplicationRead, ApplicationTalentPoolShortlistCreate
 from app.schemas.candidate_match import CandidateMatchRead
 from app.schemas.potential_match import VacancyDiscoverySummaryRead
 from app.schemas.talent_suggestion import TalentSuggestionRead
 from app.schemas.vacancy import VacancyCreate, VacancyRead, VacancyUpdate
 from app.services import crud
-from app.services.application_workflow_service import generate_shortlist, list_vacancy_applications, rank_applications_for_vacancy
+from app.services.application_workflow_service import (
+    add_candidate_from_talent_pool_to_shortlist,
+    generate_shortlist,
+    list_vacancy_applications,
+    rank_applications_for_vacancy,
+)
 from app.services.candidate_service import get_vacancy_matches
 from app.services.talent_discovery_service import suggest_talent_for_vacancy, trigger_talent_discovery_for_vacancy
 from app.services.vacancy_service import clear_all_vacancies, delete_vacancy_with_dependencies
@@ -100,6 +105,28 @@ def generate_vacancy_shortlist_route(
     session: Session = Depends(get_session),
 ):
     return generate_shortlist(session, vacancy_id, payload.changed_by_id)
+
+
+@router.post(
+    "/{vacancy_id}/shortlist/from-talent-pool",
+    response_model=ApplicationRead,
+    summary="Add talent-pool candidate to shortlist",
+    description="Create or update a vacancy application from the talent pool and mark it as shortlisted.",
+)
+def add_talent_pool_candidate_to_shortlist_route(
+    vacancy_id: int,
+    payload: ApplicationTalentPoolShortlistCreate,
+    session: Session = Depends(get_session),
+):
+    return add_candidate_from_talent_pool_to_shortlist(
+        session=session,
+        vacancy_id=vacancy_id,
+        candidate_id=payload.candidate_id,
+        changed_by_id=payload.changed_by_id,
+        shortlist_bucket=payload.shortlist_bucket,
+        potential_score=payload.potential_score,
+        reason=payload.reason,
+    )
 
 
 @router.post("/", response_model=VacancyRead, status_code=status.HTTP_201_CREATED, summary="Create vacancy", description="Create a new vacancy.")

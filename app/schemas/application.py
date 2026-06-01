@@ -66,6 +66,14 @@ class ApplicationShortlistUpdate(BaseSchema):
     changed_by_id: int
 
 
+class ApplicationTalentPoolShortlistCreate(BaseSchema):
+    candidate_id: int
+    changed_by_id: int
+    shortlist_bucket: ShortlistBucket = ShortlistBucket.RESERVE
+    potential_score: Optional[float] = None
+    reason: Optional[str] = None
+
+
 class ApplicationInviteSelectionUpdate(BaseSchema):
     invite_selected: bool
     changed_by_id: int

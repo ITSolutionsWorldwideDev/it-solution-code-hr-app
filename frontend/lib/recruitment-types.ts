@@ -52,6 +52,7 @@ export type VacancyRecord = {
 };
 
 export type HiddenPotentialRecord = {
+  candidate_id: number;
   candidate_name: string;
   original_role: string;
   potential_score: number;

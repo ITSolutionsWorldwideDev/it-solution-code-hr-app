@@ -198,6 +198,102 @@ def update_shortlist_bucket(
     return application
 
 
+def add_candidate_from_talent_pool_to_shortlist(
+    session: Session,
+    *,
+    vacancy_id: int,
+    candidate_id: int,
+    changed_by_id: int,
+    shortlist_bucket: ShortlistBucket = ShortlistBucket.RESERVE,
+    potential_score: float | None = None,
+    reason: str | None = None,
+) -> Application:
+    get_or_404(session, Vacancy, vacancy_id)
+    candidate = get_or_404(session, Candidate, candidate_id)
+    user = get_or_404(session, User, changed_by_id)
+
+    application = session.exec(
+        select(Application).where(
+            Application.vacancy_id == vacancy_id,
+            Application.candidate_id == candidate_id,
+        )
+    ).first()
+
+    target_stage = (
+        ApplicationStage.PRIMARY_SHORTLIST
+        if shortlist_bucket == ShortlistBucket.PRIMARY
+        else ApplicationStage.RESERVE_SHORTLIST
+    )
+    source_flag = "talent_pool"
+
+    if application is None:
+        parsed_data = {
+            **(candidate.parsed_data or {}),
+            "shortlist_source": source_flag,
+        }
+        if reason:
+            parsed_data["talent_pool_reason"] = reason
+
+        application = Application(
+            candidate_id=candidate.id,
+            vacancy_id=vacancy_id,
+            ai_summary=reason or candidate.ai_summary,
+            match_score=potential_score,
+            ranking_score=potential_score,
+            parsed_data=parsed_data,
+            stage=target_stage,
+            current_owner_role=UserRole.HR,
+            shortlist_bucket=shortlist_bucket,
+            invite_selected=False,
+            notes="Added to shortlist from talent pool.",
+        )
+        session.add(application)
+        session.flush()
+        _create_stage_event(
+            session=session,
+            application=application,
+            from_stage=ApplicationStage.PARSED,
+            to_stage=target_stage,
+            changed_by_id=user.id,
+            changed_by_role=user.role,
+            notes="Candidate added to shortlist from talent pool.",
+        )
+    else:
+        previous_stage = application.stage
+        next_parsed_data = {**(application.parsed_data or {})}
+        next_parsed_data["shortlist_source"] = source_flag
+        if reason:
+            next_parsed_data["talent_pool_reason"] = reason
+
+        application.parsed_data = next_parsed_data
+        application.shortlist_bucket = shortlist_bucket
+        application.stage = target_stage
+        application.current_owner_role = UserRole.HR
+        if reason and not application.ai_summary:
+            application.ai_summary = reason
+        if potential_score is not None and application.match_score is None:
+            application.match_score = potential_score
+        if potential_score is not None and application.ranking_score is None:
+            application.ranking_score = potential_score
+        application.notes = "Added to shortlist from talent pool."
+        session.add(application)
+
+        if previous_stage != target_stage:
+            _create_stage_event(
+                session=session,
+                application=application,
+                from_stage=previous_stage,
+                to_stage=target_stage,
+                changed_by_id=user.id,
+                changed_by_role=user.role,
+                notes="Candidate re-added to shortlist from talent pool.",
+            )
+
+    session.commit()
+    session.refresh(application)
+    return application
+
+
 def select_hr_invite(
     session: Session,
     application_id: int,

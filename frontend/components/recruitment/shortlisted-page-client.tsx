@@ -81,6 +81,7 @@ type ShortlistedCandidateRecord = {
 };
 
 type PotentialTalentRecord = {
+  candidate_id: number;
   candidate_name: string;
   original_role: string;
   potential_score: number;
@@ -321,6 +322,14 @@ function experienceLabel(candidate: CandidateApiRecord | null) {
   }
 
   return source.length > 30 ? `${source.slice(0, 27)}...` : source;
+}
+
+function isFromTalentPool(application: ApplicationApiRecord) {
+  const parsedData =
+    application.parsed_data && typeof application.parsed_data === "object"
+      ? (application.parsed_data as Record<string, unknown>)
+      : null;
+  return parsedData?.shortlist_source === "talent_pool";
 }
 
 function roleLabel(
@@ -913,6 +922,40 @@ export function ShortlistedPageClient() {
     }
   };
 
+  const handleAddTalentPoolCandidate = async (candidateRecord: PotentialTalentRecord) => {
+    if (!selectedVacancyId) {
+      return;
+    }
+
+    setBusy(true);
+    setCardBusyAction(`add-talent-pool-${candidateRecord.candidate_id}`);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const user = await ensureDemoUser(role, name);
+      await apiRequest<ApplicationApiRecord>({
+        path: `/vacancies/${selectedVacancyId}/shortlist/from-talent-pool`,
+        method: "POST",
+        body: JSON.stringify({
+          candidate_id: candidateRecord.candidate_id,
+          changed_by_id: user.id,
+          shortlist_bucket: "reserve",
+          potential_score: candidateRecord.potential_score,
+          reason: candidateRecord.reason,
+        }),
+      });
+      await loadVacancyShortlist(selectedVacancyId, false);
+      await loadPotentialTalent(selectedVacancyId);
+      setSuccessMessage(`${candidateRecord.candidate_name} was added to the shortlist from the talent pool.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to add talent-pool candidate to shortlist.");
+    } finally {
+      setBusy(false);
+      setCardBusyAction(null);
+    }
+  };
+
   const handleRestoreRejectedCandidate = async (applicationId: number) => {
     setBusy(true);
     setCardBusyAction(`restore-candidate-${applicationId}`);
@@ -1212,6 +1255,7 @@ export function ShortlistedPageClient() {
               const expanded = selectedApplicationId === application.id;
               const currentParsedDetail = expanded ? parsedDetail : null;
               const roleText = roleLabel(candidate, selectedVacancy?.title, application);
+              const fromTalentPool = isFromTalentPool(application);
               const accentClass =
                 application.shortlist_bucket === "primary" ? "before:bg-white" : "before:bg-white/60";
 
@@ -1275,6 +1319,11 @@ export function ShortlistedPageClient() {
                               >
                                 {shortlistLabel(application.shortlist_bucket)}
                               </span>
+                              {fromTalentPool ? (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-[#3f4d78] bg-[#18213b] px-4 py-2 text-sm font-medium text-[#d5e2ff]">
+                                  From talent pool
+                                </span>
+                              ) : null}
                               {isRejected ? (
                                 <span className="inline-flex items-center gap-2 rounded-full border border-[#6b3041] bg-[#2a1620] px-4 py-2 text-sm font-medium text-[#ffccd6]">
                                   Rejected
@@ -1575,28 +1624,52 @@ export function ShortlistedPageClient() {
             </div>
           ) : (
             <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {potentialTalent.map((candidate, index) => (
-                <div
-                  key={`${candidate.candidate_name}-${index}`}
-                  className="rounded-[24px] border border-[#2b3550] bg-[#12192d] px-5 py-5"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[#334362] bg-[#18223d] text-[#89a0ca]">
-                        <UserRound className="h-5 w-5" />
+              {potentialTalent.map((candidate, index) => {
+                const existingApplication = applications.find(
+                  (application) =>
+                    application.candidate_id === candidate.candidate_id &&
+                    ["primary", "reserve"].includes(application.shortlist_bucket),
+                );
+                const alreadyShortlisted = Boolean(existingApplication);
+
+                return (
+                  <div
+                    key={`${candidate.candidate_name}-${index}`}
+                    className="rounded-[24px] border border-[#2b3550] bg-[#12192d] px-5 py-5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[#334362] bg-[#18223d] text-[#89a0ca]">
+                          <UserRound className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-[1rem] font-semibold text-[#eef2ff]">{candidate.candidate_name}</p>
+                          <p className="mt-1 text-sm text-[#95a8c8]">Original role: {candidate.original_role}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[1rem] font-semibold text-[#eef2ff]">{candidate.candidate_name}</p>
-                        <p className="mt-1 text-sm text-[#95a8c8]">Original role: {candidate.original_role}</p>
+                      <div className="rounded-full border border-[#2c8a80] bg-[#103136] px-3 py-1 text-sm font-semibold text-[#7ef0d8]">
+                        {candidate.potential_score}%
                       </div>
                     </div>
-                    <div className="rounded-full border border-[#2c8a80] bg-[#103136] px-3 py-1 text-sm font-semibold text-[#7ef0d8]">
-                      {candidate.potential_score}%
+                    <p className="mt-4 text-sm leading-7 text-[#d7def1]">{candidate.reason}</p>
+                    <div className="mt-5 flex items-center justify-between gap-3">
+                      <span className="text-xs uppercase tracking-[0.22em] text-[#8ea1c6]">
+                        {alreadyShortlisted ? "Already shortlisted" : "Talent pool candidate"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="rounded-[14px] border-[#8bc9ea] bg-[#10202c] px-4 py-2 text-sm text-[#d7f5ff] hover:bg-[#152b3a]"
+                        onClick={() => handleAddTalentPoolCandidate(candidate)}
+                        disabled={busy || alreadyShortlisted}
+                        loading={cardBusyAction === `add-talent-pool-${candidate.candidate_id}`}
+                      >
+                        {alreadyShortlisted ? "Added to shortlisted" : "Add to shortlisted"}
+                      </Button>
                     </div>
                   </div>
-                  <p className="mt-4 text-sm leading-7 text-[#d7def1]">{candidate.reason}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Panel>
