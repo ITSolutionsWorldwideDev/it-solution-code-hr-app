@@ -1444,7 +1444,7 @@ export function ShortlistedPageClient() {
                       </div>
 
                       {expanded && currentParsedDetail ? (
-                        <div className="mt-7 grid gap-4 rounded-[24px] border border-[#303b59] bg-[#12192d] p-5">
+                        <div className="mt-7 grid gap-4 rounded-[24px] border border-white/10 bg-black p-5">
                           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                             <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
                               <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">Applied to</p>
@@ -1515,7 +1515,7 @@ export function ShortlistedPageClient() {
                                     {currentParsedDetail.matchedSkills.map((skill) => (
                                       <span
                                         key={skill}
-                                        className="rounded-full border border-[#334362] bg-[#1c2540] px-3 py-1.5 text-sm font-medium text-[#dfe6f8]"
+                                        className="rounded-full border border-white/10 bg-black px-3 py-1.5 text-sm font-medium text-[#dfe6f8]"
                                       >
                                         {skill}
                                       </span>
@@ -1540,7 +1540,7 @@ export function ShortlistedPageClient() {
                                     {selectedRoleSuggestions.slice(0, 3).map((suggestion) => (
                                       <div
                                         key={suggestion.id}
-                                        className="rounded-[16px] border border-[#31405f] bg-[#17203a] px-4 py-3"
+                                        className="rounded-[16px] border border-white/10 bg-black px-4 py-3"
                                       >
                                         <div className="flex items-start justify-between gap-3">
                                           <div>
@@ -1635,11 +1635,11 @@ export function ShortlistedPageClient() {
                 return (
                   <div
                     key={`${candidate.candidate_name}-${index}`}
-                    className="rounded-[24px] border border-[#2b3550] bg-[#12192d] px-5 py-5"
+                    className="rounded-[24px] border border-white/10 bg-black px-5 py-5"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[#334362] bg-[#18223d] text-[#89a0ca]">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black text-[#89a0ca]">
                           <UserRound className="h-5 w-5" />
                         </div>
                         <div>
