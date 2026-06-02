@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import Field
 
-from app.models.enums import ApplicationStage, EmailType, ShortlistBucket, UserRole
+from app.models.enums import ApplicationStage, EmailType, InterviewStageType, ShortlistBucket, UserRole
 from app.schemas.application_email_event import ApplicationEmailEventRead
 from app.schemas.application_interview import ApplicationInterviewRead
 from app.schemas.application_stage_event import ApplicationStageEventRead
@@ -105,8 +105,9 @@ class ApplicationPublicScheduleRead(BaseSchema):
     candidate_email: str
     vacancy_title: str
     stage: ApplicationStage
+    stage_type: InterviewStageType
     invite_sent_at: Optional[datetime] = None
-    hr_interview_at: Optional[datetime] = None
+    scheduled_at: Optional[datetime] = None
     available_slots: list[datetime] = Field(default_factory=list)
     schedule_timezone: str
 
@@ -118,7 +119,8 @@ class ApplicationPublicScheduleCreate(BaseSchema):
 class ApplicationPublicScheduleResponse(BaseSchema):
     application_id: int
     stage: ApplicationStage
-    hr_interview_at: datetime
+    stage_type: InterviewStageType
+    scheduled_at: datetime
     message: str
 
 

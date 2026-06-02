@@ -19,11 +19,10 @@ import type {
 } from "@/lib/recruitment-types";
 
 const stageSets: Record<string, PipelineStage[]> = {
-  HR: ["hr_invite_sent", "hr_interview_scheduled", "hr_in_progress", "hr_passed", "rejected"],
-  Technical: ["hr_passed", "technical_interview_scheduled", "technical_in_progress", "technical_passed", "rejected"],
+  HR: ["hr_invite_sent", "hr_in_progress", "hr_passed", "rejected"],
+  Technical: ["hr_passed", "technical_in_progress", "technical_passed", "rejected"],
   Manager: [
     "technical_passed",
-    "management_interview_scheduled",
     "management_in_progress",
     "selected",
     "offer_sent",
@@ -34,13 +33,10 @@ const stageSets: Record<string, PipelineStage[]> = {
   ],
   Admin: [
     "hr_invite_sent",
-    "hr_interview_scheduled",
     "hr_in_progress",
     "hr_passed",
-    "technical_interview_scheduled",
     "technical_in_progress",
     "technical_passed",
-    "management_interview_scheduled",
     "management_in_progress",
     "selected",
     "offer_sent",
@@ -76,6 +72,31 @@ const roleToUserRole = {
   Manager: "Manager",
   Admin: "Admin",
 } as const;
+
+function canRoleViewApplication(role: AppRole, application: ApplicationApiRecord): boolean {
+  if (role === "Admin") {
+    return true;
+  }
+
+  const ownerRole = application.current_owner_role;
+  if (ownerRole === roleToUserRole[role]) {
+    return true;
+  }
+
+  if (role === "HR" && application.stage === "hr_rejected") {
+    return true;
+  }
+
+  if (role === "Technical" && application.stage === "technical_rejected") {
+    return true;
+  }
+
+  if (role === "Manager" && application.stage === "management_rejected") {
+    return true;
+  }
+
+  return false;
+}
 
 const nextStageByRole: Record<AppRole, Partial<Record<ApplicationStageApi, ApplicationStageApi>>> = {
   HR: {
@@ -302,6 +323,7 @@ export function RolePipelineView() {
 
   const pipelineCandidates = useMemo<PipelineCandidateRecord[]>(() => {
     return applications
+      .filter((application) => canRoleViewApplication(role, application))
       .map((application) =>
         mapApplicationToPipelineCandidate(
           application,
@@ -314,7 +336,7 @@ export function RolePipelineView() {
         ...item,
         rejectionEmailSent: rejectionEmailSentIds.includes(item.id),
       }));
-  }, [applications, candidateRecords, rejectionEmailSentIds, vacancies]);
+  }, [applications, candidateRecords, rejectionEmailSentIds, role, vacancies]);
 
   const filteredCandidates = useMemo(() => {
     const normalizedQuery = deferredSearchQuery.trim().toLowerCase();

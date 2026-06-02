@@ -78,6 +78,8 @@ export type ParsedCandidateData = {
   fitExplanation?: string;
 };
 
+export type InterviewStageTypeApi = "hr" | "technical" | "management";
+
 export type PipelineCandidateRecord = {
   id: string;
   name: string;
@@ -86,7 +88,8 @@ export type PipelineCandidateRecord = {
   matchScore: number;
   stage: PipelineStage;
   applicationStage?: ApplicationStageApi;
-  hrInterviewAt?: string | null;
+  interviewAt?: string | null;
+  interviewStageType?: InterviewStageTypeApi | null;
   rejectionEmailSent?: boolean;
   aiSummary: string;
   cvReference: string;

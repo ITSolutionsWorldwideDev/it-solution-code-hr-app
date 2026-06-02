@@ -34,18 +34,12 @@ type PipelineBoardProps = {
 };
 
 const movableStagesByRole: Record<AppRole, PipelineStage[]> = {
-  HR: ["hr_invite_sent", "hr_interview_scheduled", "hr_in_progress"],
-  Technical: ["hr_passed", "technical_interview_scheduled", "technical_in_progress"],
-  Manager: ["technical_passed", "management_interview_scheduled", "management_in_progress", "selected", "offer_sent", "offer_accepted"],
+  HR: ["hr_in_progress"],
+  Technical: ["technical_in_progress"],
+  Manager: ["management_in_progress", "selected", "offer_sent", "offer_accepted"],
   Admin: [
-    "hr_invite_sent",
-    "hr_interview_scheduled",
     "hr_in_progress",
-    "hr_passed",
-    "technical_interview_scheduled",
     "technical_in_progress",
-    "technical_passed",
-    "management_interview_scheduled",
     "management_in_progress",
     "selected",
     "offer_sent",
@@ -54,14 +48,8 @@ const movableStagesByRole: Record<AppRole, PipelineStage[]> = {
 };
 
 const actionLabels: Partial<Record<PipelineStage, string>> = {
-  hr_invite_sent: "Schedule HR Interview",
-  hr_interview_scheduled: "Start HR Interview",
-  hr_in_progress: "Mark HR Passed",
-  hr_passed: "Plan Technical Interview",
-  technical_interview_scheduled: "Start Technical Interview",
-  technical_in_progress: "Mark Technical Passed",
-  technical_passed: "Schedule Management Interview",
-  management_interview_scheduled: "Start Management Interview",
+  hr_in_progress: "Approve To Technical Pipeline",
+  technical_in_progress: "Approve To Management Pipeline",
   management_in_progress: "Select Candidate",
   selected: "Send Offer",
   offer_sent: "Mark Accepted",

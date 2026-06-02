@@ -9,13 +9,10 @@ import type {
 
 export const pipelineStageOrder: PipelineStage[] = [
   "hr_invite_sent",
-  "hr_interview_scheduled",
   "hr_in_progress",
   "hr_passed",
-  "technical_interview_scheduled",
   "technical_in_progress",
   "technical_passed",
-  "management_interview_scheduled",
   "management_in_progress",
   "selected",
   "offer_sent",
@@ -31,18 +28,18 @@ export const pipelineStageLabels: Record<PipelineStage, string> = {
   shortlisted: "Shortlisted",
   hr_review: "HR Review",
   hr_invite_sent: "Waiting For Candidate Approval",
-  hr_interview_scheduled: "Schedule Meeting",
-  hr_in_progress: "HR In Progress",
+  hr_interview_scheduled: "HR Interview",
+  hr_in_progress: "HR Interview",
   hr_approved: "HR Approved",
   hr_passed: "HR Passed",
   technical_review: "Technical Review",
-  technical_interview_scheduled: "Technical Interview Scheduled",
-  technical_in_progress: "Technical In Progress",
+  technical_interview_scheduled: "Technical Interview",
+  technical_in_progress: "Technical Interview",
   technical_approved: "Technical Approved",
   technical_passed: "Technical Passed",
   management_review: "Management Review",
-  management_interview_scheduled: "Management Interview Scheduled",
-  management_in_progress: "Management In Progress",
+  management_interview_scheduled: "Management Interview",
+  management_in_progress: "Management Interview",
   selected: "Selected",
   offer_sent: "Offer Sent",
   offer_accepted: "Offer Accepted",
@@ -66,19 +63,16 @@ export function mapApplicationStageToPipelineStage(application: ApplicationApiRe
     case "hr_invite_sent":
       return "hr_invite_sent";
     case "hr_interview_scheduled":
-      return "hr_interview_scheduled";
     case "hr_in_progress":
       return "hr_in_progress";
     case "hr_passed":
       return "hr_passed";
     case "technical_interview_scheduled":
-      return "technical_interview_scheduled";
     case "technical_in_progress":
       return "technical_in_progress";
     case "technical_passed":
       return "technical_passed";
     case "management_interview_scheduled":
-      return "management_interview_scheduled";
     case "management_in_progress":
       return "management_in_progress";
     case "selected":
@@ -122,7 +116,25 @@ export function mapApplicationToPipelineCandidate(
     matchScore: application.ranking_score ?? application.match_score ?? candidate?.match_score ?? 0,
     stage,
     applicationStage: application.stage,
-    hrInterviewAt: application.hr_interview_at,
+    interviewAt:
+      application.hr_interview_at ??
+      application.technical_interview_at ??
+      application.management_interview_at ??
+      null,
+    interviewStageType:
+      application.stage === "hr_invite_sent" ||
+      application.stage === "hr_interview_scheduled" ||
+      application.stage === "hr_in_progress"
+        ? "hr"
+        : application.stage === "hr_passed" ||
+            application.stage === "technical_interview_scheduled" ||
+            application.stage === "technical_in_progress"
+          ? "technical"
+          : application.stage === "technical_passed" ||
+              application.stage === "management_interview_scheduled" ||
+              application.stage === "management_in_progress"
+            ? "management"
+            : null,
     aiSummary:
       candidate?.ai_summary ??
       application.ai_summary ??

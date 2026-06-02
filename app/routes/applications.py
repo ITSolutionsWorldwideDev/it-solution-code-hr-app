@@ -30,10 +30,11 @@ from app.services.application_workflow_service import (
     delete_application_from_pipeline,
     get_application_timeline,
     reject_application,
-    schedule_hr_interview_from_candidate,
+    schedule_public_interview_from_candidate,
     select_hr_invite,
     update_shortlist_bucket,
 )
+from app.services.calendar_availability_service import get_public_schedule_context, list_public_interview_slots
 from app.services.hr_invite_service import dispatch_application_email, dispatch_hr_invite
 
 
@@ -54,15 +55,17 @@ def get_public_schedule_details(application_id: int, session: Session = Depends(
     application = crud.get_or_404(session, Application, application_id)
     candidate = crud.get_or_404(session, Candidate, application.candidate_id)
     vacancy = crud.get_or_404(session, Vacancy, application.vacancy_id)
-    available_slots = list_public_hr_interview_slots(session, application_id)
+    schedule_context = get_public_schedule_context(session, application_id)
+    available_slots = list_public_interview_slots(session, application_id)
     return ApplicationPublicScheduleRead(
         application_id=application.id,
         candidate_name=candidate.name,
         candidate_email=candidate.email,
         vacancy_title=vacancy.title,
         stage=application.stage,
+        stage_type=schedule_context["stage_type"],
         invite_sent_at=application.invite_sent_at,
-        hr_interview_at=application.hr_interview_at,
+        scheduled_at=schedule_context["scheduled_at"],
         available_slots=available_slots,
         schedule_timezone=settings.public_schedule_timezone,
     )
@@ -78,16 +81,18 @@ def post_public_schedule_details(
     payload: ApplicationPublicScheduleCreate,
     session: Session = Depends(get_session),
 ):
-    application = schedule_hr_interview_from_candidate(
+    application = schedule_public_interview_from_candidate(
         session=session,
         application_id=application_id,
         scheduled_at=payload.scheduled_at,
     )
+    schedule_context = get_public_schedule_context(session, application_id)
     return ApplicationPublicScheduleResponse(
         application_id=application.id,
         stage=application.stage,
-        hr_interview_at=application.hr_interview_at,
-        message="Your HR interview time has been saved successfully.",
+        stage_type=schedule_context["stage_type"],
+        scheduled_at=schedule_context["scheduled_at"],
+        message=f"Your {schedule_context['stage_type'].value} interview time has been saved successfully.",
     )
 
 

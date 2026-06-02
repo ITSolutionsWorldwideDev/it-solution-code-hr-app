@@ -15,8 +15,9 @@ type PublicScheduleRecord = {
   candidate_email: string;
   vacancy_title: string;
   stage: string;
+  stage_type: "hr" | "technical" | "management";
   invite_sent_at: string | null;
-  hr_interview_at: string | null;
+  scheduled_at: string | null;
   available_slots: string[];
   schedule_timezone: string;
 };
@@ -24,16 +25,27 @@ type PublicScheduleRecord = {
 type PublicScheduleResponse = {
   application_id: number;
   stage: string;
-  hr_interview_at: string;
+  stage_type: "hr" | "technical" | "management";
+  scheduled_at: string;
   message: string;
 };
 
 function defaultScheduleValue(record?: PublicScheduleRecord | null) {
-  if (record?.hr_interview_at) {
-    return record.hr_interview_at;
+  if (record?.scheduled_at) {
+    return record.scheduled_at;
   }
 
   return record?.available_slots[0] ?? "";
+}
+
+function stageTypeLabel(stageType: PublicScheduleRecord["stage_type"]) {
+  if (stageType === "technical") {
+    return "technical";
+  }
+  if (stageType === "management") {
+    return "management";
+  }
+  return "HR";
 }
 
 function formatDateTime(value: string, timeZone?: string) {
@@ -75,7 +87,7 @@ export function PublicCandidateSchedule({ applicationId }: PublicCandidateSchedu
   }, [applicationId]);
 
   const formattedExistingInterview = useMemo(() => {
-    if (!record?.hr_interview_at) {
+    if (!record?.scheduled_at) {
       return null;
     }
 
@@ -84,8 +96,8 @@ export function PublicCandidateSchedule({ applicationId }: PublicCandidateSchedu
       timeStyle: "short",
       hour12: false,
       timeZone: record.schedule_timezone,
-    }).format(new Date(record.hr_interview_at));
-  }, [record?.hr_interview_at, record?.schedule_timezone]);
+    }).format(new Date(record.scheduled_at));
+  }, [record?.scheduled_at, record?.schedule_timezone]);
 
   const handleSubmit = async () => {
     if (!scheduledAt) {
@@ -110,8 +122,9 @@ export function PublicCandidateSchedule({ applicationId }: PublicCandidateSchedu
           ? {
               ...current,
               stage: response.stage,
-              hr_interview_at: response.hr_interview_at,
-              available_slots: current.available_slots.filter((slot) => slot !== response.hr_interview_at),
+              stage_type: response.stage_type,
+              scheduled_at: response.scheduled_at,
+              available_slots: current.available_slots.filter((slot) => slot !== response.scheduled_at),
             }
           : current,
       );
@@ -151,10 +164,10 @@ export function PublicCandidateSchedule({ applicationId }: PublicCandidateSchedu
             Candidate Schedule
           </p>
           <h1 className="mt-3 text-[2rem] font-semibold tracking-[-0.04em] text-white">
-            Choose your HR interview time
+            Choose your {stageTypeLabel(record.stage_type)} interview time
           </h1>
           <p className="mt-3 max-w-2xl text-[0.98rem] leading-7 text-[#c7d4df]">
-            Hi {record.candidate_name}, please choose the time that works best for your HR interview for the{" "}
+            Hi {record.candidate_name}, please choose the time that works best for your {stageTypeLabel(record.stage_type)} interview for the{" "}
             {record.vacancy_title} role.
           </p>
         </div>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { memo, useMemo, useState } from "react";
+import { memo, useState } from "react";
 import { CalendarDays, FileText, GripVertical, LoaderCircle } from "lucide-react";
 
 import type { AppRole } from "@/lib/session";
@@ -78,32 +78,39 @@ function PipelineCardComponent({
   onCardSelect,
   busy,
 }: PipelineCardProps) {
-  const defaultScheduleValue = useMemo(() => {
-    if (candidate.hrInterviewAt) {
-      return toLocalDateTimeInputValue(candidate.hrInterviewAt);
-    }
-
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(10, 30, 0, 0);
-    return toLocalDateTimeInputValue(tomorrow.toISOString());
-  }, [candidate.hrInterviewAt]);
-  const [scheduledAt, setScheduledAt] = useState(defaultScheduleValue);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const formattedInterviewAt = formatLocalInterviewDate(candidate.hrInterviewAt);
+  const formattedInterviewAt = formatLocalInterviewDate(candidate.interviewAt);
 
   const detailCopy =
     candidate.stage === "hr_invite_sent"
-      ? "Waiting for candidate approval before planning the HR interview."
+      ? "Invitation sent. The candidate can now choose an open interview slot from the scheduling email."
       : candidate.stage === "hr_interview_scheduled"
-        ? formattedInterviewAt ?? "Meeting scheduled"
+        ? `Interview scheduled for ${formattedInterviewAt}` 
         : candidate.stage === "hr_in_progress"
-          ? formattedInterviewAt ?? "Interview is now in progress"
+        ? formattedInterviewAt
+          ? `Interview scheduled for ${formattedInterviewAt}. Record the outcome here after the meeting.`
+          : "Waiting for the candidate to choose an interview slot."
           : candidate.stage === "hr_passed"
-            ? "Candidate was sent by HR to Technical. Plan the technical interview and send the invite when you are ready."
+            ? role === "HR"
+              ? "Candidate was approved by HR and is now waiting for the technical invitation."
+              : "Candidate was sent by HR to Technical. Send the technical scheduling invite when you are ready."
+            : candidate.stage === "technical_interview_scheduled"
+              ? `Interview scheduled for ${formattedInterviewAt}`
+            : candidate.stage === "technical_in_progress"
+              ? formattedInterviewAt
+                ? `Interview scheduled for ${formattedInterviewAt}. Record the outcome here after the meeting.`
+                : "Waiting for the candidate to choose a technical interview slot."
             : candidate.stage === "technical_passed"
-              ? "Candidate passed the technical stage. You can now send the management-stage email."
+              ? role === "Technical"
+                ? "Candidate was approved by Technical and is now waiting for the management invitation."
+                : "Candidate passed the technical stage. Send the management interview invite when you are ready."
+              : candidate.stage === "management_interview_scheduled"
+                ? `Interview scheduled for ${formattedInterviewAt}`
+              : candidate.stage === "management_in_progress"
+                ? formattedInterviewAt
+                  ? `Interview scheduled for ${formattedInterviewAt}. Record the outcome here after the meeting.`
+                  : "Waiting for the candidate to choose a management interview slot."
               : candidate.stage === "selected"
                 ? "Candidate was approved by management. You can now send the onboarding email."
             : candidate.applicationStage === "hr_rejected"
@@ -121,37 +128,18 @@ function PipelineCardComponent({
               : `Owned by ${owner}`;
 
   const accentClass =
-    candidate.stage === "hr_in_progress"
+    candidate.stage === "hr_in_progress" || candidate.stage === "technical_in_progress" || candidate.stage === "management_in_progress"
       ? "border-l-[#63e7ff]"
-      : candidate.stage === "hr_interview_scheduled"
+      : candidate.interviewAt
         ? "border-l-[#93efff]"
         : "border-l-white/16";
-  const canDragForward = !busy;
+  const canDragForward = false;
 
   const renderActions = () => {
     if (candidate.stage === "hr_invite_sent") {
       return (
-        <div className="mt-5 space-y-2">
-          <input
-            type="datetime-local"
-            value={scheduledAt}
-            onChange={(event) => setScheduledAt(event.target.value)}
-            className="h-10 w-full rounded-[12px] border border-white/10 bg-[#10161c] px-3 text-sm text-white outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => onScheduleMeeting(candidate.id, scheduledAt)}
-            disabled={busy || !scheduledAt}
-            className="w-full rounded-[12px] bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#06141c] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="inline-flex items-center gap-2">
-              {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-              {busy ? "Saving..." : "Next Stage"}
-            </span>
-          </button>
-          <p className="text-[0.68rem] uppercase tracking-[0.14em] text-white/38">
-            This moves the candidate to schedule meeting with the selected date and time.
-          </p>
+        <div className="mt-5 rounded-[12px] border border-white/10 bg-[#10161c] px-4 py-3 text-sm text-white/72">
+          Waiting for the candidate to confirm an open slot from the scheduling link.
         </div>
       );
     }
@@ -193,7 +181,33 @@ function PipelineCardComponent({
           >
             <span className="inline-flex items-center gap-2">
               {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-              {busy ? "Saving..." : "Next Stage"}
+              {busy ? "Saving..." : actionLabel}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onReject(candidate.id)}
+            disabled={busy}
+            className="rounded-[12px] border border-white/10 bg-[#10161c] px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-white/82 transition hover:bg-[#182028]"
+          >
+            Reject
+          </button>
+        </div>
+      );
+    }
+
+    if (candidate.stage === "technical_in_progress") {
+      return (
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onApprove(candidate.id)}
+            disabled={!canMoveForward || busy}
+            className="rounded-[12px] bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#06141c] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="inline-flex items-center gap-2">
+              {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
+              {busy ? "Saving..." : actionLabel}
             </span>
           </button>
           <button
@@ -237,7 +251,7 @@ function PipelineCardComponent({
           >
             <span className="inline-flex items-center gap-2">
               {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-              {busy ? "Sending..." : "Send Management Stage Email"}
+              {busy ? "Sending..." : "Send Management Invite"}
             </span>
           </button>
         </div>
@@ -386,7 +400,7 @@ function PipelineCardComponent({
         >
           <span className="inline-flex items-center gap-2">
             {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-            {busy ? "Saving..." : "Next Stage"}
+            {busy ? "Saving..." : actionLabel}
           </span>
         </button>
         <button
@@ -452,7 +466,7 @@ function PipelineCardComponent({
       ) : null}
 
       <div className="mt-5 flex min-h-8 items-center gap-2 text-sm text-white/72">
-        {candidate.stage === "hr_interview_scheduled" || candidate.stage === "hr_in_progress" ? (
+        {candidate.interviewAt ? (
           <CalendarDays className="h-4 w-4" />
         ) : null}
         <span>{detailCopy}</span>

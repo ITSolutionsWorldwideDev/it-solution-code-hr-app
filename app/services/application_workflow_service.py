@@ -24,7 +24,7 @@ from app.models.enums import (
 )
 from app.models.user import User
 from app.models.vacancy import Vacancy
-from app.services.calendar_availability_service import validate_public_hr_interview_slot
+from app.services.calendar_availability_service import book_public_interview_slot
 from app.services.crud import get_or_404
 
 
@@ -647,19 +647,20 @@ def record_interview_decision(
     return interview
 
 
-def schedule_hr_interview_from_candidate(
+def schedule_public_interview_from_candidate(
     session: Session,
     application_id: int,
     scheduled_at: datetime,
 ) -> Application:
     application = get_or_404(session, Application, application_id)
-    validate_public_hr_interview_slot(session, application_id, scheduled_at)
+    schedule_context = book_public_interview_slot(session, application_id, scheduled_at)
+    stage_type = schedule_context["stage_type"]
 
     interview = session.exec(
         select(ApplicationInterview)
         .where(
             ApplicationInterview.application_id == application.id,
-            ApplicationInterview.stage_type == InterviewStageType.HR,
+            ApplicationInterview.stage_type == stage_type,
         )
         .order_by(ApplicationInterview.created_at.desc())
     ).first()
@@ -670,7 +671,7 @@ def schedule_hr_interview_from_candidate(
     else:
         interview = ApplicationInterview(
             application_id=application.id,
-            stage_type=InterviewStageType.HR,
+            stage_type=stage_type,
             scheduled_at=scheduled_at,
             interviewer_user_id=None,
             status=InterviewStatus.SCHEDULED,
@@ -678,9 +679,19 @@ def schedule_hr_interview_from_candidate(
         )
         session.add(interview)
 
-    application.hr_interview_at = scheduled_at
-    application.stage = ApplicationStage.HR_INTERVIEW_SCHEDULED
-    application.current_owner_role = UserRole.HR
+    if stage_type == InterviewStageType.HR:
+        application.hr_interview_at = scheduled_at
+        application.stage = ApplicationStage.HR_INTERVIEW_SCHEDULED
+        application.current_owner_role = UserRole.HR
+    elif stage_type == InterviewStageType.TECHNICAL:
+        application.technical_interview_at = scheduled_at
+        application.stage = ApplicationStage.TECHNICAL_INTERVIEW_SCHEDULED
+        application.current_owner_role = UserRole.TECHNICAL
+    else:
+        application.management_interview_at = scheduled_at
+        application.stage = ApplicationStage.MANAGEMENT_INTERVIEW_SCHEDULED
+        application.current_owner_role = UserRole.MANAGER
+
     session.add(application)
     session.commit()
     session.refresh(application)
