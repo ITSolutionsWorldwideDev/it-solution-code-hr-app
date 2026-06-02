@@ -21,7 +21,7 @@ type CandidateFacingContent = {
 
 export default async function ApplyPage({ params }: ApplyPageProps) {
   const { id } = await params;
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://it-solution-code-hr-app-backend.vercel.app/api";
 
   const response = await fetch(`${apiBaseUrl}/vacancies/${id}`, {
     cache: "no-store",

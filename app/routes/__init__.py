@@ -4,6 +4,18 @@ from app.routes import applications, candidates, dashboard, departments, employe
 
 
 router = APIRouter()
+
+
+@router.get(
+    "",
+    tags=["Root"],
+    summary="API root endpoint",
+    description="Returns a simple message confirming that the mounted /api router is available.",
+)
+def api_root() -> dict[str, str]:
+    return {"message": "AI Recruitment API /api is running"}
+
+
 router.include_router(users.router)
 router.include_router(departments.router)
 router.include_router(employees.router)

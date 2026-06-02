@@ -9,6 +9,15 @@ load_dotenv(override=True)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_FRONTEND_ORIGINS = (
+    "http://localhost:3000,"
+    "http://127.0.0.1:3000,"
+    "http://localhost:3001,"
+    "http://127.0.0.1:3001,"
+    "https://frontend-hr-app-six.vercel.app,"
+    "https://frontend-hr-app-git-main-manish-079s-projects.vercel.app,"
+    "https://it-solution-code-hr-app.vercel.app"
+)
 
 
 def resolve_path(value: str) -> Path:
@@ -102,13 +111,13 @@ class Settings(BaseModel):
         origin.strip()
         for origin in os.getenv(
             "CORS_ORIGINS",
-            "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001",
+            DEFAULT_FRONTEND_ORIGINS,
         ).split(",")
         if origin.strip()
     ]
     cors_origin_regex: str | None = os.getenv(
         "CORS_ORIGIN_REGEX",
-        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        r"^https?://((localhost|127\.0\.0\.1)(:\d+)?|(frontend-hr-app.*|it-solution-code-hr-app.*)\.vercel\.app)$",
     )
 
 
