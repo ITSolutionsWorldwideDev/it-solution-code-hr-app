@@ -32,6 +32,11 @@ def list_public_interview_slots(session: Session, application_id: int) -> list[d
     return _build_internal_slots(session)
 
 
+def list_public_hr_interview_slots(session: Session, application_id: int) -> list[datetime]:
+    # Backward-compatible alias for older route imports after the self-scheduling expansion.
+    return list_public_interview_slots(session, application_id)
+
+
 def validate_public_interview_slot(session: Session, application_id: int, scheduled_at: datetime) -> None:
     normalized_requested = _to_utc_without_seconds(scheduled_at)
     available_starts = {
