@@ -24,7 +24,6 @@ from app.schemas.application import (
 )
 from app.services import crud
 from app.services.application_service import create_application
-from app.services.calendar_availability_service import list_public_hr_interview_slots
 from app.services.application_workflow_service import (
     advance_stage,
     delete_application_from_pipeline,
