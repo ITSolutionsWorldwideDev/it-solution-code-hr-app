@@ -39,6 +39,18 @@ def build_website_pdf_output_dir() -> Path:
     return resolve_path("storage/website-job-pdfs")
 
 
+def build_resume_upload_dir() -> Path:
+    configured = os.getenv("RESUME_UPLOAD_DIR")
+    if configured:
+        return resolve_path(configured)
+
+    # Vercel serverless functions can only write to /tmp at runtime.
+    if os.getenv("VERCEL") == "1":
+        return Path("/tmp/resumes")
+
+    return resolve_path("storage/resumes")
+
+
 def build_database_url() -> str:
     database_url = os.getenv("DATABASE_URL")
     if database_url:
@@ -125,7 +137,7 @@ class Settings(BaseModel):
     public_schedule_slot_minutes: int = int(os.getenv("PUBLIC_SCHEDULE_SLOT_MINUTES", "30"))
     public_schedule_business_start_hour: int = int(os.getenv("PUBLIC_SCHEDULE_BUSINESS_START_HOUR", "9"))
     public_schedule_business_end_hour: int = int(os.getenv("PUBLIC_SCHEDULE_BUSINESS_END_HOUR", "17"))
-    resume_upload_dir: Path = resolve_path(os.getenv("RESUME_UPLOAD_DIR", "storage/resumes"))
+    resume_upload_dir: Path = build_resume_upload_dir()
     website_pdf_output_dir: Path = build_website_pdf_output_dir()
     cors_origins: list[str] = [
         origin.strip()
