@@ -715,25 +715,8 @@ export function CandidateDatabasePageClient() {
             )}
           </div>
 
-          <div className="flex flex-col gap-4 px-1 pb-2 text-[1rem] text-[#b9c5d2] md:flex-row md:items-center md:justify-between">
-            <p>
-              Showing 1-{Math.min(filteredRecords.length, 10)} of {filteredRecords.length.toLocaleString("en-US")} candidates
-            </p>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                className="rounded-2xl border border-white/10 px-5 py-3 text-[#657483] opacity-55"
-                disabled
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="rounded-2xl border border-white/12 px-5 py-3 text-white transition hover:bg-white/5"
-              >
-                Next
-              </button>
-            </div>
+          <div className="px-1 pb-2 text-[1rem] text-[#b9c5d2]">
+            <p>Showing all {filteredRecords.length.toLocaleString("en-US")} candidates</p>
           </div>
         </div>
       </div>
