@@ -31,6 +31,9 @@ type StoredCandidateViewModel = StoredCandidateRecord & {
   vacancyLabelTitle: string;
 };
 
+const BULK_PARSE_SESSION_STORAGE_KEY = "itsw-bulk-parse-session-results";
+const BULK_PARSE_SESSION_IDS_STORAGE_KEY = "itsw-bulk-parse-session-candidate-ids";
+const BULK_PARSE_SELECTED_CANDIDATE_STORAGE_KEY = "itsw-bulk-parse-selected-candidate";
 
 function parseApiDate(value: string) {
   const normalizedValue =
@@ -537,6 +540,81 @@ export function CandidateUploadPanel() {
   const acceptedFileTypes =
     ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const storedSessionResults = window.localStorage.getItem(BULK_PARSE_SESSION_STORAGE_KEY);
+      const storedSessionIds = window.localStorage.getItem(BULK_PARSE_SESSION_IDS_STORAGE_KEY);
+      const storedSelectedCandidateId = window.localStorage.getItem(BULK_PARSE_SELECTED_CANDIDATE_STORAGE_KEY);
+
+      if (storedSessionResults) {
+        const parsedResults = JSON.parse(storedSessionResults) as StoredCandidateRecord[];
+        if (Array.isArray(parsedResults) && parsedResults.length > 0) {
+          setRecentParsedCandidates(parsedResults);
+          setStoredCandidates(parsedResults);
+        }
+      }
+
+      if (storedSessionIds) {
+        const parsedIds = JSON.parse(storedSessionIds) as string[];
+        if (Array.isArray(parsedIds)) {
+          setSessionCandidateIds(parsedIds);
+        }
+      }
+
+      if (storedSelectedCandidateId) {
+        setSelectedCandidateId(storedSelectedCandidateId);
+      }
+    } catch {
+      // Ignore malformed client-side persistence state.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (recentParsedCandidates.length > 0) {
+      window.localStorage.setItem(
+        BULK_PARSE_SESSION_STORAGE_KEY,
+        JSON.stringify(recentParsedCandidates)
+      );
+    } else {
+      window.localStorage.removeItem(BULK_PARSE_SESSION_STORAGE_KEY);
+    }
+  }, [recentParsedCandidates]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (sessionCandidateIds.length > 0) {
+      window.localStorage.setItem(
+        BULK_PARSE_SESSION_IDS_STORAGE_KEY,
+        JSON.stringify(sessionCandidateIds)
+      );
+    } else {
+      window.localStorage.removeItem(BULK_PARSE_SESSION_IDS_STORAGE_KEY);
+    }
+  }, [sessionCandidateIds]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (selectedCandidateId) {
+      window.localStorage.setItem(BULK_PARSE_SELECTED_CANDIDATE_STORAGE_KEY, selectedCandidateId);
+    } else {
+      window.localStorage.removeItem(BULK_PARSE_SELECTED_CANDIDATE_STORAGE_KEY);
+    }
+  }, [selectedCandidateId]);
+
   const loadCandidatesByIds = async (candidateIds: string[]) => {
     if (candidateIds.length === 0) {
       return [] as CandidateApiRecord[];
@@ -717,6 +795,13 @@ export function CandidateUploadPanel() {
     setBatchFailures([]);
     setRecentParsedCandidates([]);
     setSessionCandidateIds([]);
+    setSelectedCandidateId(null);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(BULK_PARSE_SESSION_STORAGE_KEY);
+      window.localStorage.removeItem(BULK_PARSE_SESSION_IDS_STORAGE_KEY);
+      window.localStorage.removeItem(BULK_PARSE_SELECTED_CANDIDATE_STORAGE_KEY);
+    }
   };
 
   const handleViewParsedCandidate = (candidateId: number) => {
