@@ -490,6 +490,26 @@ export function CandidateUploadPanel() {
   const acceptedFileTypes =
     ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
+  const loadCandidatesByIds = async (candidateIds: string[]) => {
+    if (candidateIds.length === 0) {
+      return [] as CandidateApiRecord[];
+    }
+
+    const fetchedCandidates = await Promise.all(
+      candidateIds.map(async (candidateId) => {
+        try {
+          return await apiRequest<CandidateApiRecord>({
+            path: `/candidates/${candidateId}`,
+          });
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    return fetchedCandidates.filter((candidate): candidate is CandidateApiRecord => candidate !== null);
+  };
+
   const loadStoredCandidates = async (
     selectedVacancyId?: string,
     vacancyRecords?: VacancyApiRecord[],
@@ -511,18 +531,25 @@ export function CandidateUploadPanel() {
           : Promise.resolve([] as CandidateMatchApiRecord[]),
       ]);
 
+      const preservedIdList = preservedIds ?? sessionCandidateIds;
+      const missingPreservedIds = preservedIdList.filter(
+        (candidateId) => !candidateResponse.some((candidate) => String(candidate.id) === candidateId)
+      );
+      const fetchedPreservedCandidates = await loadCandidatesByIds(missingPreservedIds);
+      const mergedCandidates = [...candidateResponse, ...fetchedPreservedCandidates];
+
       const vacancy = vacanciesForLookup.find((record) => String(record.id) === vacancyFilter);
       const scopedMatches = matchResponse.map((match) => ({
         ...match,
         vacancy_title: vacancy?.title ?? `Vacancy #${match.vacancy_id}`,
       }));
       const nextCandidates = buildStoredCandidates(
-        candidateResponse,
+        mergedCandidates,
         applicationResponse,
         scopedMatches,
         vacanciesForLookup,
         vacancyFilter,
-        preservedIds ?? sessionCandidateIds
+        preservedIdList
       );
       setStoredCandidates(nextCandidates);
       setDetailErrorMessage(null);
