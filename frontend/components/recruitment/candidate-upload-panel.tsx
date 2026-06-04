@@ -715,7 +715,7 @@ export function CandidateUploadPanel() {
                 ? `${files.length} file${files.length === 1 ? "" : "s"} selected for direct parsing`
                 : "Select one or many resumes to import immediately. PDF, DOCX, and DOC are supported."}
             </p>
-            <p className="mt-2 text-[0.72rem] text-[#6f8291]">
+            <p className="mt-2 text-xs text-[#6f8291]">
               Recommended: upload resumes in batches of 25 to 50 files. Larger uploads may time out or fail during parsing.
             </p>
           </FormField>
