@@ -30,11 +30,10 @@ from app.services.ai_service import extract_pdf_content_from_bytes, extract_pdf_
 from app.services.candidate_service import (
     backfill_candidate_hidden_potentials,
     create_candidate_from_cv,
-    create_candidate_from_cv_fast,
     get_candidate_role_suggestions,
     update_candidate_from_cv,
 )
-from app.services.cv_pipeline_service import extract_resume_text, store_resume_upload
+from app.services.cv_pipeline_service import create_candidate_from_stored_resume, store_resume_upload
 from app.services import crud
 
 
@@ -357,49 +356,27 @@ async def manual_import_candidates(
         original_filename = file.filename or "unknown-file"
         try:
             stored_resume = await store_resume_upload(file)
-            extracted_text, parse_status = extract_resume_text(stored_resume)
-            if parse_status == "unsupported_format" or not extracted_text:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="DOC resumes are not supported for direct bulk parsing. Please use PDF or DOCX.",
-                )
-
-            pdf_content = {
-                "filename": stored_resume.filename,
-                "original_filename": stored_resume.original_filename,
-                "content_type": stored_resume.content_type,
-                "file_size_bytes": stored_resume.file_size_bytes,
-                "file_checksum": stored_resume.file_checksum,
-                "resume_path": stored_resume.resume_path,
-                "extracted_text": extracted_text,
-                "page_count": None,
-            }
-            candidate, _, parsed_candidate, match, _, matching = create_candidate_from_cv_fast(
+            result = create_candidate_from_stored_resume(
                 session=session,
-                pdf_content=pdf_content,
                 vacancy_id=vacancy_id,
-                submitted_email=None,
+                source="manual_upload",
             )
-            score = match.match_score if match else parsed_candidate.get("match_score")
-            parsed_data = dict(candidate.parsed_data or {})
-            if matching:
-                parsed_data["matching"] = matching
             results.append(
                 CandidateManualImportItem(
                     filename=stored_resume.original_filename,
-                    parse_status="parsed",
-                    match_status="matched" if match else "potential_fit",
-                    candidate_id=candidate.id,
-                    candidate_name=candidate.name,
-                    candidate_email=candidate.email,
-                    ai_summary=candidate.ai_summary,
-                    skills=candidate.skills,
-                    experience=candidate.experience,
-                    education=candidate.education,
-                    parsed_data=parsed_data,
-                    matched_job_id=match.vacancy_id if match else None,
-                    score=score,
-                    error_message=None,
+                    parse_status=result.parse_status,
+                    match_status=result.match_status,
+                    candidate_id=result.candidate.id,
+                    candidate_name=result.candidate.name,
+                    candidate_email=result.candidate.email,
+                    ai_summary=result.candidate.ai_summary,
+                    skills=result.candidate.skills,
+                    experience=result.candidate.experience,
+                    education=result.candidate.education,
+                    parsed_data=result.candidate.parsed_data,
+                    matched_job_id=result.matched_job_id,
+                    score=result.score,
+                    error_message=result.error_message,
                 )
             )
         except HTTPException as exc:
