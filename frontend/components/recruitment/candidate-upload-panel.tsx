@@ -679,9 +679,6 @@ export function CandidateUploadPanel() {
       );
       const resolvedCandidates = nextCandidates.length > 0 ? nextCandidates : fallbackRecords ?? [];
       setStoredCandidates(resolvedCandidates);
-      if (resolvedCandidates.length > 0) {
-        setRecentParsedCandidates(resolvedCandidates);
-      }
       setDetailErrorMessage(null);
     } catch (error) {
       setStoredCandidates([]);
@@ -754,13 +751,13 @@ export function CandidateUploadPanel() {
   }, [sessionCandidateIds, storedCandidates]);
 
   const renderedCandidates = useMemo(() => {
-    if (visibleCandidates.length > 0) {
-      return visibleCandidates;
+    if (recentParsedCandidates.length > 0) {
+      return [...recentParsedCandidates].sort(
+        (left, right) => parseApiDate(right.uploadedAt).getTime() - parseApiDate(left.uploadedAt).getTime()
+      );
     }
 
-    return [...recentParsedCandidates].sort(
-      (left, right) => parseApiDate(right.uploadedAt).getTime() - parseApiDate(left.uploadedAt).getTime()
-    );
+    return visibleCandidates;
   }, [recentParsedCandidates, visibleCandidates]);
 
   const selectedCandidate = useMemo(
