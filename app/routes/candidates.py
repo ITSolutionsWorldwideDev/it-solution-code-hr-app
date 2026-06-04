@@ -358,6 +358,7 @@ async def manual_import_candidates(
             stored_resume = await store_resume_upload(file)
             result = create_candidate_from_stored_resume(
                 session=session,
+                stored_resume=stored_resume,
                 vacancy_id=vacancy_id,
                 source="manual_upload",
             )
