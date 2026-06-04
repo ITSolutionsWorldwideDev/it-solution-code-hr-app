@@ -27,7 +27,11 @@ app.add_middleware(
 )
 
 settings.website_pdf_output_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/website-assets", StaticFiles(directory=settings.website_pdf_output_dir.parent), name="website-assets")
+app.mount(
+    "/website-assets/job-pdfs",
+    StaticFiles(directory=settings.website_pdf_output_dir),
+    name="website-job-pdfs",
+)
 
 
 @app.on_event("startup")
