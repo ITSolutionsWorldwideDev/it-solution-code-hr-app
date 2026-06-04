@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -13,6 +14,9 @@ from app.config import settings
 from app.services.ai_service import parse_candidate_text, sanitize_text
 
 logger = logging.getLogger(__name__)
+
+GEMINI_RETRYABLE_STATUS_CODES = {429, 500, 503}
+GEMINI_MAX_RETRIES = 3
 
 
 class RoleSuggestionResult(BaseModel):
@@ -244,53 +248,61 @@ def _generate_gemini_text(prompt: str) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
         attempted_models.append(model_name)
 
-        try:
-            response = requests.post(
-                url,
-                params={"key": settings.gemini_api_key},
-                json={
-                    "contents": [
-                        {
-                            "parts": [
-                                {
-                                    "text": prompt,
-                                }
-                            ]
-                        }
-                    ]
-                },
-                timeout=60,
-            )
-        except requests.RequestException as exc:
-            message = sanitize_text(str(exc)) or repr(exc)
-            errors.append(f"{model_name}: {message}")
-            continue
-
-        if not response.ok:
-            detail = sanitize_text(response.text) or f"status {response.status_code}"
-            errors.append(f"{model_name}: {detail}")
-            continue
-
-        payload = response.json()
-        candidates = payload.get("candidates")
-        if not isinstance(candidates, list):
-            errors.append(f"{model_name}: invalid candidates payload")
-            continue
-
-        for candidate in candidates:
-            content = candidate.get("content") if isinstance(candidate, dict) else None
-            parts = content.get("parts") if isinstance(content, dict) else None
-            if not isinstance(parts, list):
+        for attempt in range(1, GEMINI_MAX_RETRIES + 1):
+            try:
+                response = requests.post(
+                    url,
+                    params={"key": settings.gemini_api_key},
+                    json={
+                        "contents": [
+                            {
+                                "parts": [
+                                    {
+                                        "text": prompt,
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    timeout=60,
+                )
+            except requests.RequestException as exc:
+                message = sanitize_text(str(exc)) or repr(exc)
+                if attempt < GEMINI_MAX_RETRIES:
+                    time.sleep(1.5 * attempt)
+                    continue
+                errors.append(f"{model_name}: {message}")
                 continue
-            text = "".join(
-                part.get("text", "")
-                for part in parts
-                if isinstance(part, dict) and isinstance(part.get("text"), str)
-            ).strip()
-            if text:
-                return text
 
-        errors.append(f"{model_name}: no text content returned")
+            if not response.ok:
+                detail = sanitize_text(response.text) or f"status {response.status_code}"
+                if response.status_code in GEMINI_RETRYABLE_STATUS_CODES and attempt < GEMINI_MAX_RETRIES:
+                    time.sleep(1.5 * attempt)
+                    continue
+                errors.append(f"{model_name}: {detail}")
+                break
+
+            payload = response.json()
+            candidates = payload.get("candidates")
+            if not isinstance(candidates, list):
+                errors.append(f"{model_name}: invalid candidates payload")
+                break
+
+            for candidate in candidates:
+                content = candidate.get("content") if isinstance(candidate, dict) else None
+                parts = content.get("parts") if isinstance(content, dict) else None
+                if not isinstance(parts, list):
+                    continue
+                text = "".join(
+                    part.get("text", "")
+                    for part in parts
+                    if isinstance(part, dict) and isinstance(part.get("text"), str)
+                ).strip()
+                if text:
+                    return text
+
+            errors.append(f"{model_name}: no text content returned")
+            break
 
     diagnostic = "; ".join(errors[-3:]) or "unknown Gemini error"
     logger.warning("Gemini text generation failed. Attempted models: %s. Errors: %s", attempted_models, diagnostic)
