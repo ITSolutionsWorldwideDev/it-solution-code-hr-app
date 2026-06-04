@@ -177,6 +177,20 @@ def _extract_json_object(raw_text: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _normalize_matching_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return payload
+
+    normalized = dict(payload)
+    for key in ("applied_match", "potential_match"):
+        match = normalized.get(key)
+        if isinstance(match, dict) and "vacancy_id" in match and match["vacancy_id"] is not None:
+            match = dict(match)
+            match["vacancy_id"] = str(match["vacancy_id"])
+            normalized[key] = match
+    return normalized
+
+
 def _generate_vertex_text(prompt: str) -> str:
     if settings.gemini_api_key:
         return _generate_gemini_text(prompt)
@@ -663,7 +677,7 @@ def _generate_matching_result_with_openai(
 
     try:
         raw_text = _generate_vertex_text(f"{system_prompt}\n\n{user_prompt}")
-        payload = _extract_json_object(raw_text)
+        payload = _normalize_matching_payload(_extract_json_object(raw_text))
         parsed = CandidateMatchingResult.model_validate(payload) if payload else None
     except Exception as exc:
         if require_ai:
