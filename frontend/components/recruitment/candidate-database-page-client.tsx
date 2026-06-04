@@ -493,7 +493,7 @@ export function CandidateDatabasePageClient() {
         </div>
       </div>
 
-      {activeTab === "bulk_parse" ? <CandidateUploadPanel /> : null}
+      {activeTab === "bulk_parse" ? <CandidateUploadPanel onCandidatesImported={load} /> : null}
 
       {activeTab !== "database" ? null : (
         <>

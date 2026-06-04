@@ -520,7 +520,11 @@ function sendBrowserNotification(title: string, body: string) {
   }
 }
 
-export function CandidateUploadPanel() {
+type CandidateUploadPanelProps = {
+  onCandidatesImported?: () => void | Promise<void>;
+};
+
+export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPanelProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const storedCandidatesSectionRef = useRef<HTMLDivElement | null>(null);
   const [vacancies, setVacancies] = useState<VacancyApiRecord[]>([]);
@@ -861,6 +865,7 @@ export function CandidateUploadPanel() {
         setStoredCandidates(immediateStoredCandidates);
       }
       await loadStoredCandidates(vacancyId, undefined, parsedCandidateIds, immediateStoredCandidates);
+      await onCandidatesImported?.();
       if (parsedCandidateIds.length > 0) {
         setSelectedCandidateId(parsedCandidateIds[0]);
       }
