@@ -528,6 +528,7 @@ export function CandidateUploadPanel() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [batchFailures, setBatchFailures] = useState<Array<{ filename: string; error: string }>>([]);
   const [storedCandidates, setStoredCandidates] = useState<StoredCandidateRecord[]>([]);
+  const [recentParsedCandidates, setRecentParsedCandidates] = useState<StoredCandidateRecord[]>([]);
   const [storedCandidatesLoading, setStoredCandidatesLoading] = useState(false);
   const [sessionCandidateIds, setSessionCandidateIds] = useState<string[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
@@ -598,7 +599,11 @@ export function CandidateUploadPanel() {
         vacancyFilter,
         preservedIdList
       );
-      setStoredCandidates(nextCandidates.length > 0 ? nextCandidates : fallbackRecords ?? []);
+      const resolvedCandidates = nextCandidates.length > 0 ? nextCandidates : fallbackRecords ?? [];
+      setStoredCandidates(resolvedCandidates);
+      if (resolvedCandidates.length > 0) {
+        setRecentParsedCandidates(resolvedCandidates);
+      }
       setDetailErrorMessage(null);
     } catch (error) {
       setStoredCandidates([]);
@@ -670,9 +675,19 @@ export function CandidateUploadPanel() {
     });
   }, [sessionCandidateIds, storedCandidates]);
 
+  const renderedCandidates = useMemo(() => {
+    if (visibleCandidates.length > 0) {
+      return visibleCandidates;
+    }
+
+    return [...recentParsedCandidates].sort(
+      (left, right) => parseApiDate(right.uploadedAt).getTime() - parseApiDate(left.uploadedAt).getTime()
+    );
+  }, [recentParsedCandidates, visibleCandidates]);
+
   const selectedCandidate = useMemo(
-    () => visibleCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? null,
-    [selectedCandidateId, visibleCandidates]
+    () => renderedCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? null,
+    [selectedCandidateId, renderedCandidates]
   );
   const selectedCandidateView = useMemo(
     () => buildStoredCandidateViewModel(selectedCandidate),
@@ -680,17 +695,17 @@ export function CandidateUploadPanel() {
   );
 
   useEffect(() => {
-    if (visibleCandidates.length === 0) {
+    if (renderedCandidates.length === 0) {
       if (selectedCandidateId !== null) {
         setSelectedCandidateId(null);
       }
       return;
     }
 
-    if (!selectedCandidateId || !visibleCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
-      setSelectedCandidateId(visibleCandidates[0].id);
+    if (!selectedCandidateId || !renderedCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
+      setSelectedCandidateId(renderedCandidates[0].id);
     }
-  }, [selectedCandidateId, visibleCandidates]);
+  }, [selectedCandidateId, renderedCandidates]);
 
   const handleClearParsingArea = () => {
     if (fileInputRef.current) {
@@ -700,6 +715,8 @@ export function CandidateUploadPanel() {
     setErrorMessage(null);
     setSuccessMessage(null);
     setBatchFailures([]);
+    setRecentParsedCandidates([]);
+    setSessionCandidateIds([]);
   };
 
   const handleViewParsedCandidate = (candidateId: number) => {
@@ -751,6 +768,7 @@ export function CandidateUploadPanel() {
         vacancyId
       );
       setSessionCandidateIds(parsedCandidateIds);
+      setRecentParsedCandidates(immediateStoredCandidates);
       const successCount = response.results.filter((item) => item.parse_status !== "failed").length;
       const nextSuccessMessage = `${successCount} CV${
         successCount === 1 ? "" : "s"
@@ -899,7 +917,7 @@ export function CandidateUploadPanel() {
           <div className="mt-5 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-5 text-sm text-[#95a8b8]">
             Loading stored candidates...
           </div>
-        ) : visibleCandidates.length === 0 ? (
+        ) : renderedCandidates.length === 0 ? (
           <div className="mt-5 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-5 text-sm text-[#95a8b8]">
             No resumes are being shown right now. Parse a new CV batch to display the latest results here.
           </div>
@@ -913,7 +931,7 @@ export function CandidateUploadPanel() {
                 <span>Parsed</span>
               </div>
               <div className="divide-y divide-white/8">
-                {visibleCandidates.map((candidate) => (
+                {renderedCandidates.map((candidate) => (
                   <button
                     key={candidate.rowKey}
                     type="button"

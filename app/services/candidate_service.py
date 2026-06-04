@@ -16,7 +16,10 @@ from app.schemas.candidate import CandidateCreate
 from app.services.ai_service import (
     apply_parsed_data_to_candidate,
     build_parsed_data,
+    calculate_match_score,
     extract_pdf_content,
+    generate_ai_summary,
+    parse_candidate_text,
     sanitize_payload,
     sanitize_text,
 )
@@ -144,6 +147,100 @@ def update_candidate_from_cv(
         role_suggestions,
         parse_result.matching_result.model_dump() if parse_result.matching_result else None,
     )
+
+
+def create_candidate_from_cv_fast(
+    session: Session,
+    pdf_content: dict,
+    vacancy_id: int | None = None,
+    submitted_email: str | None = None,
+) -> tuple[Candidate, Vacancy | None, dict, CandidateMatch | None, list[CandidateRoleSuggestion], dict | None]:
+    vacancy = get_or_404(session, Vacancy, vacancy_id) if vacancy_id else None
+    cv_text = pdf_content["extracted_text"]
+    parsed_candidate = sanitize_payload(parse_candidate_text(cv_text))
+    if submitted_email:
+        parsed_candidate["email"] = sanitize_text(submitted_email) or parsed_candidate.get("email")
+
+    matched_skills = _compute_matched_skills(parsed_candidate, vacancy)
+    match_score = calculate_match_score(parsed_candidate, vacancy)
+    fit_explanation = _build_fast_fit_explanation(vacancy, matched_skills)
+    ai_summary = generate_ai_summary(parsed_candidate, vacancy)
+
+    parsed_candidate["ai_summary"] = ai_summary
+    parsed_candidate["match_score"] = match_score
+    parsed_candidate["fit_explanation"] = fit_explanation
+
+    parsed_data = build_parsed_data(pdf_content, parsed_candidate, vacancy)
+    parsed_data["fit_explanation"] = fit_explanation
+    parsed_data["formatted_resume_preview"] = sanitize_text(cv_text[:5000]) or cv_text[:5000]
+    if vacancy:
+        parsed_data["matching"] = sanitize_payload(
+            {
+                "applied_match": {
+                    "vacancy_id": str(vacancy.id),
+                    "role_name": vacancy.title,
+                    "score": match_score,
+                }
+            }
+        )
+
+    existing_candidate = _find_existing_candidate(
+        session,
+        email=parsed_candidate.get("email"),
+        resume_path=pdf_content.get("resume_path"),
+        file_checksum=pdf_content.get("file_checksum"),
+    )
+
+    if existing_candidate is not None:
+        apply_parsed_data_to_candidate(
+            existing_candidate,
+            parsed_candidate,
+            ai_summary,
+            match_score,
+            parsed_data,
+        )
+        session.add(existing_candidate)
+        session.commit()
+        session.refresh(existing_candidate)
+        applied_match = _upsert_fast_candidate_match(
+            session=session,
+            candidate_id=existing_candidate.id,
+            vacancy=vacancy,
+            match_score=match_score,
+            ai_summary=ai_summary,
+            fit_explanation=fit_explanation,
+            matched_skills=matched_skills,
+        )
+        session.refresh(existing_candidate)
+        return existing_candidate, vacancy, parsed_candidate, applied_match, [], parsed_data.get("matching")
+
+    payload = CandidateCreate(
+        name=sanitize_text(parsed_candidate.get("name")) or "Unknown Candidate",
+        email=sanitize_text(parsed_candidate.get("email")) or _build_resume_fallback_email(pdf_content),
+        phone=sanitize_text(parsed_candidate.get("phone")),
+        skills=parsed_candidate.get("skills", []),
+        experience=sanitize_text(parsed_candidate.get("experience")),
+        education=sanitize_text(parsed_candidate.get("education")),
+        ai_summary=sanitize_text(ai_summary),
+        match_score=match_score,
+        parsed_data=parsed_data,
+    )
+    candidate = Candidate(**payload.model_dump())
+    session.add(candidate)
+    session.commit()
+    session.refresh(candidate)
+
+    applied_match = _upsert_fast_candidate_match(
+        session=session,
+        candidate_id=candidate.id,
+        vacancy=vacancy,
+        match_score=match_score,
+        ai_summary=ai_summary,
+        fit_explanation=fit_explanation,
+        matched_skills=matched_skills,
+    )
+    session.refresh(candidate)
+    return candidate, vacancy, parsed_candidate, applied_match, [], parsed_data.get("matching")
 
 
 def get_candidate_role_suggestions(session: Session, candidate_id: int) -> list[CandidateRoleSuggestion]:
@@ -354,6 +451,61 @@ def _build_resume_fallback_email(pdf_content: dict) -> str:
     seed = pdf_content.get("resume_path") or pdf_content.get("filename") or "resume"
     checksum = adler32(seed.encode("utf-8")) & 0xFFFFFFFF
     return f"candidate-{checksum}@placeholder.local"
+
+
+def _compute_matched_skills(parsed_candidate: dict, vacancy: Vacancy | None) -> list[str]:
+    if vacancy is None:
+        return []
+
+    vacancy_skills = {skill.lower() for skill in (vacancy.required_skills or []) if isinstance(skill, str)}
+    candidate_skills = [
+        skill for skill in parsed_candidate.get("skills", []) if isinstance(skill, str) and skill.lower() in vacancy_skills
+    ]
+    return candidate_skills[:10]
+
+
+def _build_fast_fit_explanation(vacancy: Vacancy | None, matched_skills: list[str]) -> str:
+    if vacancy is None:
+        return "Fast parse completed without a linked vacancy."
+    if matched_skills:
+        return f"Fast parse identified overlap with {vacancy.title}: {', '.join(matched_skills[:6])}."
+    return f"Fast parse completed for {vacancy.title}, but no strong direct skill overlap was identified."
+
+
+def _upsert_fast_candidate_match(
+    *,
+    session: Session,
+    candidate_id: int,
+    vacancy: Vacancy | None,
+    match_score: float,
+    ai_summary: str,
+    fit_explanation: str,
+    matched_skills: list[str],
+) -> CandidateMatch | None:
+    if vacancy is None:
+        return None
+
+    statement = select(CandidateMatch).where(
+        CandidateMatch.candidate_id == candidate_id,
+        CandidateMatch.vacancy_id == vacancy.id,
+    )
+    match = session.exec(statement).first()
+    if match is None:
+        match = CandidateMatch(
+            candidate_id=candidate_id,
+            vacancy_id=vacancy.id,
+            match_score=match_score,
+        )
+
+    match.match_score = match_score
+    match.ai_summary = ai_summary
+    match.fit_explanation = fit_explanation
+    match.matched_skills = matched_skills
+
+    session.add(match)
+    session.commit()
+    session.refresh(match)
+    return match
 
 
 def _find_existing_candidate_by_email(session: Session, email: str | None) -> Candidate | None:
