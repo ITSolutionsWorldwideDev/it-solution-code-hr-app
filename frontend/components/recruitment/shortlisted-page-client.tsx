@@ -332,6 +332,26 @@ function isFromTalentPool(application: ApplicationApiRecord) {
   return parsedData?.shortlist_source === "talent_pool";
 }
 
+function isDirectVacancyApplication(
+  application: ApplicationApiRecord,
+  candidate: CandidateApiRecord | null,
+) {
+  if (isFromTalentPool(application)) {
+    return false;
+  }
+
+  const parsedData =
+    candidate?.parsed_data && typeof candidate.parsed_data === "object"
+      ? (candidate.parsed_data as Record<string, unknown>)
+      : null;
+
+  if (parsedData?.source !== "job_application") {
+    return false;
+  }
+
+  return String(parsedData?.source_reference_id ?? "") === String(application.id);
+}
+
 function roleLabel(
   candidate: CandidateApiRecord | null,
   vacancyTitle: string | undefined,
@@ -602,6 +622,15 @@ export function ShortlistedPageClient() {
       );
     });
   }, [applications, candidates, selectedIds, sortMode, statusFilter]);
+
+  const directApplicantCount = useMemo(
+    () =>
+      applications.filter((application) => {
+        const candidate = candidates.find((item) => item.id === application.candidate_id) ?? null;
+        return isDirectVacancyApplication(application, candidate);
+      }).length,
+    [applications, candidates],
+  );
 
   const selectedRecord = useMemo(
     () => shortlistedCandidates.find(({ application }) => application.id === selectedApplicationId) ?? null,
@@ -1242,7 +1271,9 @@ export function ShortlistedPageClient() {
           </div>
         ) : shortlistedCandidates.length === 0 ? (
           <div className="rounded-[24px] border border-white/12 bg-black px-5 py-8 text-base text-white/65">
-            No shortlisted candidates yet. Generate the Top 10 shortlist for the selected vacancy first.
+            {directApplicantCount === 0 && potentialTalent.length > 0
+              ? "There aren't any candidates that have applied on this vacancy. Here are 5 candidates from our Talent pool."
+              : "No shortlisted candidates yet. Generate the Top 10 shortlist for the selected vacancy first."}
           </div>
         ) : (
           <div className="space-y-6">

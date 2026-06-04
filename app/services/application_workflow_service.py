@@ -65,13 +65,31 @@ def rank_applications_for_vacancy(session: Session, vacancy_id: int) -> list[App
 
 
 def generate_shortlist(session: Session, vacancy_id: int, changed_by_id: int | None = None) -> list[Application]:
-    _ensure_shortlist_candidates(session, vacancy_id)
-    applications = rank_applications_for_vacancy(session, vacancy_id)
+    all_applications = list_vacancy_applications(session, vacancy_id)
+    applications = [application for application in all_applications if _is_direct_vacancy_application(session, application)]
+    talent_pool_applications = [
+        application for application in all_applications if _is_talent_pool_shortlist_application(application)
+    ]
+    non_direct_generated = [
+        application
+        for application in all_applications
+        if application not in applications and application not in talent_pool_applications
+    ]
     changer = get_or_404(session, User, changed_by_id) if changed_by_id else None
 
-    for index, application in enumerate(applications, start=1):
+    ranked = sorted(
+        applications,
+        key=lambda item: item.ranking_score if item.ranking_score is not None else (item.match_score or 0.0),
+        reverse=True,
+    )
+
+    for index, application in enumerate(ranked, start=1):
         previous_stage = application.stage
         has_confirmed_invite = application.invite_sent_at is not None
+
+        application.ranking_position = index
+        if application.ranking_score is None:
+            application.ranking_score = application.match_score
 
         if index <= PRIMARY_SHORTLIST_SIZE:
             application.shortlist_bucket = ShortlistBucket.PRIMARY
@@ -108,9 +126,19 @@ def generate_shortlist(session: Session, vacancy_id: int, changed_by_id: int | N
                 notes="Shortlist generated automatically from ranking.",
             )
 
+    for application in non_direct_generated:
+        if application.invite_sent_at is not None:
+            continue
+        application.shortlist_bucket = ShortlistBucket.NONE
+        application.invite_selected = False
+        application.ranking_position = None
+        application.stage = ApplicationStage.PARSED
+        application.current_owner_role = UserRole.HR
+        session.add(application)
+
     session.commit()
-    _refresh_many(session, applications)
-    return applications
+    _refresh_many(session, ranked)
+    return ranked
 
 
 def _ensure_shortlist_candidates(session: Session, vacancy_id: int) -> None:
@@ -162,6 +190,27 @@ def _ensure_shortlist_candidates(session: Session, vacancy_id: int) -> None:
 
     if created:
         session.commit()
+
+
+def _is_talent_pool_shortlist_application(application: Application) -> bool:
+    parsed_data = application.parsed_data or {}
+    return parsed_data.get("shortlist_source") == "talent_pool"
+
+
+def _is_direct_vacancy_application(session: Session, application: Application) -> bool:
+    if _is_talent_pool_shortlist_application(application):
+        return False
+
+    candidate = session.get(Candidate, application.candidate_id)
+    if candidate is None:
+        return False
+
+    parsed_data = candidate.parsed_data or {}
+    if parsed_data.get("source") != "job_application":
+        return False
+
+    source_reference_id = parsed_data.get("source_reference_id")
+    return str(source_reference_id) == str(application.id)
 
 
 def update_shortlist_bucket(
