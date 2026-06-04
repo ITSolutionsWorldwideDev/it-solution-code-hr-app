@@ -42,7 +42,7 @@ def create_candidate_from_cv(
     parsed_data = build_parsed_data(pdf_content, parsed_candidate, vacancy)
     if parse_result.matching_result:
         parsed_data["matching"] = sanitize_payload(parse_result.matching_result.model_dump())
-    parsed_data["formatted_resume_preview"] = format_resume_preview(cv_text)
+    parsed_data["formatted_resume_preview"] = format_resume_preview(cv_text, require_ai=True)
     existing_candidate = _find_existing_candidate(
         session,
         email=parsed_candidate.get("email"),
@@ -123,7 +123,7 @@ def update_candidate_from_cv(
     parsed_data = build_parsed_data(pdf_content, parsed_candidate, vacancy)
     if parse_result.matching_result:
         parsed_data["matching"] = sanitize_payload(parse_result.matching_result.model_dump())
-    parsed_data["formatted_resume_preview"] = format_resume_preview(cv_text)
+    parsed_data["formatted_resume_preview"] = format_resume_preview(cv_text, require_ai=True)
 
     apply_parsed_data_to_candidate(
         candidate,

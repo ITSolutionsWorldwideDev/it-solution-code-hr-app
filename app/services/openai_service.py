@@ -611,6 +611,7 @@ def _generate_matching_result_with_openai(
     applied_match: VacancyPortfolioMatchResult | None,
     potential_match: VacancyPortfolioMatchResult | None,
     vacancy_matches: list[VacancyPortfolioMatchResult],
+    require_ai: bool = False,
 ) -> CandidateMatchingResult:
     fallback = _build_fallback_matching_result(
         parsed_candidate=parsed_candidate,
@@ -665,10 +666,20 @@ def _generate_matching_result_with_openai(
         payload = _extract_json_object(raw_text)
         parsed = CandidateMatchingResult.model_validate(payload) if payload else None
     except Exception as exc:
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Candidate matching AI failed: {sanitize_text(str(exc)) or repr(exc)}",
+            ) from exc
         logger.warning("Candidate matching AI failed; using fallback. Reason: %s", exc)
         return fallback
 
     if not parsed:
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Candidate matching AI returned an invalid response.",
+            )
         return fallback
 
     if parsed.applied_match and fallback.applied_match:
@@ -770,7 +781,7 @@ def parse_candidate_with_openai(
     vacancy_context: dict[str, Any] | None = None,
     active_vacancies: list[dict[str, Any]] | None = None,
 ) -> CandidateParseResult:
-    parsed_candidate = _extract_candidate_details(cv_text)
+    parsed_candidate = _extract_candidate_details(cv_text, require_ai=True)
     candidate_signals = _collect_candidate_signals(parsed_candidate, cv_text)
     scoring_pool = list(active_vacancies or [])
     if vacancy_context and not any(item.get("id") == vacancy_context.get("id") for item in scoring_pool):
@@ -849,6 +860,7 @@ def parse_candidate_with_openai(
         applied_match=applied_portfolio_match,
         potential_match=potential_portfolio_match,
         vacancy_matches=vacancy_matches,
+        require_ai=True,
     )
 
     return CandidateParseResult(
@@ -913,9 +925,14 @@ def _build_candidate_summary(
     return sanitize_text(summary) or ""
 
 
-def _extract_candidate_details(cv_text: str) -> dict[str, Any]:
+def _extract_candidate_details(cv_text: str, *, require_ai: bool = False) -> dict[str, Any]:
     fallback = parse_candidate_text(cv_text)
     if not settings.vertex_project_id and not settings.gemini_api_key:
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI CV parsing is not configured. Set GEMINI_API_KEY or VERTEX_PROJECT_ID.",
+            )
         return fallback
 
     system_prompt = (
@@ -953,10 +970,20 @@ def _extract_candidate_details(cv_text: str) -> dict[str, Any]:
         payload = _extract_json_object(raw_text)
         extraction = CandidateExtractionResult.model_validate(payload) if payload else None
     except Exception as exc:
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Candidate extraction AI failed: {sanitize_text(str(exc)) or repr(exc)}",
+            ) from exc
         logger.warning("Candidate extraction AI failed; using fallback. Reason: %s", exc)
         return fallback
 
     if not extraction:
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Candidate extraction AI returned an invalid response.",
+            )
         return fallback
 
     return {
@@ -976,9 +1003,14 @@ def _extract_candidate_details(cv_text: str) -> dict[str, Any]:
     }
 
 
-def format_resume_preview(cv_text: str) -> str:
+def format_resume_preview(cv_text: str, *, require_ai: bool = False) -> str:
     fallback = _fallback_resume_preview(cv_text)
     if not settings.vertex_project_id and not settings.gemini_api_key:
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI resume formatting is not configured. Set GEMINI_API_KEY or VERTEX_PROJECT_ID.",
+            )
         return fallback
 
     system_prompt = (
@@ -1008,6 +1040,11 @@ def format_resume_preview(cv_text: str) -> str:
         )
         return formatted or fallback
     except Exception as exc:
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Resume formatting AI failed: {sanitize_text(str(exc)) or repr(exc)}",
+            ) from exc
         logger.warning("Resume preview AI formatting failed; using fallback. Reason: %s", exc)
         return fallback
 
