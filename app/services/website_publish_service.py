@@ -13,14 +13,19 @@ from app.config import settings
 from app.models.vacancy import Vacancy
 from app.models.website_publication import WebsitePublication
 from app.schemas.website_publish import WebsitePublishRead
+from app.services.website_pdf_service import (
+    build_website_pdf_filename,
+    build_website_pdf_for_vacancy,
+    build_website_pdf_url,
+)
 
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _website_engine: Engine | None = None
 
 
-def build_website_publish_preview(vacancy: Vacancy) -> WebsitePublishRead:
-    mapped_fields = _build_mapped_fields(vacancy)
+def build_website_publish_preview(vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
+    mapped_fields = _build_mapped_fields(vacancy, public_base_url=public_base_url)
     return WebsitePublishRead(
         success=True,
         dry_run=True,
@@ -32,8 +37,9 @@ def build_website_publish_preview(vacancy: Vacancy) -> WebsitePublishRead:
     )
 
 
-def publish_vacancy_to_website(session: Session, vacancy: Vacancy) -> WebsitePublishRead:
-    mapped_fields = _build_mapped_fields(vacancy)
+def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
+    build_website_pdf_for_vacancy(vacancy)
+    mapped_fields = _build_mapped_fields(vacancy, public_base_url=public_base_url)
     schema_name, table_name = _parse_table_name(settings.website_jobs_table)
     qualified_table_name = _qualify_table_name(schema_name, table_name)
 
@@ -108,9 +114,8 @@ def publish_vacancy_to_website(session: Session, vacancy: Vacancy) -> WebsitePub
     )
 
 
-def _build_mapped_fields(vacancy: Vacancy) -> dict[str, object]:
+def _build_mapped_fields(vacancy: Vacancy, *, public_base_url: str) -> dict[str, object]:
     title = str(vacancy.title or "").strip()
-    description = str(vacancy.description or "").strip()
 
     if not title:
         raise HTTPException(
@@ -118,15 +123,11 @@ def _build_mapped_fields(vacancy: Vacancy) -> dict[str, object]:
             detail="Vacancy title is required before publishing to the website.",
         )
 
-    if not description:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Vacancy description is required before publishing to the website.",
-        )
-
     parsed_data = vacancy.parsed_data or {}
     location = str(parsed_data.get("location") or "").strip() or "Location not set"
     employment_type = str(parsed_data.get("employment_type") or "").strip() or "Full-time"
+    pdf_filename = build_website_pdf_filename(vacancy)
+    pdf_url = build_website_pdf_url(filename=pdf_filename, public_base_url=public_base_url)
 
     created_by = settings.website_publisher_user_id
     if created_by is None:
@@ -137,10 +138,9 @@ def _build_mapped_fields(vacancy: Vacancy) -> dict[str, object]:
 
     return {
         "title": title,
-        "content": description,
         "location": location,
         "type": employment_type,
-        "pdf_url": None,
+        "pdf_url": pdf_url,
         "published": 1,
         "created_by": created_by,
     }
@@ -200,7 +200,7 @@ def _load_table_columns(connection, schema_name: str, table_name: str) -> set[st
 
 
 def _ensure_required_columns(columns: set[str]) -> None:
-    missing = sorted({"title", "content", "location", "type", "published"} - columns)
+    missing = sorted({"title", "location", "type", "published", "created_by"} - columns)
     if missing:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -252,17 +252,16 @@ def _resolve_existing_job_info_id(
         if exists is not None:
             return int(mapping.job_info_id)
 
-    if {"title", "created_by", job_info_id_column}.issubset(columns):
+    if {"title", job_info_id_column}.issubset(columns):
         matched = connection.execute(
             text(
                 f"SELECT {_quote_identifier(job_info_id_column)} "
                 f"FROM {qualified_table_name} "
-                f"WHERE {_quote_identifier('title')} = :title AND {_quote_identifier('created_by')} = :created_by "
+                f"WHERE {_quote_identifier('title')} = :title "
                 f"ORDER BY {_quote_identifier(job_info_id_column)} DESC LIMIT 1"
             ),
             {
                 "title": vacancy.title.strip(),
-                "created_by": settings.website_publisher_user_id,
             },
         ).first()
         if matched is not None:

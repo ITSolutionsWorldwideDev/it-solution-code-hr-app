@@ -14,7 +14,6 @@ type WebsitePublishCardProps = {
 
 const fieldLabels: Record<string, string> = {
   title: "Title",
-  content: "Content",
   location: "Location",
   type: "Employment Type",
   pdf_url: "PDF URL",

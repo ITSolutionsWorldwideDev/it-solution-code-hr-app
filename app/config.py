@@ -114,6 +114,7 @@ class Settings(BaseModel):
     public_schedule_business_start_hour: int = int(os.getenv("PUBLIC_SCHEDULE_BUSINESS_START_HOUR", "9"))
     public_schedule_business_end_hour: int = int(os.getenv("PUBLIC_SCHEDULE_BUSINESS_END_HOUR", "17"))
     resume_upload_dir: Path = resolve_path(os.getenv("RESUME_UPLOAD_DIR", "storage/resumes"))
+    website_pdf_output_dir: Path = resolve_path(os.getenv("WEBSITE_PDF_OUTPUT_DIR", "storage/website-job-pdfs"))
     cors_origins: list[str] = [
         origin.strip()
         for origin in os.getenv(

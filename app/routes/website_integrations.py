@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlmodel import Session
 
 from app.db import get_session
@@ -18,10 +18,11 @@ router = APIRouter(prefix="/integrations/website", tags=["Website Integrations"]
 )
 def preview_website_publish(
     payload: WebsitePublishRequest,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     vacancy = get_or_404(session, Vacancy, payload.vacancy_id)
-    return build_website_publish_preview(vacancy)
+    return build_website_publish_preview(vacancy, public_base_url=str(request.base_url).rstrip("/"))
 
 
 @router.post(
@@ -31,7 +32,12 @@ def preview_website_publish(
 )
 def publish_website_vacancy(
     payload: WebsitePublishRequest,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     vacancy = get_or_404(session, Vacancy, payload.vacancy_id)
-    return publish_vacancy_to_website(session=session, vacancy=vacancy)
+    return publish_vacancy_to_website(
+        session=session,
+        vacancy=vacancy,
+        public_base_url=str(request.base_url).rstrip("/"),
+    )
