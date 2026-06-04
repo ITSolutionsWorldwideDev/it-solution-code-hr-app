@@ -331,11 +331,15 @@ function buildStoredCandidates(
   applications: ApplicationApiRecord[],
   matches: CandidateMatchLookup[],
   vacancies: VacancyApiRecord[],
-  vacancyScope: string
+  vacancyScope: string,
+  preservedCandidateIds: string[] = []
 ): StoredCandidateRecord[] {
   const latestMatchByCandidate = new Map<number, CandidateMatchLookup>();
   const applicationsByCandidate = new Map<number, ApplicationApiRecord[]>();
-  const visibleCandidates = candidates.filter((candidate) => !isPlaceholderCandidate(candidate));
+  const preservedCandidateIdSet = new Set(preservedCandidateIds.map((id) => Number(id)));
+  const visibleCandidates = candidates.filter(
+    (candidate) => preservedCandidateIdSet.has(candidate.id) || !isPlaceholderCandidate(candidate)
+  );
   const scopedVacancy = vacancyScope
     ? vacancies.find((vacancy) => String(vacancy.id) === vacancyScope) ?? null
     : null;
@@ -486,7 +490,11 @@ export function CandidateUploadPanel() {
   const acceptedFileTypes =
     ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-  const loadStoredCandidates = async (selectedVacancyId?: string, vacancyRecords?: VacancyApiRecord[]) => {
+  const loadStoredCandidates = async (
+    selectedVacancyId?: string,
+    vacancyRecords?: VacancyApiRecord[],
+    preservedIds?: string[]
+  ) => {
     const vacancyFilter = selectedVacancyId ?? vacancyId;
 
     setStoredCandidatesLoading(true);
@@ -513,7 +521,8 @@ export function CandidateUploadPanel() {
         applicationResponse,
         scopedMatches,
         vacanciesForLookup,
-        vacancyFilter
+        vacancyFilter,
+        preservedIds ?? sessionCandidateIds
       );
       setStoredCandidates(nextCandidates);
       setDetailErrorMessage(null);
@@ -669,7 +678,7 @@ export function CandidateUploadPanel() {
       } parsed successfully${vacancyId ? " for the selected vacancy" : " without a linked vacancy"}.`;
 
       setSuccessMessage(nextSuccessMessage);
-      await loadStoredCandidates(vacancyId);
+      await loadStoredCandidates(vacancyId, undefined, parsedCandidateIds);
       if (parsedCandidateIds.length > 0) {
         setSelectedCandidateId(parsedCandidateIds[0]);
       }
