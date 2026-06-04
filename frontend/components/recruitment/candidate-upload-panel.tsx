@@ -444,6 +444,52 @@ function buildStoredCandidateViewModel(candidate: StoredCandidateRecord | null):
   };
 }
 
+function buildImmediateStoredCandidatesFromImport(
+  results: CandidateManualImportResponse["results"],
+  vacancies: VacancyApiRecord[],
+  vacancyScope: string
+): StoredCandidateRecord[] {
+  const scopedVacancy = vacancyScope
+    ? vacancies.find((vacancy) => String(vacancy.id) === vacancyScope) ?? null
+    : null;
+
+  return results
+    .filter((item) => item.parse_status !== "failed" && item.candidate_id)
+    .map((item) => {
+      const parsedData = item.parsed_data ?? {};
+      const matching = parsedData.matching as
+        | {
+            applied_match?: { vacancy_id?: string; role_name?: string; score?: number };
+          }
+        | undefined;
+      const fallbackVacancyTitle = matching?.applied_match?.role_name ?? "Best open vacancy match";
+      const linkedVacancyTitle = scopedVacancy?.title ?? fallbackVacancyTitle;
+      const fitExplanation =
+        typeof parsedData.fit_explanation === "string"
+          ? parsedData.fit_explanation
+          : "No vacancy fit explanation stored yet.";
+
+      return {
+        rowKey: `session-${item.candidate_id}-${item.filename}`,
+        id: String(item.candidate_id),
+        name: item.candidate_name ?? "Parsed candidate",
+        email: item.candidate_email ?? "No email extracted",
+        aiSummary: item.ai_summary ?? "No parsed summary available yet.",
+        skills: item.skills ?? [],
+        experience: item.experience ?? "Not extracted yet.",
+        education: item.education ?? "Not extracted yet.",
+        linkedVacancyId: vacancyScope || matching?.applied_match?.vacancy_id || null,
+        linkedVacancyTitle,
+        vacancyLabel: vacancyScope ? "Applied to" : "Best vacancy match",
+        matchScore: item.score ?? matching?.applied_match?.score ?? null,
+        fitExplanation,
+        matchedSkills: item.skills ?? [],
+        uploadedAt: new Date().toISOString(),
+        parsedData,
+      };
+    });
+}
+
 function sendBrowserNotification(title: string, body: string) {
   if (typeof window === "undefined" || !("Notification" in window)) {
     return;
@@ -513,7 +559,8 @@ export function CandidateUploadPanel() {
   const loadStoredCandidates = async (
     selectedVacancyId?: string,
     vacancyRecords?: VacancyApiRecord[],
-    preservedIds?: string[]
+    preservedIds?: string[],
+    fallbackRecords?: StoredCandidateRecord[]
   ) => {
     const vacancyFilter = selectedVacancyId ?? vacancyId;
 
@@ -551,7 +598,7 @@ export function CandidateUploadPanel() {
         vacancyFilter,
         preservedIdList
       );
-      setStoredCandidates(nextCandidates);
+      setStoredCandidates(nextCandidates.length > 0 ? nextCandidates : fallbackRecords ?? []);
       setDetailErrorMessage(null);
     } catch (error) {
       setStoredCandidates([]);
@@ -698,6 +745,11 @@ export function CandidateUploadPanel() {
       const parsedCandidateIds = response.results
         .map((item) => (item.candidate_id ? String(item.candidate_id) : null))
         .filter((value): value is string => value !== null);
+      const immediateStoredCandidates = buildImmediateStoredCandidatesFromImport(
+        response.results,
+        vacancies,
+        vacancyId
+      );
       setSessionCandidateIds(parsedCandidateIds);
       const successCount = response.results.filter((item) => item.parse_status !== "failed").length;
       const nextSuccessMessage = `${successCount} CV${
@@ -705,7 +757,10 @@ export function CandidateUploadPanel() {
       } parsed successfully${vacancyId ? " for the selected vacancy" : " without a linked vacancy"}.`;
 
       setSuccessMessage(nextSuccessMessage);
-      await loadStoredCandidates(vacancyId, undefined, parsedCandidateIds);
+      if (immediateStoredCandidates.length > 0) {
+        setStoredCandidates(immediateStoredCandidates);
+      }
+      await loadStoredCandidates(vacancyId, undefined, parsedCandidateIds, immediateStoredCandidates);
       if (parsedCandidateIds.length > 0) {
         setSelectedCandidateId(parsedCandidateIds[0]);
       }

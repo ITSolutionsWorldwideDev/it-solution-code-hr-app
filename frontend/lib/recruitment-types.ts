@@ -358,6 +358,13 @@ export type CandidateManualImportItem = {
   parse_status: string;
   match_status: string;
   candidate_id?: number | null;
+  candidate_name?: string | null;
+  candidate_email?: string | null;
+  ai_summary?: string | null;
+  skills: string[];
+  experience?: string | null;
+  education?: string | null;
+  parsed_data: Record<string, unknown>;
   matched_job_id?: number | null;
   score?: number | null;
   error_message?: string | null;
@@ -424,5 +431,8 @@ export type WebsitePublishApiRecord = {
   published: boolean;
   action: "preview" | "created" | "updated" | string;
   job_info_id?: number | null;
+  pdf_generated: boolean;
+  pdf_filename?: string | null;
+  pdf_url?: string | null;
   mapped_fields: Record<string, unknown>;
 };
