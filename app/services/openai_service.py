@@ -733,7 +733,7 @@ def _build_role_suggestions(
                 department=_guess_department(vacancy_title, vacancy_context),
                 confidence_score=round(selected_vacancy_score if selected_vacancy_score is not None else 0.0, 2),
                 reason=_trim_text(
-                    selected_vacancy_reason or "This candidate was parsed directly against the selected vacancy.",
+                    selected_vacancy_reason or "This candidate was parsed directly against the chosen vacancy.",
                     max_length=160,
                 ),
             ),
@@ -824,11 +824,18 @@ def parse_candidate_with_openai(
         applied_portfolio_match = max(vacancy_matches, key=lambda item: item.score)
         match_score = applied_portfolio_match.score
         matched_skills = applied_portfolio_match.matched_skills
-        fit_explanation = applied_portfolio_match.fit_explanation
+        fit_explanation = (
+            f"Best current vacancy match: {applied_portfolio_match.role_name}. "
+            f"{applied_portfolio_match.fit_explanation}"
+        ).strip()
     else:
         match_score = applied_portfolio_match.score if applied_portfolio_match else 0.0
         matched_skills = applied_portfolio_match.matched_skills if applied_portfolio_match else []
-        fit_explanation = applied_portfolio_match.fit_explanation if applied_portfolio_match else "No vacancy selected for vacancy-fit scoring."
+        fit_explanation = (
+            applied_portfolio_match.fit_explanation
+            if applied_portfolio_match
+            else "No vacancy context was supplied, so only general CV parsing was completed."
+        )
 
     ai_summary = _build_candidate_summary(
         parsed_candidate=parsed_candidate,
@@ -875,19 +882,20 @@ def _build_candidate_summary(
     fit_explanation: str,
 ) -> str:
     candidate_name = parsed_candidate.get("name") or "Candidate"
-    vacancy_title = (vacancy_context.get("title") if vacancy_context else None) or "the selected vacancy"
+    vacancy_title = (vacancy_context.get("title") if vacancy_context else None)
+    target_label = vacancy_title or "the best matching open vacancy"
     skill_text = ", ".join(parsed_candidate.get("skills", [])[:6]) or "general professional experience"
     experience_text = parsed_candidate.get("experience") or "limited experience could be clearly extracted from the CV"
     education_text = parsed_candidate.get("education") or "no strong education signal was identified"
 
     if match_score >= 75:
-        opener = f"{candidate_name} appears to be a strong fit for {vacancy_title}."
+        opener = f"{candidate_name} appears to be a strong fit for {target_label}."
     elif match_score >= 55:
-        opener = f"{candidate_name} appears to be a relevant candidate for {vacancy_title}, with several useful overlaps."
+        opener = f"{candidate_name} appears to be a relevant candidate for {target_label}, with several useful overlaps."
     elif match_score >= 35:
-        opener = f"{candidate_name} shows partial alignment with {vacancy_title}, although the fit is mixed."
+        opener = f"{candidate_name} shows partial alignment with {target_label}, although the fit is mixed."
     else:
-        opener = f"{candidate_name} does not currently look like a strong direct fit for {vacancy_title}, but there may still be some transferable value."
+        opener = f"{candidate_name} does not currently look like a strong direct fit for {target_label}, but there may still be some transferable value."
 
     if matched_skills:
         skills_sentence = f"The clearest matching skills are {', '.join(matched_skills[:5])}."

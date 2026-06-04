@@ -140,3 +140,21 @@ class CandidateCVQueueBatchResponse(BaseSchema):
         default_factory=list,
         description="Queued parse jobs.",
     )
+
+
+class CandidateManualImportItem(BaseSchema):
+    filename: str = Field(description="Original uploaded file name.")
+    parse_status: str = Field(description="Final parse status for this file.")
+    match_status: str = Field(description="Final match status for this file.")
+    candidate_id: int | None = Field(default=None, description="Created or updated candidate id.")
+    matched_job_id: int | None = Field(default=None, description="Matched vacancy id when applicable.")
+    score: float | None = Field(default=None, description="Stored score when a clear vacancy match exists.")
+    error_message: str | None = Field(default=None, description="Failure or review message for this file.")
+
+
+class CandidateManualImportResponse(BaseSchema):
+    total_files: int = Field(description="Number of uploaded files received.")
+    results: list[CandidateManualImportItem] = Field(
+        default_factory=list,
+        description="Per-file import results.",
+    )

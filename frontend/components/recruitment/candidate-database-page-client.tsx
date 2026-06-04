@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MoreVertical, Search } from "lucide-react";
 
+import { CandidateUploadPanel } from "@/components/recruitment/candidate-upload-panel";
 import { useRole } from "@/components/providers/role-provider";
 import { apiRequest } from "@/lib/api/client";
 import type {
@@ -23,8 +24,10 @@ type CandidateDatabaseRecord = {
   rawAddedAt: string | null;
   addedAt: string;
   vacancyId: number | null;
+  vacancyIds: number[];
   roleTitle: string;
   vacancyTitle: string;
+  vacancyLabel: string;
   potentialRole: string | null;
   experienceYears: number | null;
   appliedMatchScore: number | null;
@@ -188,7 +191,7 @@ function buildDatabaseRecords(
     applicationsByCandidate.set(application.candidate_id, existing);
   }
 
-  return candidates
+  const records = candidates
     .map<CandidateDatabaseRecord>((candidate) => {
       const linkedApplications = [...(applicationsByCandidate.get(candidate.id) ?? [])].sort((left, right) => {
         const leftTime = parseApiDate(left.created_at)?.getTime() ?? 0;
@@ -200,11 +203,15 @@ function buildDatabaseRecords(
         ? vacancyById.get(latestApplication.vacancy_id)
         : null;
       const matching = getCandidateMatching(candidate);
+      const matchedVacancyTitle =
+        matching?.applied_match?.role_name ??
+        matching?.potential_match?.role_name ??
+        String(candidate.parsed_data?.role_title ?? candidate.parsed_data?.job_title ?? "Candidate Profile");
       const roleTitle =
         linkedVacancy?.title ??
-        matching?.applied_match?.role_name ??
-        String(candidate.parsed_data?.role_title ?? candidate.parsed_data?.job_title ?? "Unassigned Candidate");
-      const vacancyTitle = linkedVacancy?.title ?? "Unassigned Vacancy";
+        matchedVacancyTitle;
+      const vacancyTitle = linkedVacancy?.title ?? matchedVacancyTitle;
+      const vacancyLabel = linkedVacancy ? "Applied vacancy" : "Best vacancy match";
       const potentialRole = matching?.potential_match?.role_name ?? null;
       const stage = latestApplication?.stage ?? "parsed";
       const addedAt = latestApplication?.created_at ?? null;
@@ -235,8 +242,10 @@ function buildDatabaseRecords(
         rawAddedAt: addedAt,
         addedAt: formatAddedDate(addedAt),
         vacancyId: latestApplication?.vacancy_id ?? null,
+        vacancyIds: linkedApplications.map((application) => application.vacancy_id),
         roleTitle,
         vacancyTitle,
+        vacancyLabel,
         potentialRole,
         experienceYears,
         appliedMatchScore,
@@ -252,10 +261,46 @@ function buildDatabaseRecords(
       }
       return left.name.localeCompare(right.name);
     });
+
+  const dedupedByEmail = new Map<string, CandidateDatabaseRecord>();
+  for (const record of records) {
+    const dedupeKey = record.name.trim().toLowerCase() + "|" + record.id;
+    const emailKey = `${dedupeKey}|${record.vacancyId ?? "no-vacancy"}`;
+    const existing = dedupedByEmail.get(emailKey);
+    if (!existing) {
+      dedupedByEmail.set(emailKey, record);
+      continue;
+    }
+
+    const existingTime = parseApiDate(existing.rawAddedAt)?.getTime() ?? 0;
+    const recordTime = parseApiDate(record.rawAddedAt)?.getTime() ?? 0;
+    if (recordTime >= existingTime) {
+      dedupedByEmail.set(emailKey, record);
+    }
+  }
+
+  const dedupedByCandidate = new Map<string, CandidateDatabaseRecord>();
+  for (const record of dedupedByEmail.values()) {
+    const candidateKey = record.id.toString();
+    const existing = dedupedByCandidate.get(candidateKey);
+    if (!existing) {
+      dedupedByCandidate.set(candidateKey, record);
+      continue;
+    }
+
+    const existingTime = parseApiDate(existing.rawAddedAt)?.getTime() ?? 0;
+    const recordTime = parseApiDate(record.rawAddedAt)?.getTime() ?? 0;
+    if (recordTime >= existingTime) {
+      dedupedByCandidate.set(candidateKey, record);
+    }
+  }
+
+  return [...dedupedByCandidate.values()];
 }
 
 export function CandidateDatabasePageClient() {
   const { role } = useRole();
+  const [activeTab, setActiveTab] = useState<"database" | "bulk_parse">("database");
   const [vacancies, setVacancies] = useState<VacancyApiRecord[]>([]);
   const [applications, setApplications] = useState<ApplicationApiRecord[]>([]);
   const [candidates, setCandidates] = useState<CandidateApiRecord[]>([]);
@@ -309,8 +354,12 @@ export function CandidateDatabasePageClient() {
     const maxAgeDays = Number(dateFilter);
 
     return databaseRecords.filter((record) => {
-      if (selectedVacancyId !== "all") {
-        if (String(record.vacancyId ?? "") !== selectedVacancyId) {
+      if (selectedVacancyId === "no_vacancy") {
+        if (record.vacancyIds.length > 0) {
+          return false;
+        }
+      } else if (selectedVacancyId !== "all") {
+        if (!record.vacancyIds.includes(Number(selectedVacancyId))) {
           return false;
         }
       }
@@ -390,29 +439,64 @@ export function CandidateDatabasePageClient() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 text-[1rem] text-[#9eb3c5]">
-          {role === "HR" || role === "Admin" ? (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleBackfill}
-              disabled={backfillLoading}
-              className="mr-2 rounded-[18px] border-[#7eb9df]/20"
-            >
-              {backfillLoading ? "Refreshing..." : "Recompute Hidden Potentials"}
-            </Button>
-          ) : null}
-          <button className="rounded-full px-2 py-1 font-semibold text-[#b9cbff]">
-            Candidates
-          </button>
-          <button className="rounded-full px-2 py-1 transition hover:text-white">
-            Applications
-          </button>
-          <button className="rounded-full px-2 py-1 transition hover:text-white">
-            Talent Pools
-          </button>
+        <div className="flex w-full max-w-[760px] flex-col gap-3 xl:items-end">
+          <div className="flex w-full flex-col gap-3 rounded-[24px] border border-white/10 bg-[#151b22] p-2 sm:flex-row sm:items-center sm:justify-between xl:max-w-[760px]">
+            <div className="grid flex-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab("database")}
+                className={`rounded-[18px] border px-4 py-3 text-left transition ${
+                  activeTab === "database"
+                    ? "border-[#7eb9df]/35 bg-[#1b2734] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                    : "border-transparent bg-transparent text-[#a7bbcb] hover:border-white/10 hover:text-white"
+                }`}
+              >
+                <p className="text-[1rem] font-semibold">Candidate Database</p>
+                <p className="mt-1 text-sm text-inherit/80">Browse and filter stored candidates</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("bulk_parse")}
+                className={`rounded-[18px] border px-4 py-3 text-left transition ${
+                  activeTab === "bulk_parse"
+                    ? "border-[#7eb9df]/35 bg-[#1b2734] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                    : "border-transparent bg-transparent text-[#a7bbcb] hover:border-white/10 hover:text-white"
+                }`}
+              >
+                <p className="text-[1rem] font-semibold">Bulk Parse CVs</p>
+                <p className="mt-1 text-sm text-inherit/80">Upload and parse new CVs</p>
+              </button>
+            </div>
+
+            {role === "HR" || role === "Admin" ? (
+              <div className="flex shrink-0 items-center justify-between gap-3 rounded-[18px] border border-[#7eb9df]/14 bg-[#131a22] px-4 py-3 sm:min-w-[290px]">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8fb6d3]">
+                    Refresh Matches
+                  </p>
+                  <p className="mt-1 text-xs text-[#9ab0c2]">
+                    Re-score stored candidates
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleBackfill}
+                  disabled={backfillLoading}
+                  className="shrink-0 rounded-[16px] border-[#7eb9df]/20 px-4"
+                >
+                  {backfillLoading ? "Refreshing..." : "Run"}
+                </Button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
+
+      {activeTab === "bulk_parse" ? <CandidateUploadPanel /> : null}
+
+      {activeTab !== "database" ? null : (
+        <>
 
       {errorMessage ? (
         <Panel className="border-[#8f3a47] bg-[rgba(77,19,28,0.55)] text-[#ffd0d7]">
@@ -445,6 +529,7 @@ export function CandidateDatabasePageClient() {
                 <label className="text-[0.98rem] text-[#cbd8e2]">Vacancy</label>
                 <Select value={selectedVacancyId} onChange={(event) => setSelectedVacancyId(event.target.value)}>
                   <option value="all">All Vacancies</option>
+                  <option value="no_vacancy">No vacancy / Talent pool</option>
                   {vacancies.map((vacancy) => (
                     <option key={vacancy.id} value={String(vacancy.id)}>
                       {vacancy.title}
@@ -580,6 +665,9 @@ export function CandidateDatabasePageClient() {
 
                     <div className="min-w-0">
                       <p className="truncate text-[1rem] text-white">{candidate.roleTitle}</p>
+                      <p className="mt-1 truncate text-[0.82rem] uppercase tracking-[0.16em] text-[#7f93a5]">
+                        {candidate.vacancyLabel}
+                      </p>
                       <p className="mt-1 truncate text-[0.98rem] text-[#9db7ef]">
                         {candidate.vacancyTitle}
                       </p>
@@ -649,6 +737,8 @@ export function CandidateDatabasePageClient() {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

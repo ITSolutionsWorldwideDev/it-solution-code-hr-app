@@ -236,6 +236,7 @@ def build_parsed_data(pdf_content: dict, parsed_candidate: dict, vacancy: Vacanc
         "source": "pdf_cv_upload",
         "resume_path": pdf_content.get("resume_path"),
         "filename": pdf_content.get("filename"),
+        "file_checksum": pdf_content.get("file_checksum"),
         "content_type": pdf_content.get("content_type"),
         "page_count": pdf_content.get("page_count"),
         "file_size_bytes": pdf_content.get("file_size_bytes"),

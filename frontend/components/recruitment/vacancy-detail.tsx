@@ -1,6 +1,7 @@
 import { BriefcaseBusiness, CircleDollarSign, Clock3, MapPin, RotateCw, Sparkles, UserRound } from "lucide-react";
 
 import { LinkedInPreviewCard } from "@/components/recruitment/linkedin-preview-card";
+import { WebsitePublishCard } from "@/components/recruitment/website-publish-card";
 import { StatusPill } from "@/components/ui/status-pill";
 import type { HiddenPotentialRecord, VacancyRecord } from "@/lib/recruitment-types";
 
@@ -214,6 +215,7 @@ export function VacancyDetail({
         </div>
 
         <LinkedInPreviewCard vacancyId={vacancy.id} vacancy={vacancy} />
+        <WebsitePublishCard vacancyId={vacancy.id} vacancy={vacancy} />
       </aside>
     </div>
   );

@@ -259,6 +259,7 @@ export type ApplicationSendInviteResponse = {
 };
 
 export type StoredCandidateRecord = {
+  rowKey: string;
   id: string;
   name: string;
   email: string;
@@ -268,6 +269,7 @@ export type StoredCandidateRecord = {
   education: string;
   linkedVacancyId: string | null;
   linkedVacancyTitle: string;
+  vacancyLabel: string;
   matchScore: number | null;
   fitExplanation: string;
   matchedSkills: string[];
@@ -351,6 +353,29 @@ export type CandidateQueueParseBatchResponse = {
   jobs: CandidateQueueParseJobResponse[];
 };
 
+export type CandidateManualImportItem = {
+  filename: string;
+  parse_status: string;
+  match_status: string;
+  candidate_id?: number | null;
+  matched_job_id?: number | null;
+  score?: number | null;
+  error_message?: string | null;
+};
+
+export type CandidateManualImportResponse = {
+  total_files: number;
+  results: CandidateManualImportItem[];
+};
+
+export type PublicApplicationSubmitResponse = {
+  application_id: number;
+  candidate_id: number;
+  parse_status: string;
+  match_status: string;
+  message: string;
+};
+
 export type JobDescriptionGenerateResponse = {
   generated_job_description: string;
   generated_required_skills: string[];
@@ -390,4 +415,14 @@ export type LinkedInPreviewApiRecord = {
   message: string;
   post_text: string;
   apply_url: string;
+};
+
+export type WebsitePublishApiRecord = {
+  success: boolean;
+  dry_run: boolean;
+  message: string;
+  published: boolean;
+  action: "preview" | "created" | "updated" | string;
+  job_info_id?: number | null;
+  mapped_fields: Record<string, unknown>;
 };

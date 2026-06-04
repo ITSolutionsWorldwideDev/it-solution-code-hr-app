@@ -19,6 +19,8 @@ from app.schemas.candidate import (
     CandidateCVBatchParseResponse,
     CandidateCVParseResponse,
     CandidateCreate,
+    CandidateManualImportItem,
+    CandidateManualImportResponse,
     CandidateRead,
     CandidateUploadUrlRequest,
     CandidateUpdate,
@@ -31,6 +33,7 @@ from app.services.candidate_service import (
     get_candidate_role_suggestions,
     update_candidate_from_cv,
 )
+from app.services.cv_pipeline_service import create_candidate_from_stored_resume, store_resume_upload
 from app.services import crud
 
 
@@ -324,6 +327,74 @@ async def queue_candidate_cv_parse_batch(
         total_files=len(files),
         queued_count=len(jobs),
         jobs=jobs,
+    )
+
+
+@router.post(
+    "/manual-import",
+    response_model=CandidateManualImportResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Import one or many CVs manually",
+    description="Use the shared CV parse pipeline for HR manual uploads and return a status for each file.",
+)
+async def manual_import_candidates(
+    files: list[UploadFile] = File(...),
+    vacancy_id: int | None = Form(default=None),
+    session: Session = Depends(get_session),
+):
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one CV must be uploaded.",
+        )
+
+    if vacancy_id is not None:
+        crud.get_or_404(session, Vacancy, vacancy_id)
+
+    results: list[CandidateManualImportItem] = []
+    for file in files:
+        original_filename = file.filename or "unknown-file"
+        try:
+            stored_resume = await store_resume_upload(file)
+            result = create_candidate_from_stored_resume(
+                session=session,
+                stored_resume=stored_resume,
+                vacancy_id=vacancy_id,
+                source="manual_upload",
+            )
+            results.append(
+                CandidateManualImportItem(
+                    filename=stored_resume.original_filename,
+                    parse_status=result.parse_status,
+                    match_status=result.match_status,
+                    candidate_id=result.candidate.id,
+                    matched_job_id=result.matched_job_id,
+                    score=result.score,
+                    error_message=result.error_message,
+                )
+            )
+        except HTTPException as exc:
+            results.append(
+                CandidateManualImportItem(
+                    filename=original_filename,
+                    parse_status="failed",
+                    match_status="pending_manual_review",
+                    error_message=str(exc.detail),
+                )
+            )
+        except Exception as exc:  # pragma: no cover - defensive batch import guard
+            results.append(
+                CandidateManualImportItem(
+                    filename=original_filename,
+                    parse_status="failed",
+                    match_status="pending_manual_review",
+                    error_message=str(exc),
+                )
+            )
+
+    return CandidateManualImportResponse(
+        total_files=len(files),
+        results=results,
     )
 
 

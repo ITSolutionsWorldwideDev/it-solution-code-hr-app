@@ -7,9 +7,8 @@ import { apiRequest } from "@/lib/api/client";
 import type {
   ApplicationApiRecord,
   CandidateApiRecord,
+  CandidateManualImportResponse,
   CandidateMatchApiRecord,
-  CandidateQueueParseBatchResponse,
-  CandidateQueueParseJobResponse,
   CandidateRoleSuggestionApiRecord,
   StoredCandidateRecord,
   VacancyApiRecord,
@@ -28,7 +27,10 @@ type CandidateMatchLookup = CandidateMatchApiRecord & {
   vacancy_title: string;
 };
 
-const ACTIVE_PARSE_JOB_STATUSES = new Set(["uploaded", "processing", "parsing"]);
+type StoredCandidateViewModel = StoredCandidateRecord & {
+  vacancyLabelTitle: string;
+};
+
 
 function parseApiDate(value: string) {
   const normalizedValue =
@@ -282,22 +284,6 @@ function getResumePreviewBlocks(parsedData: Record<string, unknown>) {
     .filter(Boolean);
 }
 
-function formatParseJobStatus(status: string) {
-  switch (status) {
-    case "uploaded":
-      return "Uploaded";
-    case "processing":
-    case "parsing":
-      return "Processing";
-    case "parsed":
-      return "Parsed";
-    case "failed":
-      return "Failed";
-    default:
-      return status;
-  }
-}
-
 function formatMatchScore(value: number | null) {
   if (value === null) {
     return "No score";
@@ -307,8 +293,14 @@ function formatMatchScore(value: number | null) {
   return `${bucketed}%`;
 }
 
-function hasActiveParseJobs(jobs: CandidateQueueParseJobResponse[]) {
-  return jobs.some((job) => ACTIVE_PARSE_JOB_STATUSES.has(job.status));
+function formatRoleSuggestionStrength(value: number) {
+  if (value >= 85) {
+    return "High signal overlap";
+  }
+  if (value >= 65) {
+    return "Medium signal overlap";
+  }
+  return "Light signal overlap";
 }
 
 function getCandidateTimestamp(
@@ -322,14 +314,31 @@ function getCandidateTimestamp(
   return parsedAt ?? match?.created_at ?? new Date().toISOString();
 }
 
+function isPlaceholderCandidate(candidate: CandidateApiRecord) {
+  const parseStatus = typeof candidate.parsed_data?.parse_status === "string"
+    ? candidate.parsed_data.parse_status
+    : null;
+
+  return (
+    candidate.name === "Pending Candidate" ||
+    candidate.email.endsWith("@placeholder.local") ||
+    parseStatus === "pending"
+  );
+}
+
 function buildStoredCandidates(
   candidates: CandidateApiRecord[],
   applications: ApplicationApiRecord[],
   matches: CandidateMatchLookup[],
-  vacancies: VacancyApiRecord[]
+  vacancies: VacancyApiRecord[],
+  vacancyScope: string
 ): StoredCandidateRecord[] {
-  const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
   const latestMatchByCandidate = new Map<number, CandidateMatchLookup>();
+  const applicationsByCandidate = new Map<number, ApplicationApiRecord[]>();
+  const visibleCandidates = candidates.filter((candidate) => !isPlaceholderCandidate(candidate));
+  const scopedVacancy = vacancyScope
+    ? vacancies.find((vacancy) => String(vacancy.id) === vacancyScope) ?? null
+    : null;
 
   for (const match of matches) {
     const existing = latestMatchByCandidate.get(match.candidate_id);
@@ -338,40 +347,97 @@ function buildStoredCandidates(
     }
   }
 
-  return applications
-    .flatMap((application) => {
-      const candidate = candidateById.get(application.candidate_id);
-      if (!candidate) {
-        return [];
-      }
+  for (const application of applications) {
+    const existing = applicationsByCandidate.get(application.candidate_id) ?? [];
+    existing.push(application);
+    applicationsByCandidate.set(application.candidate_id, existing);
+  }
 
-      const linkedMatch = latestMatchByCandidate.get(application.candidate_id);
-      const linkedVacancy = vacancies.find((vacancy) => vacancy.id === application.vacancy_id);
+  return visibleCandidates
+    .map((candidate) => {
+      const candidateApplications = [...(applicationsByCandidate.get(candidate.id) ?? [])].sort((left, right) => {
+        const leftTime = parseApiDate(left.created_at)?.getTime() ?? 0;
+        const rightTime = parseApiDate(right.created_at)?.getTime() ?? 0;
+        return rightTime - leftTime;
+      });
+      const latestApplication = candidateApplications[0];
+      const linkedMatch = latestMatchByCandidate.get(candidate.id);
+      const linkedVacancy = latestApplication
+        ? vacancies.find((vacancy) => vacancy.id === latestApplication.vacancy_id)
+        : null;
+      const matching = candidate.parsed_data?.matching as
+        | {
+            applied_match?: { vacancy_id?: string; role_name?: string; score?: number };
+          }
+        | undefined;
+      const fallbackVacancyId = matching?.applied_match?.vacancy_id ?? null;
+      const fallbackVacancyTitle = matching?.applied_match?.role_name ?? "Best open vacancy match";
+      const fallbackFitExplanation =
+        typeof candidate.parsed_data?.fit_explanation === "string"
+          ? candidate.parsed_data.fit_explanation
+          : "No vacancy fit explanation stored yet.";
       const matchScore =
-        application.ranking_score ?? application.match_score ?? linkedMatch?.match_score ?? candidate.match_score ?? null;
+        vacancyScope
+          ? latestApplication?.ranking_score ??
+            latestApplication?.match_score ??
+            linkedMatch?.match_score ??
+            matching?.applied_match?.score ??
+            candidate.match_score ??
+            null
+          : linkedMatch?.match_score ??
+            matching?.applied_match?.score ??
+            candidate.match_score ??
+            null;
+      const linkedVacancyTitle = vacancyScope
+        ? linkedVacancy?.title ?? scopedVacancy?.title ?? fallbackVacancyTitle
+        : linkedMatch?.vacancy_title ?? fallbackVacancyTitle;
+      const vacancyLabel = vacancyScope ? "Applied to" : "Best vacancy match";
 
-      return [{
+      return {
+        rowKey: `${candidate.id}-${latestApplication?.id ?? "candidate"}-${latestApplication?.created_at ?? linkedMatch?.created_at ?? getCandidateTimestamp(candidate, linkedMatch)}`,
         id: String(candidate.id),
         name: candidate.name,
         email: candidate.email,
-        aiSummary: candidate.ai_summary ?? application.ai_summary ?? "No parsed summary available yet.",
+        aiSummary: candidate.ai_summary ?? latestApplication?.ai_summary ?? "No parsed summary available yet.",
         skills: candidate.skills,
         experience: candidate.experience ?? "Not extracted yet.",
         education: candidate.education ?? "Not extracted yet.",
-        linkedVacancyId: String(application.vacancy_id),
-        linkedVacancyTitle:
-          linkedVacancy?.title ?? linkedMatch?.vacancy_title ?? `Vacancy #${application.vacancy_id}`,
+        linkedVacancyId: latestApplication?.vacancy_id ? String(latestApplication.vacancy_id) : fallbackVacancyId,
+        linkedVacancyTitle,
+        vacancyLabel,
         matchScore,
         fitExplanation:
           linkedMatch?.fit_explanation ??
-          application.ai_summary ??
+          fallbackFitExplanation ??
+          latestApplication?.ai_summary ??
           "No vacancy fit explanation stored yet.",
-        matchedSkills: linkedMatch?.matched_skills ?? [],
-        uploadedAt: application.created_at ?? getCandidateTimestamp(candidate, linkedMatch),
-        parsedData: application.parsed_data ?? candidate.parsed_data,
-      }];
+        matchedSkills: linkedMatch?.matched_skills ?? candidate.skills,
+        uploadedAt: latestApplication?.created_at ?? getCandidateTimestamp(candidate, linkedMatch),
+        parsedData: latestApplication?.parsed_data ?? candidate.parsed_data,
+      };
+    })
+    .filter((candidate) => {
+      const candidateId = Number(candidate.id);
+      const hasScopedApplication = Boolean(applicationsByCandidate.get(candidateId)?.length);
+      if (vacancyScope) {
+        return hasScopedApplication;
+      }
+
+      const hasAnyApplication = applications.some((application) => application.candidate_id == candidateId);
+      return !hasAnyApplication;
     })
     .sort((left, right) => parseApiDate(right.uploadedAt).getTime() - parseApiDate(left.uploadedAt).getTime());
+}
+
+function buildStoredCandidateViewModel(candidate: StoredCandidateRecord | null): StoredCandidateViewModel | null {
+  if (!candidate) {
+    return null;
+  }
+
+  return {
+    ...candidate,
+    vacancyLabelTitle: candidate.linkedVacancyTitle || "No direct vacancy linked",
+  };
 }
 
 function sendBrowserNotification(title: string, body: string) {
@@ -404,14 +470,12 @@ function sendBrowserNotification(title: string, body: string) {
 export function CandidateUploadPanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const storedCandidatesSectionRef = useRef<HTMLDivElement | null>(null);
-  const parseJobStatusesRef = useRef<Map<number, string>>(new Map());
   const [vacancies, setVacancies] = useState<VacancyApiRecord[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [vacancyId, setVacancyId] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [queuedJobs, setQueuedJobs] = useState<CandidateQueueParseJobResponse[]>([]);
   const [batchFailures, setBatchFailures] = useState<Array<{ filename: string; error: string }>>([]);
   const [storedCandidates, setStoredCandidates] = useState<StoredCandidateRecord[]>([]);
   const [storedCandidatesLoading, setStoredCandidatesLoading] = useState(false);
@@ -419,58 +483,11 @@ export function CandidateUploadPanel() {
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [selectedRoleSuggestions, setSelectedRoleSuggestions] = useState<CandidateRoleSuggestionApiRecord[]>([]);
   const [detailErrorMessage, setDetailErrorMessage] = useState<string | null>(null);
-  const [pollParseJobs, setPollParseJobs] = useState(false);
-
-  const loadParseJobs = async (selectedVacancyId?: string) => {
-    const vacancyFilter = selectedVacancyId ?? vacancyId;
-    if (!vacancyFilter) {
-      setQueuedJobs([]);
-      setPollParseJobs(false);
-      parseJobStatusesRef.current.clear();
-      return;
-    }
-
-    try {
-      const response = await apiRequest<CandidateQueueParseJobResponse[]>({
-        path: `/candidates/parse-jobs?vacancy_id=${vacancyFilter}&limit=20`,
-      });
-
-      const previousStatuses = parseJobStatusesRef.current;
-      const nextStatuses = new Map<number, string>();
-      let shouldRefreshCandidateData = false;
-
-      for (const job of response) {
-        nextStatuses.set(job.parse_job_id, job.status);
-        const previousStatus = previousStatuses.get(job.parse_job_id);
-        if (
-          previousStatus &&
-          previousStatus !== job.status &&
-          (job.status === "parsed" || job.status === "failed")
-        ) {
-          shouldRefreshCandidateData = true;
-        }
-      }
-
-      parseJobStatusesRef.current = nextStatuses;
-      setQueuedJobs(response);
-      setPollParseJobs(hasActiveParseJobs(response));
-
-      if (shouldRefreshCandidateData) {
-        await loadStoredCandidates(vacancyFilter);
-      }
-    } catch {
-      setQueuedJobs([]);
-      setPollParseJobs(false);
-    }
-  };
+  const acceptedFileTypes =
+    ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
   const loadStoredCandidates = async (selectedVacancyId?: string, vacancyRecords?: VacancyApiRecord[]) => {
     const vacancyFilter = selectedVacancyId ?? vacancyId;
-    if (!vacancyFilter) {
-      setStoredCandidates([]);
-      setStoredCandidatesLoading(false);
-      return;
-    }
 
     setStoredCandidatesLoading(true);
 
@@ -478,8 +495,12 @@ export function CandidateUploadPanel() {
       const vacanciesForLookup = vacancyRecords ?? vacancies;
       const [candidateResponse, applicationResponse, matchResponse] = await Promise.all([
         apiRequest<CandidateApiRecord[]>({ path: "/candidates/" }),
-        apiRequest<ApplicationApiRecord[]>({ path: `/vacancies/${vacancyFilter}/applications` }),
-        apiRequest<CandidateMatchApiRecord[]>({ path: `/vacancies/${vacancyFilter}/matches` }),
+        vacancyFilter
+          ? apiRequest<ApplicationApiRecord[]>({ path: `/vacancies/${vacancyFilter}/applications` })
+          : apiRequest<ApplicationApiRecord[]>({ path: "/applications/" }),
+        vacancyFilter
+          ? apiRequest<CandidateMatchApiRecord[]>({ path: `/vacancies/${vacancyFilter}/matches` })
+          : Promise.resolve([] as CandidateMatchApiRecord[]),
       ]);
 
       const vacancy = vacanciesForLookup.find((record) => String(record.id) === vacancyFilter);
@@ -491,7 +512,8 @@ export function CandidateUploadPanel() {
         candidateResponse,
         applicationResponse,
         scopedMatches,
-        vacanciesForLookup
+        vacanciesForLookup,
+        vacancyFilter
       );
       setStoredCandidates(nextCandidates);
       setDetailErrorMessage(null);
@@ -508,17 +530,10 @@ export function CandidateUploadPanel() {
       try {
         const response = await apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" });
         setVacancies(response);
-        const initialVacancyId = response[0] ? String(response[0].id) : "";
-        if (initialVacancyId) {
-          setVacancyId(initialVacancyId);
-        }
-        await loadParseJobs(initialVacancyId);
-        await loadStoredCandidates(initialVacancyId, response);
+        await loadStoredCandidates("", response);
       } catch {
         setVacancies([]);
         setStoredCandidates([]);
-        setQueuedJobs([]);
-        setPollParseJobs(false);
       }
     };
 
@@ -526,15 +541,6 @@ export function CandidateUploadPanel() {
   }, []);
 
   useEffect(() => {
-    if (!vacancyId) {
-      setQueuedJobs([]);
-      setStoredCandidates([]);
-      setPollParseJobs(false);
-      parseJobStatusesRef.current.clear();
-      return;
-    }
-
-    void loadParseJobs(vacancyId);
     void loadStoredCandidates(vacancyId);
   }, [vacancyId]);
 
@@ -585,6 +591,10 @@ export function CandidateUploadPanel() {
     () => visibleCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? null,
     [selectedCandidateId, visibleCandidates]
   );
+  const selectedCandidateView = useMemo(
+    () => buildStoredCandidateViewModel(selectedCandidate),
+    [selectedCandidate]
+  );
 
   useEffect(() => {
     if (visibleCandidates.length === 0) {
@@ -598,18 +608,6 @@ export function CandidateUploadPanel() {
       setSelectedCandidateId(visibleCandidates[0].id);
     }
   }, [selectedCandidateId, visibleCandidates]);
-
-  useEffect(() => {
-    if (!vacancyId || !pollParseJobs) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      void loadParseJobs(vacancyId);
-    }, 5000);
-
-    return () => window.clearInterval(intervalId);
-  }, [pollParseJobs, vacancyId]);
 
   const handleClearParsingArea = () => {
     if (fileInputRef.current) {
@@ -630,7 +628,7 @@ export function CandidateUploadPanel() {
   };
 
   const handleUpload = async () => {
-    if (files.length === 0 || !vacancyId) {
+    if (files.length === 0) {
       return;
     }
 
@@ -641,34 +639,42 @@ export function CandidateUploadPanel() {
 
     try {
       const formData = new FormData();
-      formData.append("vacancy_id", vacancyId);
+      if (vacancyId) {
+        formData.append("vacancy_id", vacancyId);
+      }
       for (const file of files) {
         formData.append("files", file);
       }
 
-      const response = await apiRequest<CandidateQueueParseBatchResponse>({
-        path: "/candidates/queue-parse-cv-batch",
+      const response = await apiRequest<CandidateManualImportResponse>({
+        path: "/candidates/manual-import",
         method: "POST",
         body: formData,
       });
 
-      setQueuedJobs(response.jobs);
-      parseJobStatusesRef.current = new Map(
-        response.jobs.map((job) => [job.parse_job_id, job.status])
-      );
-      setPollParseJobs(hasActiveParseJobs(response.jobs));
-      setBatchFailures([]);
-      setSessionCandidateIds([]);
-      const nextSuccessMessage = `${response.queued_count} CV${
-        response.queued_count === 1 ? "" : "s"
-      } queued for parsing. n8n can now pick up these jobs and process them automatically.`;
+      const failures = response.results
+        .filter((item) => item.error_message)
+        .map((item) => ({
+          filename: item.filename,
+          error: item.error_message ?? "Import failed.",
+        }));
+      setBatchFailures(failures);
+      const parsedCandidateIds = response.results
+        .map((item) => (item.candidate_id ? String(item.candidate_id) : null))
+        .filter((value): value is string => value !== null);
+      setSessionCandidateIds(parsedCandidateIds);
+      const successCount = response.results.filter((item) => item.parse_status !== "failed").length;
+      const nextSuccessMessage = `${successCount} CV${
+        successCount === 1 ? "" : "s"
+      } parsed successfully${vacancyId ? " for the selected vacancy" : " without a linked vacancy"}.`;
 
       setSuccessMessage(nextSuccessMessage);
-      await loadParseJobs(vacancyId);
       await loadStoredCandidates(vacancyId);
-      sendBrowserNotification("Resume parsing queued", nextSuccessMessage);
+      if (parsedCandidateIds.length > 0) {
+        setSelectedCandidateId(parsedCandidateIds[0]);
+      }
+      sendBrowserNotification("Resume parsing completed", nextSuccessMessage);
     } catch (error) {
-      setQueuedJobs([]);
       setSuccessMessage(null);
       setErrorMessage(error instanceof Error ? error.message : "CV upload failed.");
     } finally {
@@ -680,32 +686,32 @@ export function CandidateUploadPanel() {
     <div className="space-y-6">
       <Panel className="rounded-[30px] p-6">
         <div className="flex flex-col gap-2">
-          <h2 className="text-[1.35rem] font-semibold text-white">Upload and queue resumes</h2>
+          <h2 className="text-[1.35rem] font-semibold text-white">Bulk parse resumes</h2>
           <p className="text-sm text-[#95a8b8]">
-            Step 2: upload one or many PDF resumes, create parse jobs for the selected vacancy, and let n8n process them asynchronously.
+            Upload one or many resumes and import them immediately into the app database. Choosing a vacancy is optional.
           </p>
         </div>
 
         <div className="mt-5 grid gap-5 md:grid-cols-2">
-          <FormField label="Resume PDFs">
+          <FormField label="Resume files">
             <Input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,application/pdf"
+              accept={acceptedFileTypes}
               multiple
               onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
             />
             <p className="mt-2 text-xs text-[#7f93a5]">
               {files.length > 0
-                ? `${files.length} PDF${files.length === 1 ? "" : "s"} selected for queueing`
-                : "Select one or many resumes to queue for asynchronous parsing."}
+                ? `${files.length} file${files.length === 1 ? "" : "s"} selected for direct parsing`
+                : "Select one or many resumes to import immediately. PDF, DOCX, and DOC are supported."}
             </p>
           </FormField>
 
-          <FormField label="Vacancy">
+          <FormField label="Vacancy (optional)">
             <Select value={vacancyId} onChange={(event) => setVacancyId(event.target.value)}>
-              <option value="" disabled>
-                Select vacancy
+              <option value="">
+                No vacancy / Talent pool
               </option>
               {vacancies.map((vacancy) => (
                 <option key={vacancy.id} value={vacancy.id}>
@@ -749,15 +755,24 @@ export function CandidateUploadPanel() {
           </div>
         ) : null}
 
+        {isUploading ? (
+          <div className="mt-4 rounded-[18px] border border-[#89c7e8]/30 bg-[#122433] px-4 py-3 text-sm text-[#d8eef9]">
+            <div className="flex items-center gap-3">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              <p>Parsing in progress. This can take a few seconds per CV.</p>
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-5 flex flex-wrap gap-3">
           <Button
             type="button"
             icon={isUploading ? LoaderCircle : FileUp}
             onClick={handleUpload}
-            disabled={files.length === 0 || !vacancyId || isUploading}
+            disabled={files.length === 0 || isUploading}
             className={isUploading ? "opacity-80" : ""}
           >
-            {isUploading ? "Queueing resumes..." : "Queue Resumes"}
+            {isUploading ? "Parsing resumes..." : "Parse Resumes Now"}
           </Button>
           <Button
             type="button"
@@ -769,53 +784,6 @@ export function CandidateUploadPanel() {
           </Button>
         </div>
 
-        {queuedJobs.length > 0 ? (
-          <div className="mt-6 space-y-5">
-            <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
-                    Latest queued parse jobs
-                  </p>
-                  <p className="mt-3 text-sm leading-6 text-[#95a8b8]">
-                    These files are tracked live. New uploads start as uploaded, then move to processing, parsed, or failed.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {queuedJobs.map((job) => (
-                  <div
-                    key={job.parse_job_id}
-                    className="rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-[#d6e1ea]"
-                  >
-                    <p className="font-semibold text-white">{job.original_file_name ?? job.file_name}</p>
-                    <p className="mt-1 text-[#9fc6e0]">Status: {formatParseJobStatus(job.status)}</p>
-                    {job.parsed_at ? (
-                      <p className="mt-1 text-[#95a8b8]">Parsed: {formatTimestamp(job.parsed_at)}</p>
-                    ) : null}
-                    {job.candidate_id ? (
-                      <div className="mt-3 flex flex-wrap items-center gap-3">
-                        {job.status === "parsed" ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() => handleViewParsedCandidate(job.candidate_id!)}
-                          >
-                            View Parsed CV
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {job.error_message ? (
-                      <p className="mt-1 text-[#f0b4b8]">Error: {job.error_message}</p>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
       </Panel>
 
       <div ref={storedCandidatesSectionRef} />
@@ -823,7 +791,7 @@ export function CandidateUploadPanel() {
         <div className="flex flex-col gap-2">
           <h2 className="text-[1.35rem] font-semibold text-white">Stored parsed candidates</h2>
           <p className="text-sm text-[#95a8b8]">
-            Every parsed CV appears here after n8n processes its queued parse job and links it to the selected vacancy.
+            The most recently parsed CVs for this session appear here immediately after parsing completes.
           </p>
         </div>
 
@@ -846,14 +814,14 @@ export function CandidateUploadPanel() {
             <div className="overflow-hidden rounded-[24px] border border-white/8 bg-white/[0.02]">
               <div className="grid grid-cols-[1.4fr_1fr_120px_170px] gap-4 border-b border-white/8 px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
                 <span>Candidate</span>
-                <span>Linked vacancy</span>
+                <span>{vacancyId ? "Applied vacancy" : "Best vacancy match"}</span>
                 <span>Match</span>
                 <span>Parsed</span>
               </div>
               <div className="divide-y divide-white/8">
                 {visibleCandidates.map((candidate) => (
                   <button
-                    key={candidate.id}
+                    key={candidate.rowKey}
                     type="button"
                     onClick={() => setSelectedCandidateId(candidate.id)}
                     className={`grid w-full grid-cols-[1.4fr_1fr_120px_170px] gap-4 px-5 py-4 text-left transition ${
@@ -875,53 +843,53 @@ export function CandidateUploadPanel() {
               </div>
             </div>
 
-            {selectedCandidate ? (
+            {selectedCandidate && selectedCandidateView ? (
               <Panel className="rounded-[24px] p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h3 className="text-[1.25rem] font-semibold text-white">{selectedCandidate.name}</h3>
-                    <p className="mt-1 text-sm text-[#95a8b8]">{selectedCandidate.email}</p>
+                    <h3 className="text-[1.25rem] font-semibold text-white">{selectedCandidateView.name}</h3>
+                    <p className="mt-1 text-sm text-[#95a8b8]">{selectedCandidateView.email}</p>
                   </div>
                   <div className="rounded-full bg-[#466d8a]/18 px-4 py-2 text-sm font-semibold text-[#9fc6e0]">
-                    {formatMatchScore(selectedCandidate.matchScore)}
+                    {formatMatchScore(selectedCandidateView.matchScore)}
                   </div>
                 </div>
 
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Applied to</p>
-                    <p className="mt-2 text-base text-white">{selectedCandidate.linkedVacancyTitle}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">{selectedCandidateView.vacancyLabel}</p>
+                    <p className="mt-2 text-base text-white">{selectedCandidateView.vacancyLabelTitle}</p>
                   </div>
                   <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Parsed on</p>
-                    <p className="mt-2 text-base text-white">{formatTimestamp(selectedCandidate.uploadedAt)}</p>
+                    <p className="mt-2 text-base text-white">{formatTimestamp(selectedCandidateView.uploadedAt)}</p>
                   </div>
                 </div>
 
                 <div className="mt-5 rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Summary</p>
                   <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-[#d6e1ea]">
-                    {selectedCandidate.aiSummary}
+                    {selectedCandidateView.aiSummary}
                   </p>
                 </div>
 
                 <div className="mt-5 grid gap-5 md:grid-cols-2">
                   <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Experience</p>
-                    <p className="mt-3 text-sm leading-7 text-[#d6e1ea]">{selectedCandidate.experience}</p>
+                    <p className="mt-3 text-sm leading-7 text-[#d6e1ea]">{selectedCandidateView.experience}</p>
                   </div>
                   <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Education</p>
-                    <p className="mt-3 text-sm leading-7 text-[#d6e1ea]">{selectedCandidate.education}</p>
+                    <p className="mt-3 text-sm leading-7 text-[#d6e1ea]">{selectedCandidateView.education}</p>
                   </div>
                 </div>
 
                 <div className="mt-5 rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Matched skills</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {(selectedCandidate.matchedSkills.length > 0
-                      ? selectedCandidate.matchedSkills
-                      : selectedCandidate.skills
+                    {(selectedCandidateView.matchedSkills.length > 0
+                      ? selectedCandidateView.matchedSkills
+                      : selectedCandidateView.skills
                     ).map((skill) => (
                       <span
                         key={skill}
@@ -937,12 +905,15 @@ export function CandidateUploadPanel() {
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
                     Vacancy fit explanation
                   </p>
-                  <p className="mt-3 text-sm leading-7 text-[#d6e1ea]">{selectedCandidate.fitExplanation}</p>
+                  <p className="mt-3 text-sm leading-7 text-[#d6e1ea]">{selectedCandidateView.fitExplanation}</p>
                 </div>
 
                 <div className="mt-5 rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
                     Role suggestions
+                  </p>
+                  <p className="mt-2 text-xs text-[#8ea2b4]">
+                    These are role ideas based on CV signal overlap, not the same as the vacancy match score above.
                   </p>
                   <div className="mt-3 space-y-3">
                     {selectedRoleSuggestions.length > 0 ? (
@@ -956,10 +927,13 @@ export function CandidateUploadPanel() {
                               </p>
                             </div>
                             <div className="rounded-full bg-[#466d8a]/18 px-3 py-1 text-sm font-semibold text-[#9fc6e0]">
-                              {suggestion.confidence_score}%
+                              {formatRoleSuggestionStrength(suggestion.confidence_score)}
                             </div>
                           </div>
-                          <p className="mt-2 text-sm text-[#95a8b8]">{suggestion.reason}</p>
+                          <p className="mt-2 text-sm text-[#95a8b8]">
+                            {suggestion.reason}
+                            {` Signal score: ${Math.round(suggestion.confidence_score)}.`}
+                          </p>
                         </div>
                       ))
                     ) : (
@@ -975,15 +949,15 @@ export function CandidateUploadPanel() {
                   <div className="mt-3 grid gap-3 md:grid-cols-3">
                     <div>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Name</p>
-                      <p className="mt-2 text-sm text-[#d6e1ea]">{selectedCandidate.name}</p>
+                      <p className="mt-2 text-sm text-[#d6e1ea]">{selectedCandidateView.name}</p>
                     </div>
                     <div>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Email</p>
-                      <p className="mt-2 break-all text-sm text-[#d6e1ea]">{selectedCandidate.email}</p>
+                      <p className="mt-2 break-all text-sm text-[#d6e1ea]">{selectedCandidateView.email}</p>
                     </div>
                     <div>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Role</p>
-                      <p className="mt-2 text-sm text-[#d6e1ea]">{selectedCandidate.linkedVacancyTitle}</p>
+                      <p className="mt-2 text-sm text-[#d6e1ea]">{selectedCandidateView.vacancyLabelTitle}</p>
                     </div>
                   </div>
                 </div>

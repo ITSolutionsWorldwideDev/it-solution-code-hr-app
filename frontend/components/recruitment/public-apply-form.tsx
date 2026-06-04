@@ -6,7 +6,7 @@ import { FileUp, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/api/client";
-import type { CandidateQueueParseJobResponse, VacancyApiRecord } from "@/lib/recruitment-types";
+import type { PublicApplicationSubmitResponse, VacancyApiRecord } from "@/lib/recruitment-types";
 
 type PublicApplyFormProps = {
   vacancy: VacancyApiRecord;
@@ -25,7 +25,7 @@ export function PublicApplyForm({ vacancy, compact = false }: PublicApplyFormPro
 
   const handleSubmit = async () => {
     if (!file) {
-      setErrorMessage("Choose a PDF resume first.");
+      setErrorMessage("Choose a resume file first.");
       return;
     }
 
@@ -42,7 +42,6 @@ export function PublicApplyForm({ vacancy, compact = false }: PublicApplyFormPro
       const formData = new FormData();
       formData.append("file", file);
       formData.append("vacancy_id", String(vacancy.id));
-      formData.append("uploaded_by", "public_apply_page");
       formData.append("candidate_email", candidateEmail.trim());
       if (location.trim()) {
         formData.append("location", location.trim());
@@ -54,15 +53,13 @@ export function PublicApplyForm({ vacancy, compact = false }: PublicApplyFormPro
         formData.append("notice_period", noticePeriod.trim());
       }
 
-      const response = await apiRequest<CandidateQueueParseJobResponse>({
-        path: "/candidates/queue-parse-cv",
+      const response = await apiRequest<PublicApplicationSubmitResponse>({
+        path: "/applications/public-submit",
         method: "POST",
         body: formData,
       });
 
-      setSuccessMessage(
-        `Your resume was uploaded successfully. Parse job #${response.parse_job_id} is now queued for this vacancy.`,
-      );
+      setSuccessMessage(`${response.message} Parse status: ${response.parse_status}.`);
       setFile(null);
       setCandidateEmail("");
       setLocation("");
@@ -101,17 +98,17 @@ export function PublicApplyForm({ vacancy, compact = false }: PublicApplyFormPro
 
         <div>
           <label className="mb-2 block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9ab0c3]">
-            Resume PDF
+            Resume
           </label>
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-[18px] border border-dashed border-white/14 bg-[#11151b] px-5 py-8 text-center transition hover:border-[#9db8ff]/35">
             <FileUp className="h-5 w-5 text-[#a9c3ff]" />
             <span className="mt-3 text-sm font-medium text-[#d9e5ee]">
               {file ? file.name : "Click to upload or drag and drop"}
             </span>
-            <span className="mt-2 text-xs text-[#7f93a5]">PDF only</span>
+            <span className="mt-2 text-xs text-[#7f93a5]">PDF, DOCX, or DOC</span>
             <Input
               type="file"
-              accept=".pdf,application/pdf"
+              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               className="hidden"
             />

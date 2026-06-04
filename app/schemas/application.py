@@ -31,6 +31,14 @@ class ApplicationCreate(ApplicationBase):
     pass
 
 
+class PublicApplicationSubmitResponse(BaseSchema):
+    application_id: int
+    candidate_id: int
+    parse_status: str
+    match_status: str
+    message: str
+
+
 class ApplicationUpdate(BaseSchema):
     candidate_id: Optional[int] = None
     vacancy_id: Optional[int] = None

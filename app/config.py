@@ -69,6 +69,13 @@ def build_vertex_model_candidates() -> list[str]:
 class Settings(BaseModel):
     app_name: str = "AI Recruitment Backend"
     database_url: str = build_database_url()
+    website_database_url: str | None = os.getenv("WEBSITE_DATABASE_URL")
+    website_jobs_table: str = os.getenv("WEBSITE_JOBS_TABLE", "jobs_infos")
+    website_publisher_user_id: int | None = (
+        int(os.getenv("WEBSITE_PUBLISHER_USER_ID"))
+        if os.getenv("WEBSITE_PUBLISHER_USER_ID")
+        else None
+    )
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY")
     vertex_project_id: str | None = os.getenv("VERTEX_PROJECT_ID")
     vertex_location: str = os.getenv("VERTEX_LOCATION", "europe-west1")

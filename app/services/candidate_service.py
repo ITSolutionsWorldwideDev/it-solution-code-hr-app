@@ -40,7 +40,12 @@ def create_candidate_from_cv(
     if parse_result.matching_result:
         parsed_data["matching"] = sanitize_payload(parse_result.matching_result.model_dump())
     parsed_data["formatted_resume_preview"] = format_resume_preview(cv_text)
-    existing_candidate = _find_existing_candidate_by_email(session, parsed_candidate.get("email"))
+    existing_candidate = _find_existing_candidate(
+        session,
+        email=parsed_candidate.get("email"),
+        resume_path=pdf_content.get("resume_path"),
+        file_checksum=pdf_content.get("file_checksum"),
+    )
 
     if existing_candidate is not None:
         apply_parsed_data_to_candidate(
@@ -357,3 +362,38 @@ def _find_existing_candidate_by_email(session: Session, email: str | None) -> Ca
 
     statement = select(Candidate).where(Candidate.email == email)
     return session.exec(statement).first()
+
+
+def _find_existing_candidate_by_resume_identity(
+    session: Session,
+    *,
+    resume_path: str | None,
+    file_checksum: str | None,
+) -> Candidate | None:
+    candidates = list(session.exec(select(Candidate)).all())
+    for candidate in candidates:
+        parsed_data = candidate.parsed_data or {}
+        parsed_resume_path = parsed_data.get("resume_path")
+        parsed_file_checksum = parsed_data.get("file_checksum")
+        if file_checksum and parsed_file_checksum == file_checksum:
+            return candidate
+        if resume_path and parsed_resume_path == resume_path:
+            return candidate
+    return None
+
+
+def _find_existing_candidate(
+    session: Session,
+    *,
+    email: str | None,
+    resume_path: str | None,
+    file_checksum: str | None,
+) -> Candidate | None:
+    by_resume = _find_existing_candidate_by_resume_identity(
+        session,
+        resume_path=resume_path,
+        file_checksum=file_checksum,
+    )
+    if by_resume is not None:
+        return by_resume
+    return _find_existing_candidate_by_email(session, email)
