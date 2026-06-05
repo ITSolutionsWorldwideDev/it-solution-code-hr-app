@@ -39,8 +39,8 @@ const BULK_PARSE_SESSION_STORAGE_KEY = "itsw-bulk-parse-session-results";
 const BULK_PARSE_SESSION_IDS_STORAGE_KEY = "itsw-bulk-parse-session-candidate-ids";
 const BULK_PARSE_SELECTED_CANDIDATE_STORAGE_KEY = "itsw-bulk-parse-selected-candidate";
 const MAX_UPLOAD_BATCH_FILES = 5;
-const MAX_UPLOAD_BATCH_BYTES = 3.5 * 1024 * 1024;
-const MAX_SINGLE_FILE_BYTES = 3 * 1024 * 1024;
+const MAX_UPLOAD_BATCH_BYTES = 4 * 1024 * 1024;
+const MAX_SINGLE_FILE_BYTES = 4 * 1024 * 1024;
 
 type UploadProgressState = {
   processedFiles: number;
@@ -764,7 +764,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       setErrorMessage(
         `${oversizedFile.name} is too large for direct Vercel parsing. Keep each file under ${Math.round(
           MAX_SINGLE_FILE_BYTES / (1024 * 1024)
-        )} MB or upload smaller batches.`
+        )} MB so the request stays below Vercel's 4.5 MB function payload limit.`
       );
       setSuccessMessage(null);
       return;
@@ -927,7 +927,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               <div className="flex items-start gap-2 text-[#bdc8cd]">
                 <Info className="mt-0.5 h-4 w-4 shrink-0" />
                 <p className="text-[1rem]">
-                  Direct parsing on Vercel works best in small batches. The uploader now sends up to 5 files per request automatically.
+                  Direct parsing on Vercel works best in small batches. The uploader now sends up to 5 files per request and keeps each request under roughly 4 MB automatically.
                 </p>
               </div>
               <p className="mt-3 text-sm text-[#889297]">
