@@ -273,6 +273,82 @@ function getCandidateInitials(name: string) {
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
+function normalizeMatchText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function scoreCandidateAgainstVacancy(
+  skills: string[],
+  summaryParts: Array<string | null | undefined>,
+  vacancy: VacancyApiRecord
+) {
+  const normalizedSkills = Array.from(
+    new Set(skills.map((skill) => normalizeMatchText(skill)).filter(Boolean))
+  );
+  const vacancySkills = Array.from(
+    new Set((vacancy.required_skills ?? []).map((skill) => normalizeMatchText(skill)).filter(Boolean))
+  );
+
+  const overlapCount = vacancySkills.filter((skill) => normalizedSkills.includes(skill)).length;
+  const overlapScore = vacancySkills.length > 0 ? (overlapCount / vacancySkills.length) * 70 : 0;
+
+  const searchText = normalizeMatchText(
+    [vacancy.title, vacancy.description, vacancy.experience_level, ...vacancySkills].join(" ")
+  );
+  const keywordHits = normalizedSkills.filter((skill) => searchText.includes(skill)).length;
+  const keywordScore = Math.min(20, keywordHits * 4);
+
+  const summaryBlob = normalizeMatchText(summaryParts.filter(Boolean).join(" "));
+  const titleTokens = vacancy.title
+    .split(/\s+/)
+    .map((token) => normalizeMatchText(token))
+    .filter((token) => token.length >= 4);
+  const titleMatches = titleTokens.filter((token) => summaryBlob.includes(token)).length;
+  const titleScore = Math.min(10, titleMatches * 5);
+
+  return Math.max(0, Math.min(100, Math.round(overlapScore + keywordScore + titleScore)));
+}
+
+function inferTalentPoolMatch(
+  candidate: {
+    skills: string[];
+    aiSummary?: string | null;
+    experience?: string | null;
+    education?: string | null;
+  },
+  vacancies: VacancyApiRecord[]
+) {
+  const openVacancies = vacancies.filter((vacancy) => vacancy.status === "open");
+  if (openVacancies.length === 0) {
+    return null;
+  }
+
+  let bestVacancy: VacancyApiRecord | null = null;
+  let bestScore: number | null = null;
+
+  for (const vacancy of openVacancies) {
+    const score = scoreCandidateAgainstVacancy(
+      candidate.skills,
+      [candidate.aiSummary, candidate.experience, candidate.education],
+      vacancy
+    );
+    if (bestScore === null || score > bestScore) {
+      bestScore = score;
+      bestVacancy = vacancy;
+    }
+  }
+
+  if (!bestVacancy || bestScore === null) {
+    return null;
+  }
+
+  return {
+    vacancyId: String(bestVacancy.id),
+    vacancyTitle: bestVacancy.title,
+    score: bestScore,
+  };
+}
+
 function splitFilesIntoUploadBatches(files: File[]) {
   const batches: File[][] = [];
   let currentBatch: File[] = [];
@@ -407,15 +483,29 @@ function buildStoredCandidates(
       const matching = parsedData.matching as
         | {
             applied_match?: { vacancy_id?: string; role_name?: string; score?: number };
+            potential_match?: { vacancy_id?: string; role_name?: string; score?: number };
           }
         | undefined;
+      const inferredTalentPoolMatch = inferTalentPoolMatch(
+        {
+          skills: candidate.skills,
+          aiSummary: candidate.ai_summary,
+          experience: candidate.experience,
+          education: candidate.education,
+        },
+        vacancies
+      );
       const selectedVacancyId =
         asString(parsedData.selected_vacancy_id) ??
         matching?.applied_match?.vacancy_id ??
+        matching?.potential_match?.vacancy_id ??
+        inferredTalentPoolMatch?.vacancyId ??
         null;
       const selectedVacancyTitle =
         asString(parsedData.selected_vacancy_title) ??
         matching?.applied_match?.role_name ??
+        matching?.potential_match?.role_name ??
+        inferredTalentPoolMatch?.vacancyTitle ??
         "Best open vacancy match";
       const fallbackFitExplanation =
         asString(parsedData.fit_explanation) ??
@@ -433,7 +523,9 @@ function buildStoredCandidates(
             null
           : candidateFitScore ??
             linkedMatch?.match_score ??
+            matching?.potential_match?.score ??
             matching?.applied_match?.score ??
+            inferredTalentPoolMatch?.score ??
             null;
       const linkedVacancyTitle = vacancyScope
         ? linkedVacancy?.title ?? scopedVacancy?.title ?? selectedVacancyTitle
@@ -511,15 +603,29 @@ function buildImmediateStoredCandidatesFromImport(
       const matching = parsedData.matching as
         | {
             applied_match?: { vacancy_id?: string; role_name?: string; score?: number };
+            potential_match?: { vacancy_id?: string; role_name?: string; score?: number };
           }
         | undefined;
+      const inferredTalentPoolMatch = inferTalentPoolMatch(
+        {
+          skills: item.skills ?? [],
+          aiSummary: item.ai_summary,
+          experience: item.experience,
+          education: item.education,
+        },
+        vacancies
+      );
       const selectedVacancyId =
         asString(parsedData.selected_vacancy_id) ??
         matching?.applied_match?.vacancy_id ??
+        matching?.potential_match?.vacancy_id ??
+        inferredTalentPoolMatch?.vacancyId ??
         null;
       const selectedVacancyTitle =
         asString(parsedData.selected_vacancy_title) ??
         matching?.applied_match?.role_name ??
+        matching?.potential_match?.role_name ??
+        inferredTalentPoolMatch?.vacancyTitle ??
         "Best open vacancy match";
       const linkedVacancyTitle = scopedVacancy?.title ?? selectedVacancyTitle;
       const fitExplanation =
@@ -539,7 +645,13 @@ function buildImmediateStoredCandidatesFromImport(
         linkedVacancyId: vacancyScope || selectedVacancyId || null,
         linkedVacancyTitle,
         vacancyLabel: vacancyScope ? "Applied to" : selectedVacancyId ? "Latest best match" : "Best vacancy match",
-        matchScore: item.score ?? asNumber(parsedData.fit_score) ?? matching?.applied_match?.score ?? null,
+        matchScore:
+          item.score ??
+          asNumber(parsedData.fit_score) ??
+          matching?.potential_match?.score ??
+          matching?.applied_match?.score ??
+          inferredTalentPoolMatch?.score ??
+          null,
         fitExplanation,
         matchedSkills: matchedSkills.length > 0 ? matchedSkills : item.skills ?? [],
         uploadedAt: asString(parsedData.parsed_at) ?? new Date().toISOString(),
@@ -1035,9 +1147,11 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       ? selectedCandidateView.matchedSkills
       : selectedCandidateView?.skills ?? [];
   const selectedCandidateScoreLabel =
-    selectedCandidateView?.matchScore !== null && selectedCandidateView?.matchScore !== undefined
+    vacancies.some((vacancy) => vacancy.status === "open")
+      ? selectedCandidateView?.matchScore !== null && selectedCandidateView?.matchScore !== undefined
       ? `${Math.max(0, Math.min(100, Math.round(selectedCandidateView.matchScore)))}% talent-pool fit`
-      : "No talent-pool score stored yet";
+      : "No talent-pool score stored yet"
+      : "No open vacancies available for scoring yet";
 
   return (
     <div className="space-y-8">
@@ -1088,6 +1202,11 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                   Direct parsing on Vercel works best in small batches. The uploader now sends up to 5 files per request, keeps each request under roughly 4 MB, and runs up to 2 batches in parallel.
                 </p>
               </div>
+              {!vacancies.some((vacancy) => vacancy.status === "open") ? (
+                <div className="mt-3 rounded-lg border border-[#7b5c2e] bg-[rgba(74,54,18,0.45)] px-4 py-3 text-sm text-[#f5dfb1]">
+                  No open vacancies are available right now. CVs can still be parsed, but talent-pool scoring and potential-role matching will stay empty until at least one vacancy is marked as open.
+                </div>
+              ) : null}
               <p className="mt-3 text-sm text-[#889297]">
                 {files.length > 0
                   ? `${files.length} file${files.length === 1 ? "" : "s"} selected for direct parsing.`

@@ -143,6 +143,73 @@ function extractExperienceYears(candidate: CandidateApiRecord) {
   return null;
 }
 
+function normalizeMatchText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function scoreCandidateAgainstVacancy(
+  candidate: CandidateApiRecord,
+  vacancy: VacancyApiRecord
+) {
+  const normalizedSkills = Array.from(
+    new Set((candidate.skills ?? []).map((skill) => normalizeMatchText(skill)).filter(Boolean))
+  );
+  const vacancySkills = Array.from(
+    new Set((vacancy.required_skills ?? []).map((skill) => normalizeMatchText(skill)).filter(Boolean))
+  );
+
+  const overlapCount = vacancySkills.filter((skill) => normalizedSkills.includes(skill)).length;
+  const overlapScore = vacancySkills.length > 0 ? (overlapCount / vacancySkills.length) * 70 : 0;
+
+  const searchText = normalizeMatchText(
+    [vacancy.title, vacancy.description, vacancy.experience_level, ...vacancySkills].join(" ")
+  );
+  const keywordHits = normalizedSkills.filter((skill) => searchText.includes(skill)).length;
+  const keywordScore = Math.min(20, keywordHits * 4);
+
+  const summaryBlob = normalizeMatchText(
+    [candidate.ai_summary, candidate.experience, candidate.education]
+      .filter(Boolean)
+      .join(" ")
+  );
+  const titleTokens = vacancy.title
+    .split(/\s+/)
+    .map((token) => normalizeMatchText(token))
+    .filter((token) => token.length >= 4);
+  const titleMatches = titleTokens.filter((token) => summaryBlob.includes(token)).length;
+  const titleScore = Math.min(10, titleMatches * 5);
+
+  return Math.max(0, Math.min(100, Math.round(overlapScore + keywordScore + titleScore)));
+}
+
+function inferTalentPoolMatch(candidate: CandidateApiRecord, vacancies: VacancyApiRecord[]) {
+  const openVacancies = vacancies.filter((vacancy) => vacancy.status === "open");
+  if (openVacancies.length === 0) {
+    return null;
+  }
+
+  let bestVacancy: VacancyApiRecord | null = null;
+  let bestScore: number | null = null;
+
+  for (const vacancy of openVacancies) {
+    const score = scoreCandidateAgainstVacancy(candidate, vacancy);
+    if (bestScore === null || score > bestScore) {
+      bestScore = score;
+      bestVacancy = vacancy;
+    }
+  }
+
+  if (!bestVacancy || bestScore === null) {
+    return null;
+  }
+
+  return {
+    vacancyId: bestVacancy.id,
+    vacancyTitle: bestVacancy.title,
+    score: bestScore,
+  };
+}
+
 function asString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -280,14 +347,18 @@ function buildDatabaseRecords(
         ? vacancyById.get(latestApplication.vacancy_id)
         : null;
       const matching = getCandidateMatching(candidate);
+      const inferredTalentPoolMatch = inferTalentPoolMatch(candidate, vacancies);
       const selectedVacancyId = asNumber(parsedData.selected_vacancy_id);
       const selectedVacancyTitle = asString(parsedData.selected_vacancy_title);
-      const selectedVacancy = selectedVacancyId ? vacancyById.get(selectedVacancyId) : null;
+      const selectedVacancy =
+        (selectedVacancyId ? vacancyById.get(selectedVacancyId) : null) ??
+        (inferredTalentPoolMatch ? vacancyById.get(inferredTalentPoolMatch.vacancyId) ?? null : null);
       const hasAppliedVacancy = Boolean(linkedVacancy);
       const talentPoolPotentialTitle =
         selectedVacancy?.title ??
         selectedVacancyTitle ??
         matching?.potential_match?.role_name ??
+        inferredTalentPoolMatch?.vacancyTitle ??
         null;
       const matchedVacancyTitle =
         matching?.applied_match?.role_name ??
@@ -323,6 +394,7 @@ function buildDatabaseRecords(
         matching?.talent_insights?.overall_score ??
         matching?.potential_match?.score ??
         candidate.match_score ??
+        inferredTalentPoolMatch?.score ??
         appliedMatchScore;
       const parseStatus =
         typeof parsedData.parse_status === "string"
@@ -353,10 +425,13 @@ function buildDatabaseRecords(
         rawAddedAt: addedAt,
         addedAt: formatAddedDate(addedAt),
         dedupeKey,
-        vacancyId: hasAppliedVacancy ? latestApplication?.vacancy_id ?? null : selectedVacancyId ?? null,
+        vacancyId: hasAppliedVacancy
+          ? latestApplication?.vacancy_id ?? null
+          : selectedVacancyId ?? inferredTalentPoolMatch?.vacancyId ?? null,
         vacancyIds: Array.from(new Set([
           ...linkedApplications.map((application) => application.vacancy_id),
           ...(selectedVacancyId ? [selectedVacancyId] : []),
+          ...(inferredTalentPoolMatch ? [inferredTalentPoolMatch.vacancyId] : []),
         ])),
         roleTitle,
         vacancyTitle,
@@ -501,6 +576,10 @@ export function CandidateDatabasePageClient() {
     () => buildDatabaseRecords(candidates, applications, vacancies),
     [applications, candidates, vacancies]
   );
+  const openVacancies = useMemo(
+    () => vacancies.filter((vacancy) => vacancy.status === "open"),
+    [vacancies]
+  );
 
   const filteredRecords = useMemo(() => {
     const freeTextQuery = searchQuery.trim().toLowerCase();
@@ -611,6 +690,16 @@ export function CandidateDatabasePageClient() {
         <div className="flex gap-3">
           <button
             type="button"
+            onClick={() => void handleBackfill()}
+            disabled={backfillLoading || openVacancies.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#72d0ed]/20 bg-[#72d0ed]/10 px-4 py-2 text-[#a9e9ff] transition hover:bg-[#72d0ed]/15 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <span className="text-[1rem]">
+              {backfillLoading ? "Re-scoring..." : "Re-score Talent Pool"}
+            </span>
+          </button>
+          <button
+            type="button"
             className="inline-flex items-center gap-2 rounded-lg border border-white/5 bg-[#222b33] px-4 py-2 text-[#bdc8cd] transition hover:text-[#a9e9ff]"
           >
             <Filter className="h-4 w-4" />
@@ -646,6 +735,12 @@ export function CandidateDatabasePageClient() {
           {successMessage ? (
             <Panel className="border-[#2f6550] bg-[rgba(16,42,33,0.72)] text-[#b8efcf]">
               {successMessage}
+            </Panel>
+          ) : null}
+
+          {openVacancies.length === 0 ? (
+            <Panel className="border-[#7b5c2e] bg-[rgba(74,54,18,0.45)] text-[#f5dfb1]">
+              No open vacancies are currently available. Talent-pool candidates can only receive a potential role and score after at least one vacancy is marked as <span className="font-semibold">open</span>.
             </Panel>
           ) : null}
 
