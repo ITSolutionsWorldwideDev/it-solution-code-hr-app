@@ -1063,19 +1063,37 @@ Return JSON only."""
     }
     heuristic_candidate["skills"] = [skill for skill in heuristic_candidate["skills"] if skill]
 
-    if selected_vacancy is None and not normalized_vacancies:
-        fit_score = None
-    elif is_talent_pool_parse and normalized_vacancies and (selected_vacancy is None or fit_score is None):
+    heuristic_best_vacancy: dict[str, Any] | None = None
+    heuristic_best_score: float | None = None
+    if is_talent_pool_parse and normalized_vacancies:
         best_score = -1.0
-        best_vacancy: dict[str, Any] | None = None
         for vacancy_item in normalized_vacancies:
             score, _, _ = _score_candidate_against_vacancy(heuristic_candidate, cv_text, vacancy_item)
             if score > best_score:
                 best_score = score
-                best_vacancy = vacancy_item
-        if best_vacancy is not None:
-            selected_vacancy = best_vacancy
-            fit_score = round(best_score, 2)
+                heuristic_best_vacancy = vacancy_item
+        if heuristic_best_vacancy is not None:
+            heuristic_best_score = round(best_score, 2)
+
+    if selected_vacancy is None and not normalized_vacancies:
+        fit_score = None
+    elif is_talent_pool_parse and heuristic_best_vacancy is not None:
+        if selected_vacancy is None:
+            selected_vacancy = heuristic_best_vacancy
+        if fit_score is None or fit_score <= 0:
+            if (
+                selected_vacancy is not None
+                and selected_vacancy.get("id") == heuristic_best_vacancy.get("id")
+                and heuristic_best_score is not None
+            ):
+                fit_score = heuristic_best_score
+            else:
+                selected_score, _, _ = _score_candidate_against_vacancy(
+                    heuristic_candidate,
+                    cv_text,
+                    selected_vacancy,
+                )
+                fit_score = round(selected_score, 2)
 
     selected_vacancy_title = (
         sanitize_text(str(selected_vacancy.get("title") or ""))
