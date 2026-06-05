@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Filter, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Expand, Filter, Search, X } from "lucide-react";
 
 import { CandidateUploadPanel } from "@/components/recruitment/candidate-upload-panel";
 import { useRole } from "@/components/providers/role-provider";
@@ -22,6 +22,7 @@ type CandidateDatabaseRecord = {
   initials: string;
   name: string;
   email: string;
+  phone: string | null;
   rawAddedAt: string | null;
   addedAt: string;
   dedupeKey: string;
@@ -38,6 +39,11 @@ type CandidateDatabaseRecord = {
   parseStatus: string | null;
   isPlaceholder: boolean;
   searchBlob: string;
+  aiSummary: string;
+  skills: string[];
+  experience: string;
+  education: string;
+  parsedData: Record<string, unknown>;
 };
 
 const dateFilterOptions = [
@@ -225,6 +231,22 @@ function asNumber(value: unknown) {
   }
 
   return null;
+}
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as string[];
+  }
+
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
 }
 
 function getCandidateInitials(name: string) {
@@ -422,6 +444,7 @@ function buildDatabaseRecords(
         initials: getCandidateInitials(candidate.name),
         name: candidate.name,
         email: candidate.email,
+        phone: asString(parsedData.phone) ?? candidate.phone ?? null,
         rawAddedAt: addedAt,
         addedAt: formatAddedDate(addedAt),
         dedupeKey,
@@ -444,6 +467,14 @@ function buildDatabaseRecords(
         parseStatus,
         isPlaceholder: isPlaceholderCandidate(candidate),
         searchBlob,
+        aiSummary:
+          candidate.ai_summary ??
+          asString(parsedData.executive_summary) ??
+          "No parsed summary available yet.",
+        skills: candidate.skills,
+        experience: candidate.experience ?? "No experience parsed yet.",
+        education: candidate.education ?? "No education parsed yet.",
+        parsedData,
       };
     })
     .sort((left, right) => {
@@ -546,6 +577,7 @@ export function CandidateDatabasePageClient() {
   const [matchScoreFilter, setMatchScoreFilter] = useState<0 | 60 | 80>(0);
   const [dateFilter, setDateFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -633,6 +665,10 @@ export function CandidateDatabasePageClient() {
 
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / PAGE_SIZE));
   const paginatedRecords = filteredRecords.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const selectedCandidate = useMemo(
+    () => databaseRecords.find((candidate) => candidate.id === selectedCandidateId) ?? null,
+    [databaseRecords, selectedCandidateId]
+  );
   const showingFrom = filteredRecords.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const showingTo = Math.min(currentPage * PAGE_SIZE, filteredRecords.length);
   const visiblePageNumbers = Array.from(new Set([1, 2, 3, totalPages].filter((page) => page <= totalPages)));
@@ -885,6 +921,7 @@ export function CandidateDatabasePageClient() {
                 <button
                   key={candidate.id}
                   type="button"
+                  onClick={() => setSelectedCandidateId(candidate.id)}
                   className="grid w-full grid-cols-12 items-center rounded-xl border border-white/5 bg-[rgba(24,32,40,0.7)] px-6 py-4 text-left backdrop-blur-md transition hover:-translate-y-0.5 hover:border-[#a9e9ff]/40 hover:shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)]"
                 >
                   <div className="col-span-3 flex items-center gap-4">
@@ -918,6 +955,7 @@ export function CandidateDatabasePageClient() {
                     <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#a9e9ff]">
                       View Profile
                     </span>
+                    <Expand className="h-4 w-4 text-[#a9e9ff]" />
                     <span
                       className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${getStagePillTone(
                         candidate.stage
@@ -1000,6 +1038,166 @@ export function CandidateDatabasePageClient() {
           )}
         </>
       )}
+
+      {selectedCandidate ? (
+        <div className="fixed inset-0 z-[140] bg-[#060f16]/90 backdrop-blur-sm">
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-white/5 px-6 py-5">
+              <div>
+                <h3 className="text-[1.8rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
+                  {selectedCandidate.name}
+                </h3>
+                <p className="mt-1 text-[0.98rem] text-[#bdc8cd]">
+                  {selectedCandidate.email}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedCandidateId(null)}
+                className="rounded-lg border border-white/10 p-3 text-[#dae3ee] transition hover:border-[#a9e9ff]/40 hover:text-[#a9e9ff]"
+                aria-label="Close parsed profile"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid flex-1 gap-0 overflow-hidden lg:grid-cols-[420px_minmax(0,1fr)]">
+              <aside className="overflow-y-auto border-b border-white/5 bg-[#101922] p-6 lg:border-b-0 lg:border-r">
+                <div className="space-y-6">
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-4 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Parsed Candidate Profile
+                    </h5>
+                    <div className="space-y-4 text-[0.98rem] text-[#dae3ee]">
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Name</p>
+                        <p className="mt-1 break-words">
+                          {asString(asRecord(selectedCandidate.parsedData?.parsed_fields)?.name) ?? selectedCandidate.name}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Email</p>
+                        <p className="mt-1 break-all">
+                          {asString(asRecord(selectedCandidate.parsedData?.parsed_fields)?.email) ?? selectedCandidate.email}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Phone</p>
+                        <p className="mt-1 break-words">
+                          {asString(asRecord(selectedCandidate.parsedData?.parsed_fields)?.phone) ?? selectedCandidate.phone ?? "No phone parsed"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Best Open Vacancy</p>
+                        <p className="mt-1 break-words">
+                          {asString(selectedCandidate.parsedData?.selected_vacancy_title) ?? selectedCandidate.potentialRole ?? "No best vacancy stored"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Potential Role Score</p>
+                        <p className="mt-1">
+                          {selectedCandidate.overallTalentScore !== null
+                            ? `${Math.max(0, Math.min(100, Math.round(selectedCandidate.overallTalentScore)))}%`
+                            : "No talent-pool score stored yet"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Parsed At</p>
+                        <p className="mt-1">
+                          {selectedCandidate.rawAddedAt ? formatAddedDate(selectedCandidate.rawAddedAt) : "No parse timestamp stored"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Matched Skills
+                    </h5>
+                    <div className="flex flex-wrap gap-2">
+                      {(asStringArray(selectedCandidate.parsedData?.matched_skills).length > 0
+                        ? asStringArray(selectedCandidate.parsedData?.matched_skills)
+                        : selectedCandidate.skills
+                      ).map((skill) => (
+                        <span
+                          key={skill}
+                          className="rounded-md border border-white/5 bg-[#2d363e]/60 px-3 py-1 text-[0.78rem] text-[#dae3ee]"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </aside>
+
+              <main className="overflow-y-auto p-6">
+                <div className="space-y-6">
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      AI Candidate Summary
+                    </h5>
+                    <p className="text-[1rem] italic leading-8 text-[#dae3ee]/90">
+                      "{selectedCandidate.aiSummary}"
+                    </p>
+                  </div>
+
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                      <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                        Experience
+                      </h5>
+                      <p className="text-[0.98rem] leading-7 text-[#dae3ee]">
+                        {asString(asRecord(selectedCandidate.parsedData?.parsed_fields)?.experience) ?? selectedCandidate.experience}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                      <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                        Education
+                      </h5>
+                      <p className="text-[0.98rem] leading-7 text-[#dae3ee]">
+                        {asString(asRecord(selectedCandidate.parsedData?.parsed_fields)?.education) ?? selectedCandidate.education}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                      <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                        Key Strengths
+                      </h5>
+                      <div className="space-y-2">
+                        {asStringArray(selectedCandidate.parsedData?.pros).length > 0 ? asStringArray(selectedCandidate.parsedData?.pros).map((item) => (
+                          <p key={item} className="text-[0.96rem] text-[#dae3ee]">{item}</p>
+                        )) : <p className="text-[0.96rem] text-[#bdc8cd]">No strengths were stored.</p>}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                      <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                        Attention Points
+                      </h5>
+                      <div className="space-y-2">
+                        {asStringArray(selectedCandidate.parsedData?.cons).length > 0 ? asStringArray(selectedCandidate.parsedData?.cons).map((item) => (
+                          <p key={item} className="text-[0.96rem] text-[#dae3ee]">{item}</p>
+                        )) : <p className="text-[0.96rem] text-[#bdc8cd]">No attention points were stored.</p>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Parsed Data Snapshot
+                    </h5>
+                    <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-white/5 bg-[#0b141c] p-4 text-[0.86rem] leading-6 text-[#dae3ee]">
+                      {JSON.stringify(selectedCandidate.parsedData, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              </main>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
