@@ -11,6 +11,9 @@ type CandidateDetailProps = {
 };
 
 export function CandidateDetail({ candidate, stageLabel }: CandidateDetailProps) {
+  const pros = candidate.parsedData.pros ?? [];
+  const cons = candidate.parsedData.cons ?? [];
+
   return (
     <div className="grid gap-5 xl:grid-cols-[1.25fr_0.95fr]">
       <Panel className="rounded-[30px] p-6">
@@ -39,6 +42,12 @@ export function CandidateDetail({ candidate, stageLabel }: CandidateDetailProps)
             <p className="mt-2 text-[1rem] text-[#edf4fa]">{candidate.matchScore}%</p>
           </div>
           <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-5">
+            <p className="text-sm font-semibold text-[#9ab0c0]">Experience</p>
+            <p className="mt-2 text-[1rem] text-[#edf4fa]">
+              {candidate.parsedData.experienceYears ? `${candidate.parsedData.experienceYears} years` : "Not specified"}
+            </p>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-5">
             <p className="text-sm font-semibold text-[#9ab0c0]">Email</p>
             <p className="mt-2 text-[1rem] text-[#edf4fa]">{candidate.parsedData.email}</p>
           </div>
@@ -62,13 +71,39 @@ export function CandidateDetail({ candidate, stageLabel }: CandidateDetailProps)
           </div>
           <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-5 md:col-span-2">
             <p className="text-sm font-semibold text-[#9ab0c0]">AI Screening Summary</p>
-            <p className="mt-3 text-[1rem] leading-7 text-[#95a8b8]">{candidate.aiSummary}</p>
+            <p className="mt-3 text-[1rem] leading-7 text-[#95a8b8]">
+              {candidate.parsedData.executiveSummary ?? candidate.aiSummary}
+            </p>
           </div>
           <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-5 md:col-span-2">
             <p className="text-sm font-semibold text-[#9ab0c0]">Why This Candidate Matches</p>
             <p className="mt-3 text-[1rem] leading-7 text-[#95a8b8]">
               {candidate.parsedData.fitExplanation ?? "No fit explanation is available yet."}
             </p>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-5">
+            <p className="text-sm font-semibold text-[#9ab0c0]">Top Strengths</p>
+            {pros.length > 0 ? (
+              <ul className="mt-3 space-y-2 text-[1rem] leading-7 text-[#95a8b8]">
+                {pros.map((item) => (
+                  <li key={item}>- {item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-[1rem] leading-7 text-[#95a8b8]">No strengths were stored yet.</p>
+            )}
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-5">
+            <p className="text-sm font-semibold text-[#9ab0c0]">Attention Points</p>
+            {cons.length > 0 ? (
+              <ul className="mt-3 space-y-2 text-[1rem] leading-7 text-[#95a8b8]">
+                {cons.map((item) => (
+                  <li key={item}>- {item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-[1rem] leading-7 text-[#95a8b8]">No critical gaps were flagged.</p>
+            )}
           </div>
           <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-5 md:col-span-2">
             <p className="text-sm font-semibold text-[#9ab0c0]">Experience</p>

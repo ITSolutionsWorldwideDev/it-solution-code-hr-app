@@ -243,6 +243,15 @@ def build_parsed_data(pdf_content: dict, parsed_candidate: dict, vacancy: Vacanc
         "extracted_text": pdf_content.get("extracted_text"),
         "openai_response_version": "responses_api_v1",
         "fit_explanation": parsed_candidate.get("fit_explanation"),
+        "executive_summary": parsed_candidate.get("ai_summary"),
+        "fit_score": parsed_candidate.get("match_score"),
+        "pros": parsed_candidate.get("pros", []),
+        "cons": parsed_candidate.get("cons", []),
+        "experience_years": parsed_candidate.get("experience_years", 0),
+        "years_experience": parsed_candidate.get("experience_years", 0),
+        "selected_vacancy_id": parsed_candidate.get("selected_vacancy_id"),
+        "selected_vacancy_title": parsed_candidate.get("selected_vacancy_title"),
+        "matched_skills": parsed_candidate.get("matched_skills", []),
         "parsed_fields": {
             "name": parsed_candidate.get("name"),
             "email": parsed_candidate.get("email"),
@@ -250,6 +259,7 @@ def build_parsed_data(pdf_content: dict, parsed_candidate: dict, vacancy: Vacanc
             "skills": parsed_candidate.get("skills", []),
             "experience": parsed_candidate.get("experience"),
             "education": parsed_candidate.get("education"),
+            "experience_years": parsed_candidate.get("experience_years", 0),
         },
         "vacancy_context": {
             "vacancy_id": vacancy.id,
@@ -266,7 +276,7 @@ def apply_parsed_data_to_candidate(
     candidate: Candidate,
     parsed_candidate: dict,
     ai_summary: str,
-    match_score: float,
+    match_score: float | None,
     parsed_data: dict,
 ) -> Candidate:
     candidate.name = sanitize_text(parsed_candidate["name"]) or candidate.name

@@ -24,7 +24,7 @@ from app.services.ai_service import (
     sanitize_text,
 )
 from app.services.crud import get_or_404
-from app.services.openai_service import CandidateParseResult, format_resume_preview, parse_candidate_with_openai
+from app.services.openai_service import CandidateParseResult, parse_candidate_with_openai
 
 
 def create_candidate_from_cv(
@@ -36,13 +36,14 @@ def create_candidate_from_cv(
     vacancy = get_or_404(session, Vacancy, vacancy_id) if vacancy_id else None
     cv_text = pdf_content["extracted_text"]
     parse_result = _parse_resume_with_context(session, cv_text, vacancy)
-    parsed_candidate = sanitize_payload(parse_result.model_dump())
+    resolved_vacancy = _resolve_selected_vacancy(session, vacancy, parse_result)
+    parsed_candidate = _parsed_candidate_payload(parse_result)
     if submitted_email:
         parsed_candidate["email"] = sanitize_text(submitted_email) or parsed_candidate.get("email")
-    parsed_data = build_parsed_data(pdf_content, parsed_candidate, vacancy)
+    parsed_data = build_parsed_data(pdf_content, parsed_candidate, resolved_vacancy)
     if parse_result.matching_result:
         parsed_data["matching"] = sanitize_payload(parse_result.matching_result.model_dump())
-    parsed_data["formatted_resume_preview"] = format_resume_preview(cv_text, require_ai=True)
+    parsed_data["formatted_resume_preview"] = sanitize_text(cv_text[:5000]) or cv_text[:5000]
     existing_candidate = _find_existing_candidate(
         session,
         email=parsed_candidate.get("email"),
@@ -65,11 +66,11 @@ def create_candidate_from_cv(
         role_suggestions = _replace_role_suggestions(
             session, existing_candidate.id, parse_result.role_suggestions
         )
-        applied_match = _upsert_candidate_matches(session, existing_candidate.id, parse_result, vacancy)
+        applied_match = _upsert_candidate_matches(session, existing_candidate.id, parse_result, resolved_vacancy)
         session.refresh(existing_candidate)
         return (
             existing_candidate,
-            vacancy,
+            resolved_vacancy,
             parsed_candidate,
             applied_match,
             role_suggestions,
@@ -93,11 +94,11 @@ def create_candidate_from_cv(
     session.refresh(candidate)
 
     role_suggestions = _replace_role_suggestions(session, candidate.id, parse_result.role_suggestions)
-    applied_match = _upsert_candidate_matches(session, candidate.id, parse_result, vacancy)
+    applied_match = _upsert_candidate_matches(session, candidate.id, parse_result, resolved_vacancy)
     session.refresh(candidate)
     return (
         candidate,
-        vacancy,
+        resolved_vacancy,
         parsed_candidate,
         applied_match,
         role_suggestions,
@@ -117,13 +118,14 @@ def update_candidate_from_cv(
 
     cv_text = pdf_content["extracted_text"]
     parse_result = _parse_resume_with_context(session, cv_text, vacancy)
-    parsed_candidate = sanitize_payload(parse_result.model_dump())
+    resolved_vacancy = _resolve_selected_vacancy(session, vacancy, parse_result)
+    parsed_candidate = _parsed_candidate_payload(parse_result)
     if submitted_email:
         parsed_candidate["email"] = sanitize_text(submitted_email) or parsed_candidate.get("email")
-    parsed_data = build_parsed_data(pdf_content, parsed_candidate, vacancy)
+    parsed_data = build_parsed_data(pdf_content, parsed_candidate, resolved_vacancy)
     if parse_result.matching_result:
         parsed_data["matching"] = sanitize_payload(parse_result.matching_result.model_dump())
-    parsed_data["formatted_resume_preview"] = format_resume_preview(cv_text, require_ai=True)
+    parsed_data["formatted_resume_preview"] = sanitize_text(cv_text[:5000]) or cv_text[:5000]
 
     apply_parsed_data_to_candidate(
         candidate,
@@ -137,16 +139,50 @@ def update_candidate_from_cv(
     session.refresh(candidate)
 
     role_suggestions = _replace_role_suggestions(session, candidate.id, parse_result.role_suggestions)
-    applied_match = _upsert_candidate_matches(session, candidate.id, parse_result, vacancy)
+    applied_match = _upsert_candidate_matches(session, candidate.id, parse_result, resolved_vacancy)
     session.refresh(candidate)
     return (
         candidate,
-        vacancy,
+        resolved_vacancy,
         parsed_candidate,
         applied_match,
         role_suggestions,
         parse_result.matching_result.model_dump() if parse_result.matching_result else None,
     )
+
+
+def _parsed_candidate_payload(parse_result: CandidateParseResult) -> dict:
+    return sanitize_payload(
+        {
+            "name": parse_result.name,
+            "email": parse_result.email,
+            "phone": parse_result.phone,
+            "skills": parse_result.skills[:10],
+            "experience": parse_result.experience,
+            "education": parse_result.education,
+            "ai_summary": parse_result.ai_summary,
+            "match_score": parse_result.match_score,
+            "fit_explanation": parse_result.fit_explanation,
+            "pros": parse_result.pros,
+            "cons": parse_result.cons,
+            "experience_years": parse_result.experience_years,
+            "selected_vacancy_id": parse_result.selected_vacancy_id,
+            "selected_vacancy_title": parse_result.selected_vacancy_title,
+            "matched_skills": parse_result.matched_skills,
+        }
+    )
+
+
+def _resolve_selected_vacancy(
+    session: Session,
+    vacancy: Vacancy | None,
+    parse_result: CandidateParseResult,
+) -> Vacancy | None:
+    if vacancy is not None:
+        return vacancy
+    if parse_result.selected_vacancy_id is None:
+        return None
+    return session.get(Vacancy, parse_result.selected_vacancy_id)
 
 
 def create_candidate_from_cv_fast(
@@ -377,6 +413,7 @@ def _parse_resume_with_context(session: Session, cv_text: str, vacancy: Vacancy 
         cv_text=cv_text,
         vacancy_context=vacancy_context,
         active_vacancies=active_vacancy_contexts,
+        require_ai=False,
     )
 
 
@@ -415,36 +452,44 @@ def _upsert_candidate_matches(
     applied_vacancy: Vacancy | None,
 ) -> CandidateMatch | None:
     if not parse_result.vacancy_matches:
+        session.exec(delete(CandidateMatch).where(CandidateMatch.candidate_id == candidate_id))
+        session.commit()
         return None
 
-    applied_match_row: CandidateMatch | None = None
-    for vacancy_match in parse_result.vacancy_matches:
-        statement = select(CandidateMatch).where(
+    selected_match = parse_result.vacancy_matches[0]
+    session.exec(
+        delete(CandidateMatch).where(
             CandidateMatch.candidate_id == candidate_id,
-            CandidateMatch.vacancy_id == vacancy_match.vacancy_id,
+            CandidateMatch.vacancy_id != selected_match.vacancy_id,
         )
-        match = session.exec(statement).first()
+    )
+    session.commit()
 
-        if match is None:
-            match = CandidateMatch(
-                candidate_id=candidate_id,
-                vacancy_id=vacancy_match.vacancy_id,
-                match_score=vacancy_match.score,
-            )
+    statement = select(CandidateMatch).where(
+        CandidateMatch.candidate_id == candidate_id,
+        CandidateMatch.vacancy_id == selected_match.vacancy_id,
+    )
+    match = session.exec(statement).first()
 
-        match.match_score = vacancy_match.score
-        match.ai_summary = vacancy_match.ai_summary
-        match.fit_explanation = vacancy_match.fit_explanation
-        match.matched_skills = vacancy_match.matched_skills
+    if match is None:
+        match = CandidateMatch(
+            candidate_id=candidate_id,
+            vacancy_id=selected_match.vacancy_id,
+            match_score=selected_match.score,
+        )
 
-        session.add(match)
-        session.commit()
-        session.refresh(match)
+    match.match_score = selected_match.score
+    match.ai_summary = selected_match.ai_summary
+    match.fit_explanation = selected_match.fit_explanation
+    match.matched_skills = selected_match.matched_skills
 
-        if applied_vacancy and vacancy_match.vacancy_id == applied_vacancy.id:
-            applied_match_row = match
+    session.add(match)
+    session.commit()
+    session.refresh(match)
 
-    return applied_match_row
+    if applied_vacancy and match.vacancy_id != applied_vacancy.id:
+        return None
+    return match
 
 
 def _build_resume_fallback_email(pdf_content: dict) -> str:

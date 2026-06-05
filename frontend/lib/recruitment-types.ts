@@ -72,6 +72,10 @@ export type ParsedCandidateData = {
   skills: string[];
   experience: string;
   education: string;
+  executiveSummary?: string;
+  pros?: string[];
+  cons?: string[];
+  experienceYears?: number;
   location?: string;
   workAuthorization?: string;
   noticePeriod?: string;

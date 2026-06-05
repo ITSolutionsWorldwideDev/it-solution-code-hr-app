@@ -71,10 +71,12 @@ def build_vertex_model_candidates() -> list[str]:
         if candidates:
             return candidates
 
-    primary = os.getenv("VERTEX_GENERATIVE_MODEL", "gemini-2.5-flash")
+    primary = os.getenv("VERTEX_GENERATIVE_MODEL", "gemini-3.1-flash-lite")
     defaults = [
         primary,
+        "gemini-3.1-flash-lite",
         "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
         "gemini-2.5-pro",
         "gemini-2.0-flash",
     ]
@@ -103,7 +105,7 @@ class Settings(BaseModel):
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY")
     vertex_project_id: str | None = os.getenv("VERTEX_PROJECT_ID")
     vertex_location: str = os.getenv("VERTEX_LOCATION", "europe-west1")
-    vertex_generative_model: str = os.getenv("VERTEX_GENERATIVE_MODEL", "gemini-2.5-flash")
+    vertex_generative_model: str = os.getenv("VERTEX_GENERATIVE_MODEL", "gemini-3.1-flash-lite")
     vertex_generative_models: list[str] = build_vertex_model_candidates()
     vertex_embedding_model: str = os.getenv("VERTEX_EMBEDDING_MODEL", "gemini-embedding-001")
     talent_vector_model: str = os.getenv("TALENT_VECTOR_MODEL", "all-MiniLM-L6-v2")

@@ -171,6 +171,13 @@ export function mapApplicationToPipelineCandidate(
         asString(asRecord(parsedData.intake_metadata).notice_period) ??
         asString(parsedData.notice_period) ??
         undefined,
+      executiveSummary:
+        candidate?.ai_summary ??
+        asString(parsedData.executive_summary) ??
+        undefined,
+      pros: asStringArray(parsedData.pros),
+      cons: asStringArray(parsedData.cons),
+      experienceYears: asNumber(parsedData.experience_years) ?? asNumber(parsedData.years_experience) ?? undefined,
       fitExplanation: asString(parsedData.fit_explanation) ?? undefined,
     },
   };
@@ -203,6 +210,19 @@ function asStringArray(value: unknown): string[] {
   return value
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter(Boolean);
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  return null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
