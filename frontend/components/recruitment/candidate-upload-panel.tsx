@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BellRing, FileUp, LoaderCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CloudUpload,
+  Expand,
+  FileUp,
+  History,
+  Info,
+  LoaderCircle,
+  Plus,
+  Sparkles,
+} from "lucide-react";
 
 import { apiRequest } from "@/lib/api/client";
 import type {
@@ -9,19 +20,12 @@ import type {
   CandidateApiRecord,
   CandidateManualImportResponse,
   CandidateMatchApiRecord,
-  CandidateRoleSuggestionApiRecord,
   StoredCandidateRecord,
   VacancyApiRecord,
 } from "@/lib/recruitment-types";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { Panel } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
-
-type VacancyMatchLookupProps = {
-  vacancies: VacancyApiRecord[];
-};
 
 type CandidateMatchLookup = CandidateMatchApiRecord & {
   vacancy_title: string;
@@ -39,86 +43,6 @@ function parseApiDate(value: string) {
   const normalizedValue =
     /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`;
   return new Date(normalizedValue);
-}
-
-function VacancyMatchLookup({ vacancies }: VacancyMatchLookupProps) {
-  const [vacancyId, setVacancyId] = useState("");
-  const [matches, setMatches] = useState<CandidateMatchApiRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const handleLoadMatches = async () => {
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    try {
-      const response = await apiRequest<CandidateMatchApiRecord[]>({
-        path: `/vacancies/${vacancyId}/matches`,
-      });
-      setMatches(response);
-    } catch (error) {
-      setMatches([]);
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load vacancy matches.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-      <Panel className="rounded-[30px] p-6">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-[1.35rem] font-semibold text-white">Top vacancy matches</h2>
-          <p className="text-sm text-[#95a8b8]">
-          Step 3: review the current open vacancy rankings from the backend match table.
-          </p>
-        </div>
-
-      <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto]">
-        <FormField label="Vacancy">
-          <Select value={vacancyId} onChange={(event) => setVacancyId(event.target.value)}>
-            <option value="" disabled>
-              Select vacancy
-            </option>
-            {vacancies.map((vacancy) => (
-              <option key={vacancy.id} value={vacancy.id}>
-                {vacancy.title}
-              </option>
-            ))}
-          </Select>
-        </FormField>
-        <div className="md:pt-8">
-          <Button type="button" onClick={handleLoadMatches} disabled={!vacancyId || isLoading}>
-            {isLoading ? "Loading..." : "Load Rankings"}
-          </Button>
-        </div>
-      </div>
-
-      {errorMessage ? (
-        <div className="mt-4 rounded-[18px] border border-[#f0d5d7] bg-[#fff7f8] px-4 py-3 text-sm text-[#a65765]">
-          {errorMessage}
-        </div>
-      ) : null}
-
-      <div className="mt-5 space-y-3">
-        {matches.map((match) => (
-          <div key={match.id} className="rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-semibold text-white">
-                  {match.candidate_name ?? `Candidate #${match.candidate_id}`}
-                </p>
-                <p className="mt-1 text-sm text-[#95a8b8]">{match.ai_summary}</p>
-              </div>
-              <div className="rounded-full bg-[#466d8a]/18 px-3 py-1 text-sm font-semibold text-[#9fc6e0]">
-                {formatMatchScore(match.match_score)}
-              </div>
-            </div>
-            <p className="mt-3 text-sm text-[#95a8b8]">{match.fit_explanation}</p>
-          </div>
-        ))}
-      </div>
-    </Panel>
-  );
 }
 
 function formatTimestamp(value: string) {
@@ -296,14 +220,18 @@ function formatMatchScore(value: number | null) {
   return `${bucketed}%`;
 }
 
-function formatRoleSuggestionStrength(value: number) {
-  if (value >= 85) {
-    return "High signal overlap";
+function getCandidateInitials(name: string) {
+  const parts = name
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (parts.length === 0) {
+    return "CV";
   }
-  if (value >= 65) {
-    return "Medium signal overlap";
-  }
-  return "Light signal overlap";
+
+  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
 function getCandidateTimestamp(
@@ -539,7 +467,6 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
   const [storedCandidatesLoading, setStoredCandidatesLoading] = useState(false);
   const [sessionCandidateIds, setSessionCandidateIds] = useState<string[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
-  const [selectedRoleSuggestions, setSelectedRoleSuggestions] = useState<CandidateRoleSuggestionApiRecord[]>([]);
   const [detailErrorMessage, setDetailErrorMessage] = useState<string | null>(null);
   const acceptedFileTypes =
     ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -711,30 +638,6 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
     void loadStoredCandidates(vacancyId);
   }, [vacancyId]);
 
-  useEffect(() => {
-    if (!selectedCandidateId) {
-      setSelectedRoleSuggestions([]);
-      return;
-    }
-
-    const loadRoleSuggestions = async () => {
-      try {
-        const response = await apiRequest<CandidateRoleSuggestionApiRecord[]>({
-          path: `/candidates/${selectedCandidateId}/role-suggestions`,
-        });
-        setSelectedRoleSuggestions(response);
-        setDetailErrorMessage(null);
-      } catch (error) {
-        setSelectedRoleSuggestions([]);
-        setDetailErrorMessage(
-          error instanceof Error ? error.message : "Failed to load candidate details."
-        );
-      }
-    };
-
-    void loadRoleSuggestions();
-  }, [selectedCandidateId]);
-
   const visibleCandidates = useMemo(() => {
     const sessionSet = new Set(sessionCandidateIds);
     const scopedCandidates =
@@ -878,311 +781,368 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
     }
   };
 
+  const progressValue = isUploading ? 92 : successMessage ? 100 : 0;
+  const successCount = renderedCandidates.length;
+  const primarySkills =
+    selectedCandidateView && selectedCandidateView.matchedSkills.length > 0
+      ? selectedCandidateView.matchedSkills
+      : selectedCandidateView?.skills ?? [];
+
   return (
-    <div className="space-y-6">
-      <Panel className="rounded-[30px] p-6">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-[1.35rem] font-semibold text-white">Bulk parse resumes</h2>
-          <p className="text-sm text-[#95a8b8]">
-            Upload one or many resumes and import them immediately into the app database. Choosing a vacancy is optional.
-          </p>
-        </div>
+    <div className="space-y-8">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={acceptedFileTypes}
+        multiple
+        className="hidden"
+        onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+      />
 
-        <div className="mt-5 grid gap-5 md:grid-cols-2">
-          <FormField label="Resume files">
-            <Input
-              ref={fileInputRef}
-              type="file"
-              accept={acceptedFileTypes}
-              multiple
-              onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-            />
-            <p className="mt-2 text-xs text-[#7f93a5]">
-              {files.length > 0
-                ? `${files.length} file${files.length === 1 ? "" : "s"} selected for direct parsing`
-                : "Select one or many resumes to import immediately. PDF, DOCX, and DOC are supported."}
-            </p>
-            <p className="mt-2 text-xs text-[#6f8291]">
-              Recommended: upload resumes in batches of 25 to 50 files. Larger uploads may time out or fail during parsing.
-            </p>
-          </FormField>
-
-          <FormField label="Vacancy (optional)">
-            <Select value={vacancyId} onChange={(event) => setVacancyId(event.target.value)}>
-              <option value="">
-                No vacancy / Talent pool
-              </option>
-              {vacancies.map((vacancy) => (
-                <option key={vacancy.id} value={vacancy.id}>
-                  {vacancy.title}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-        </div>
-
-        {errorMessage ? (
-          <div className="mt-4 rounded-[18px] border border-[#f0d5d7] bg-[#fff7f8] px-4 py-3 text-sm text-[#a65765]">
-            {errorMessage}
+      <section className="grid grid-cols-12 gap-6">
+        <div className="col-span-12 rounded-xl border border-white/5 bg-[#182028] p-8 lg:col-span-8">
+          <div className="relative overflow-hidden rounded-xl border border-white/5 bg-[#182028]">
+            <div className="pointer-events-none absolute right-6 top-6 text-[#2d363e]">
+              <CloudUpload className="h-24 w-24" strokeWidth={1.2} />
+            </div>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="group flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#3e484c] bg-[#1b232c]/50 px-6 py-14 text-center transition hover:border-[#72d0ed]/50 hover:bg-[#222b33]"
+            >
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#72d0ed]/10 text-[#a9e9ff] transition group-hover:scale-110">
+                <FileUp className="h-8 w-8" />
+              </div>
+              <h3 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
+                Drag and drop resumes here
+              </h3>
+              <p className="mt-2 text-[1rem] text-[#bdc8cd]">
+                or <span className="text-[#a9e9ff] underline">browse your files</span>
+              </p>
+              <div className="mt-7 flex items-center gap-4 text-[0.78rem] font-medium uppercase tracking-[0.16em] text-[#889297]">
+                <span>PDF</span>
+                <span>•</span>
+                <span>DOCX</span>
+                <span>•</span>
+                <span>RTF</span>
+              </div>
+            </button>
           </div>
-        ) : null}
 
-        {successMessage ? (
-          <div className="mt-4 rounded-[18px] border border-[#8cb4a0]/35 bg-[rgba(106,168,133,0.14)] px-4 py-3 text-sm text-[#d8f0e2]">
-            <div className="flex items-start gap-3">
-              <BellRing className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>{successMessage}</p>
+          <div className="mt-6 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex-1">
+              <div className="flex items-start gap-2 text-[#bdc8cd]">
+                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="text-[1rem]">
+                  Recommended: upload resumes in batches of 25 to 50 files. Larger uploads may time out.
+                </p>
+              </div>
+              <p className="mt-3 text-sm text-[#889297]">
+                {files.length > 0
+                  ? `${files.length} file${files.length === 1 ? "" : "s"} selected for direct parsing.`
+                  : "PDF, DOCX and DOC files are supported for direct parsing into the Talent Pool."}
+              </p>
+              <div className="mt-4 max-w-[340px]">
+                <Select value={vacancyId} onChange={(event) => setVacancyId(event.target.value)} className="h-11 rounded-lg border-white/10 bg-[#0f171f]">
+                  <option value="">No vacancy / Talent pool</option>
+                  {vacancies.map((vacancy) => (
+                    <option key={vacancy.id} value={vacancy.id}>
+                      {vacancy.title}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-4">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleClearParsingArea}
+                disabled={isUploading}
+                className="rounded-lg border-[#3e484c] bg-transparent px-6 py-3 text-[#dae3ee] hover:bg-[#2d363e]"
+              >
+                Clear Section
+              </Button>
+              <Button
+                type="button"
+                icon={isUploading ? LoaderCircle : Sparkles}
+                onClick={handleUpload}
+                disabled={files.length === 0 || isUploading}
+                className="rounded-lg bg-[#72d0ed] px-8 py-3 text-[#003642] shadow-[0_20px_30px_rgba(114,208,237,0.14)] hover:bg-[#8adcf4]"
+              >
+                {isUploading ? "Parsing resumes..." : "Parse Resumes Now"}
+              </Button>
             </div>
           </div>
-        ) : null}
 
-        {batchFailures.length > 0 ? (
-          <div className="mt-4 rounded-[18px] border border-[#f0d5d7] bg-[#fff7f8] px-4 py-3 text-sm text-[#a65765]">
-            <p className="font-medium">
-              {batchFailures.length} file{batchFailures.length === 1 ? "" : "s"} could not be parsed:
-            </p>
-            <div className="mt-2 space-y-1">
-              {batchFailures.slice(0, 6).map((failure) => (
-                <p key={`${failure.filename}-${failure.error}`}>
-                  {failure.filename}: {failure.error}
-                </p>
-              ))}
-              {batchFailures.length > 6 ? (
-                <p>...and {batchFailures.length - 6} more.</p>
+          {errorMessage ? (
+            <div className="mt-5 rounded-lg border border-[#ffb4ab]/25 bg-[#93000a]/20 px-4 py-4 text-sm text-[#ffdad6]">
+              {errorMessage}
+            </div>
+          ) : null}
+
+          {successMessage ? (
+            <div className="mt-5 rounded-lg border border-green-500/20 bg-green-500/10 px-4 py-4 text-sm text-green-100">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-400" />
+                <p>{successMessage}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {batchFailures.length > 0 ? (
+            <div className="mt-5 rounded-lg border border-[#ffb4ab]/25 bg-[#93000a]/20 px-4 py-4 text-sm text-[#ffdad6]">
+              <p className="font-medium">
+                {batchFailures.length} file{batchFailures.length === 1 ? "" : "s"} could not be parsed:
+              </p>
+              <div className="mt-2 space-y-1">
+                {batchFailures.slice(0, 6).map((failure) => (
+                  <p key={`${failure.filename}-${failure.error}`}>
+                    {failure.filename}: {failure.error}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="col-span-12 space-y-6 lg:col-span-4">
+          <div className="rounded-xl border border-white/5 bg-[#182028] p-6">
+            <div className="mb-6 flex items-center justify-between">
+              <h4 className="text-[0.78rem] font-medium uppercase tracking-[0.18em] text-[#dae3ee]">
+                Current Activity
+              </h4>
+              <span className="h-2 w-2 rounded-full bg-[#a9e9ff]" />
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <div className="mb-2 flex items-center justify-between text-[1rem]">
+                  <span className="text-[#dae3ee]">
+                    {isUploading ? `Parsing ${Math.max(files.length, 1)} files...` : successCount > 0 ? "Parsing completed" : "Waiting for upload..."}
+                  </span>
+                  <span className="font-mono text-[#a9e9ff]">{progressValue}%</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#0b141c]">
+                  <div
+                    className="h-full bg-[#a9e9ff] shadow-[0_0_8px_rgba(114,208,237,0.5)] transition-all duration-500"
+                    style={{ width: `${progressValue}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4 rounded-lg border border-green-500/20 bg-green-500/10 p-4">
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-400" />
+                <div>
+                  <p className="text-[1.05rem] font-semibold text-green-100">
+                    {successCount} CV{successCount === 1 ? "" : "s"} parsed successfully
+                  </p>
+                  <p className="text-[0.78rem] uppercase tracking-[0.12em] text-green-300/75">
+                    Added to Global Talent Pool
+                  </p>
+                </div>
+              </div>
+
+              {batchFailures.length > 0 ? (
+                <div className="flex items-start gap-4 rounded-lg border border-[#ffb4ab]/20 bg-[#93000a]/20 p-4">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#ffb4ab]" />
+                  <div>
+                    <p className="text-[1.05rem] font-semibold text-[#ffdad6]">
+                      {batchFailures.length} file{batchFailures.length === 1 ? "" : "s"} failed
+                    </p>
+                    <p className="text-[0.78rem] text-[#ffb4ab]/75">
+                      {batchFailures[0]?.error ?? "Invalid format"}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              {isUploading ? (
+                <div className="rounded-lg border border-[#a9e9ff]/15 bg-[#122433] px-4 py-3 text-sm text-[#d8eef9]">
+                  <div className="flex items-center gap-3">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    <p>Parsing in progress. This can take a few seconds per CV.</p>
+                  </div>
+                </div>
               ) : null}
             </div>
           </div>
-        ) : null}
-
-        {isUploading ? (
-          <div className="mt-4 rounded-[18px] border border-[#89c7e8]/30 bg-[#122433] px-4 py-3 text-sm text-[#d8eef9]">
-            <div className="flex items-center gap-3">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-              <p>Parsing in progress. This can take a few seconds per CV.</p>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Button
-            type="button"
-            icon={isUploading ? LoaderCircle : FileUp}
-            onClick={handleUpload}
-            disabled={files.length === 0 || isUploading}
-            className={isUploading ? "opacity-80" : ""}
-          >
-            {isUploading ? "Parsing resumes..." : "Parse Resumes Now"}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleClearParsingArea}
-            disabled={isUploading}
-          >
-            Clear Section
-          </Button>
         </div>
-
-      </Panel>
+      </section>
 
       <div ref={storedCandidatesSectionRef} />
-      <Panel className="rounded-[30px] p-6">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-[1.35rem] font-semibold text-white">Stored parsed candidates</h2>
-          <p className="text-sm text-[#95a8b8]">
-            The most recently parsed CVs for this session appear here immediately after parsing completes.
-          </p>
-        </div>
+      <section className="flex min-h-[600px] flex-col overflow-hidden rounded-xl border border-white/5 bg-[#182028] lg:flex-row">
+        <div className="flex-1 border-b border-white/5 p-6 lg:border-b-0 lg:border-r">
+          <div className="mb-8 flex items-center justify-between gap-4">
+            <h3 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
+              Stored Parsed Candidates
+            </h3>
+            <div className="flex items-center gap-2 rounded-full border border-white/5 bg-[#0b141c] px-4 py-2 text-[#bdc8cd]">
+              <History className="h-4 w-4" />
+              <span className="text-[0.68rem] font-medium uppercase tracking-[0.18em]">
+                Session Session History
+              </span>
+            </div>
+          </div>
 
-        {detailErrorMessage ? (
-          <div className="mt-4 rounded-[18px] border border-[#f0d5d7] bg-[#fff7f8] px-4 py-3 text-sm text-[#a65765]">
-            {detailErrorMessage}
-          </div>
-        ) : null}
+          {detailErrorMessage ? (
+            <div className="rounded-lg border border-[#ffb4ab]/25 bg-[#93000a]/20 px-4 py-4 text-sm text-[#ffdad6]">
+              {detailErrorMessage}
+            </div>
+          ) : null}
 
-        {storedCandidatesLoading ? (
-          <div className="mt-5 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-5 text-sm text-[#95a8b8]">
-            Loading stored candidates...
-          </div>
-        ) : renderedCandidates.length === 0 ? (
-          <div className="mt-5 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-5 text-sm text-[#95a8b8]">
-            No resumes are being shown right now. Parse a new CV batch to display the latest results here.
-          </div>
-        ) : (
-          <div className="mt-5 grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-            <div className="overflow-hidden rounded-[24px] border border-white/8 bg-white/[0.02]">
-              <div className="grid grid-cols-[1.4fr_1fr_120px_170px] gap-4 border-b border-white/8 px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
+          {storedCandidatesLoading ? (
+            <div className="rounded-lg border border-white/5 bg-[#141c24] px-4 py-5 text-sm text-[#bdc8cd]">
+              Loading stored candidates...
+            </div>
+          ) : renderedCandidates.length === 0 ? (
+            <div className="rounded-lg border border-white/5 bg-[#141c24] px-4 py-5 text-sm text-[#bdc8cd]">
+              No resumes are being shown right now. Parse a new CV batch to display the latest results here.
+            </div>
+          ) : (
+            <div className="overflow-hidden">
+              <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_150px_140px] gap-4 border-b border-white/5 px-4 pb-4 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#bdc8cd] md:grid">
                 <span>Candidate</span>
-                <span>{vacancyId ? "Applied vacancy" : "Best vacancy match"}</span>
-                <span>Match</span>
-                <span>Parsed</span>
+                <span>AI Summary</span>
+                <span>Timestamp</span>
+                <span>Status</span>
               </div>
-              <div className="divide-y divide-white/8">
+
+              <div className="divide-y divide-white/5">
                 {renderedCandidates.map((candidate) => (
                   <button
                     key={candidate.rowKey}
                     type="button"
                     onClick={() => setSelectedCandidateId(candidate.id)}
-                    className={`grid w-full grid-cols-[1.4fr_1fr_120px_170px] gap-4 px-5 py-4 text-left transition ${
-                      selectedCandidateId === candidate.id ? "bg-[#466d8a]/14" : "bg-transparent hover:bg-white/[0.03]"
+                    className={`group grid w-full gap-4 px-4 py-5 text-left transition md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_150px_140px] ${
+                      selectedCandidateId === candidate.id
+                        ? "bg-[#222b33]"
+                        : "hover:bg-[#1f2830]"
                     }`}
                   >
+                    <div className="relative flex items-center gap-3">
+                      <div
+                        className={`absolute left-[-1rem] top-1/2 h-10 w-0.5 -translate-y-1/2 bg-[#a9e9ff] transition ${
+                          selectedCandidateId === candidate.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        }`}
+                      />
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#3e4754] font-semibold text-[#dae3ee]">
+                        {getCandidateInitials(candidate.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-[1rem] font-semibold text-[#dae3ee]">{candidate.name}</p>
+                        <p className="truncate text-[0.74rem] uppercase tracking-[0.08em] text-[#bdc8cd]">
+                          {candidate.email}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="line-clamp-1 text-[0.98rem] text-[#bdc8cd]">{candidate.aiSummary}</p>
+                    <p className="text-[0.98rem] text-[#bdc8cd]">{formatTimestamp(candidate.uploadedAt)}</p>
                     <div>
-                      <p className="font-semibold text-white">{candidate.name}</p>
-                      <p className="mt-1 text-sm text-[#95a8b8]">{candidate.email}</p>
-                      <p className="mt-2 line-clamp-2 text-sm text-[#7f93a5]">{candidate.aiSummary}</p>
+                      <span className="inline-flex rounded-full border border-[#a9e9ff]/20 bg-[#a9e9ff]/10 px-3 py-1 text-xs font-medium text-[#a9e9ff]">
+                        Talent Pool
+                      </span>
                     </div>
-                    <div className="text-sm text-[#d6e1ea]">{candidate.linkedVacancyTitle}</div>
-                    <div className="text-sm font-semibold text-[#9fc6e0]">
-                      {formatMatchScore(candidate.matchScore)}
-                    </div>
-                    <div className="text-sm text-[#95a8b8]">{formatTimestamp(candidate.uploadedAt)}</div>
                   </button>
                 ))}
               </div>
             </div>
+          )}
+        </div>
 
-            {selectedCandidate && selectedCandidateView ? (
-              <Panel className="rounded-[24px] p-5">
+        <aside className="w-full bg-[#0b141c]/30 p-8 lg:w-[450px]">
+          {selectedCandidate && selectedCandidateView ? (
+            <div className="flex h-full flex-col gap-8">
+              <div className="space-y-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h3 className="text-[1.25rem] font-semibold text-white">{selectedCandidateView.name}</h3>
-                    <p className="mt-1 text-sm text-[#95a8b8]">{selectedCandidateView.email}</p>
+                    <h4 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
+                      {selectedCandidateView.name}
+                    </h4>
+                    <p className="text-[1rem] text-[#bdc8cd]">{selectedCandidateView.vacancyLabelTitle}</p>
                   </div>
-                  <div className="rounded-full bg-[#466d8a]/18 px-4 py-2 text-sm font-semibold text-[#9fc6e0]">
-                    {formatMatchScore(selectedCandidateView.matchScore)}
-                  </div>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-white/10 p-3 text-[#a9e9ff] transition hover:border-[#a9e9ff]/40"
+                    aria-label="Open candidate details"
+                  >
+                    <Expand className="h-5 w-5" />
+                  </button>
                 </div>
 
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">{selectedCandidateView.vacancyLabel}</p>
-                    <p className="mt-2 text-base text-white">{selectedCandidateView.vacancyLabelTitle}</p>
-                  </div>
-                  <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Parsed on</p>
-                    <p className="mt-2 text-base text-white">{formatTimestamp(selectedCandidateView.uploadedAt)}</p>
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Summary</p>
-                  <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-[#d6e1ea]">
-                    {selectedCandidateView.aiSummary}
+                <div className="rounded-xl border border-white/5 bg-[#222b33] p-5">
+                  <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                    AI Candidate Summary
+                  </h5>
+                  <p className="text-[1.02rem] italic leading-8 text-[#dae3ee]/90">
+                    "{selectedCandidateView.aiSummary}"
                   </p>
                 </div>
+              </div>
 
-                <div className="mt-5 grid gap-5 md:grid-cols-2">
-                  <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Experience</p>
-                    <p className="mt-3 text-sm leading-7 text-[#d6e1ea]">{selectedCandidateView.experience}</p>
-                  </div>
-                  <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Education</p>
-                    <p className="mt-3 text-sm leading-7 text-[#d6e1ea]">{selectedCandidateView.education}</p>
-                  </div>
+              <div>
+                <h5 className="mb-4 text-[0.74rem] font-medium uppercase tracking-[0.22em] text-[#bdc8cd]">
+                  Matched Skills
+                </h5>
+                <div className="flex flex-wrap gap-2">
+                  {primarySkills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="rounded-md border border-white/5 bg-[#2d363e]/60 px-3 py-1 text-[0.72rem] text-[#dae3ee]"
+                    >
+                      {skill}
+                    </span>
+                  ))}
                 </div>
+              </div>
 
-                <div className="mt-5 rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Matched skills</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {(selectedCandidateView.matchedSkills.length > 0
-                      ? selectedCandidateView.matchedSkills
-                      : selectedCandidateView.skills
-                    ).map((skill) => (
-                      <span
-                        key={skill}
-                        className="rounded-full bg-white/[0.06] px-3 py-1.5 text-sm font-medium text-[#9fc6e0]"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Experience</p>
+                  <p className="mt-2 text-[1rem] text-[#dae3ee]">{selectedCandidateView.experience}</p>
                 </div>
+                <div>
+                  <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Education</p>
+                  <p className="mt-2 text-[1rem] text-[#dae3ee]">{selectedCandidateView.education}</p>
+                </div>
+              </div>
 
-                <div className="mt-5 rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
-                    Vacancy fit explanation
+              <div className="border-t border-white/5 pt-4">
+                <h5 className="mb-4 text-[0.74rem] font-medium uppercase tracking-[0.22em] text-[#bdc8cd]">
+                  Formatted CV Preview
+                </h5>
+                <div className="relative flex min-h-[230px] flex-col items-center justify-center overflow-hidden rounded-lg border border-white/5 bg-[#0a1219] px-6 py-8 text-center">
+                  <FileUp className="h-10 w-10 text-[#4d5058]" />
+                  <p className="mt-4 max-w-[220px] text-[0.92rem] leading-6 text-[#bdc8cd]">
+                    Click to expand formatted resume analysis
                   </p>
-                  <p className="mt-3 text-sm leading-7 text-[#d6e1ea]">{selectedCandidateView.fitExplanation}</p>
+                  <button
+                    type="button"
+                    className="absolute bottom-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-[#a9e9ff] text-[#003642] transition hover:scale-105"
+                    aria-label="Expand formatted CV preview"
+                  >
+                    <Expand className="h-5 w-5" />
+                  </button>
                 </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full min-h-[320px] items-center justify-center rounded-xl border border-white/5 bg-[#141c24] px-6 text-center text-[#bdc8cd]">
+              Parse a CV batch and select a stored candidate to inspect the detail panel.
+            </div>
+          )}
+        </aside>
+      </section>
 
-                <div className="mt-5 rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
-                    Role suggestions
-                  </p>
-                  <p className="mt-2 text-xs text-[#8ea2b4]">
-                    These are role ideas based on CV signal overlap, not the same as the vacancy match score above.
-                  </p>
-                  <div className="mt-3 space-y-3">
-                    {selectedRoleSuggestions.length > 0 ? (
-                      selectedRoleSuggestions.map((suggestion) => (
-                        <div key={suggestion.id} className="rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="font-semibold text-white">{suggestion.role_title}</p>
-                              <p className="mt-1 text-sm text-[#95a8b8]">
-                                {suggestion.department ?? "General"}
-                              </p>
-                            </div>
-                            <div className="rounded-full bg-[#466d8a]/18 px-3 py-1 text-sm font-semibold text-[#9fc6e0]">
-                              {formatRoleSuggestionStrength(suggestion.confidence_score)}
-                            </div>
-                          </div>
-                          <p className="mt-2 text-sm text-[#95a8b8]">
-                            {suggestion.reason}
-                            {` Signal score: ${Math.round(suggestion.confidence_score)}.`}
-                          </p>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-[#95a8b8]">No stored role suggestions for this candidate yet.</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
-                    Resume header
-                  </p>
-                  <div className="mt-3 grid gap-3 md:grid-cols-3">
-                    <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Name</p>
-                      <p className="mt-2 text-sm text-[#d6e1ea]">{selectedCandidateView.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Email</p>
-                      <p className="mt-2 break-all text-sm text-[#d6e1ea]">{selectedCandidateView.email}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">Role</p>
-                      <p className="mt-2 text-sm text-[#d6e1ea]">{selectedCandidateView.vacancyLabelTitle}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
-                    Formatted CV Preview
-                  </p>
-                  <div className="mt-3 space-y-4">
-                    {getResumePreviewBlocks(selectedCandidate.parsedData).map((block, index) => (
-                      <p
-                        key={`${selectedCandidate.id}-preview-${index}`}
-                        className="whitespace-pre-wrap break-words text-sm leading-8 text-[#d6e1ea]"
-                      >
-                        {block}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              </Panel>
-            ) : null}
-          </div>
-        )}
-      </Panel>
-
-      <VacancyMatchLookup vacancies={vacancies} />
+      <button
+        type="button"
+        className="fixed bottom-8 right-8 z-[100] flex h-16 w-16 items-center justify-center rounded-full bg-[#72d0ed] text-[#003642] shadow-[0_24px_36px_rgba(0,0,0,0.32)] transition hover:rotate-90 hover:brightness-105"
+        onClick={() => fileInputRef.current?.click()}
+        aria-label="Quick upload"
+      >
+        <Plus className="h-8 w-8" />
+      </button>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { MoreVertical, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Filter, Search } from "lucide-react";
 
 import { CandidateUploadPanel } from "@/components/recruitment/candidate-upload-panel";
 import { useRole } from "@/components/providers/role-provider";
@@ -21,6 +21,7 @@ type CandidateDatabaseRecord = {
   id: number;
   initials: string;
   name: string;
+  email: string;
   rawAddedAt: string | null;
   addedAt: string;
   vacancyId: number | null;
@@ -33,6 +34,8 @@ type CandidateDatabaseRecord = {
   appliedMatchScore: number | null;
   overallTalentScore: number | null;
   stage: string;
+  parseStatus: string | null;
+  isPlaceholder: boolean;
   searchBlob: string;
 };
 
@@ -43,29 +46,38 @@ const dateFilterOptions = [
   { value: "365", label: "Last 12 Months" },
 ];
 
+const experienceBandOptions = [
+  { value: "all", label: "All Levels" },
+  { value: "senior", label: "Senior (5+ yr)" },
+  { value: "mid", label: "Mid-Level (2-5 yr)" },
+  { value: "junior", label: "Junior (0-2 yr)" },
+];
+
+const PAGE_SIZE = 25;
+
 const stageLabels: Record<string, string> = {
   parsed: "Parsed",
   ranked: "Ranked",
   primary_shortlist: "Shortlisted",
   reserve_shortlist: "Reserve",
-  excluded: "Excluded",
+  excluded: "Rejected",
   hr_invite_selected: "HR Invite",
   hr_invite_sent: "Invite Sent",
-  hr_interview_scheduled: "HR Interview",
-  hr_in_progress: "HR In Progress",
+  hr_interview_scheduled: "Interview",
+  hr_in_progress: "In Review",
   hr_passed: "HR Passed",
-  hr_rejected: "HR Rejected",
-  technical_interview_scheduled: "Technical Interview",
-  technical_in_progress: "Technical In Progress",
-  technical_passed: "Technical Passed",
-  technical_rejected: "Technical Rejected",
-  management_interview_scheduled: "Management Interview",
-  management_in_progress: "Management In Progress",
+  hr_rejected: "Rejected",
+  technical_interview_scheduled: "Technical",
+  technical_in_progress: "In Review",
+  technical_passed: "Passed",
+  technical_rejected: "Rejected",
+  management_interview_scheduled: "Management",
+  management_in_progress: "In Review",
   selected: "Selected",
-  management_rejected: "Management Rejected",
+  management_rejected: "Rejected",
   offer_sent: "Offer Sent",
-  offer_accepted: "Offer Accepted",
-  offer_declined: "Offer Declined",
+  offer_accepted: "Accepted",
+  offer_declined: "Declined",
   hired: "Hired",
 };
 
@@ -146,26 +158,27 @@ function getCandidateInitials(name: string) {
     .join("");
 }
 
-function getStageTone(stage: string) {
+function getStagePillTone(stage: string) {
   const normalized = stage.toLowerCase();
 
   if (normalized.includes("rejected") || normalized === "excluded") {
-    return "border-[#8f3a47] bg-[#3b1820] text-[#ffb7c2]";
+    return "border-[#ffb4ab]/20 bg-[#93000a] text-[#ffdad6]";
   }
 
-  if (normalized.includes("offer") || normalized === "selected" || normalized === "hired") {
-    return "border-[#2f6550] bg-[#102a21] text-[#91e0b7]";
+  if (
+    normalized.includes("shortlist") ||
+    normalized.includes("selected") ||
+    normalized.includes("offer") ||
+    normalized.includes("hired")
+  ) {
+    return "border-[#a9e9ff]/20 bg-[#a9e9ff]/10 text-[#a9e9ff]";
   }
 
-  return "border-[#355c8e] bg-[#11233d] text-[#b8d0ff]";
-}
-
-function formatScore(value: number | null) {
-  if (value === null || !Number.isFinite(value)) {
-    return "Not scored";
+  if (normalized.includes("interview") || normalized.includes("progress")) {
+    return "border-[#72d0ed]/30 bg-[#72d0ed]/12 text-[#72d0ed]";
   }
 
-  return `${Math.round(value)}%`;
+  return "border-white/10 bg-[#2d363e] text-[#dae3ee]";
 }
 
 function getCandidateMatching(candidate: CandidateApiRecord): CandidateMatchingInsightsApiRecord | null {
@@ -175,6 +188,51 @@ function getCandidateMatching(candidate: CandidateApiRecord): CandidateMatchingI
   }
 
   return matching as CandidateMatchingInsightsApiRecord;
+}
+
+function isPlaceholderCandidate(candidate: CandidateApiRecord) {
+  const parseStatus =
+    typeof candidate.parsed_data?.parse_status === "string"
+      ? candidate.parsed_data.parse_status
+      : null;
+
+  return (
+    candidate.name === "Pending Candidate" ||
+    candidate.email.endsWith("@placeholder.local") ||
+    parseStatus === "pending"
+  );
+}
+
+function inferDepartment(roleTitle: string) {
+  const normalized = roleTitle.toLowerCase();
+
+  if (
+    normalized.includes("engineer") ||
+    normalized.includes("developer") ||
+    normalized.includes("frontend") ||
+    normalized.includes("backend") ||
+    normalized.includes("cloud") ||
+    normalized.includes("devops") ||
+    normalized.includes("architect") ||
+    normalized.includes("data") ||
+    normalized.includes("ml")
+  ) {
+    return "Engineering";
+  }
+
+  if (normalized.includes("product")) {
+    return "Product";
+  }
+
+  if (normalized.includes("design") || normalized.includes("ux") || normalized.includes("ui")) {
+    return "Design";
+  }
+
+  if (normalized.includes("sales") || normalized.includes("account")) {
+    return "Sales";
+  }
+
+  return "General";
 }
 
 function buildDatabaseRecords(
@@ -206,11 +264,10 @@ function buildDatabaseRecords(
       const matchedVacancyTitle =
         matching?.applied_match?.role_name ??
         matching?.potential_match?.role_name ??
-        String(candidate.parsed_data?.role_title ?? candidate.parsed_data?.job_title ?? "Candidate Profile");
-      const roleTitle =
-        linkedVacancy?.title ??
-        matchedVacancyTitle;
-      const vacancyTitle = linkedVacancy?.title ?? matchedVacancyTitle;
+        (typeof candidate.parsed_data?.role_title === "string" ? candidate.parsed_data.role_title : null) ??
+        (typeof candidate.parsed_data?.job_title === "string" ? candidate.parsed_data.job_title : null);
+      const roleTitle = linkedVacancy?.title ?? matchedVacancyTitle ?? "No linked vacancy";
+      const vacancyTitle = linkedVacancy?.title ?? matchedVacancyTitle ?? "No linked vacancy";
       const vacancyLabel = linkedVacancy ? "Applied vacancy" : "Best vacancy match";
       const potentialRole = matching?.potential_match?.role_name ?? null;
       const stage = latestApplication?.stage ?? "parsed";
@@ -223,6 +280,10 @@ function buildDatabaseRecords(
         candidate.match_score ??
         null;
       const overallTalentScore = matching?.talent_insights?.overall_score ?? null;
+      const parseStatus =
+        typeof candidate.parsed_data?.parse_status === "string"
+          ? candidate.parsed_data.parse_status
+          : null;
       const searchBlob = [
         candidate.name,
         candidate.email,
@@ -239,6 +300,7 @@ function buildDatabaseRecords(
         id: candidate.id,
         initials: getCandidateInitials(candidate.name),
         name: candidate.name,
+        email: candidate.email,
         rawAddedAt: addedAt,
         addedAt: formatAddedDate(addedAt),
         vacancyId: latestApplication?.vacancy_id ?? null,
@@ -251,6 +313,8 @@ function buildDatabaseRecords(
         appliedMatchScore,
         overallTalentScore,
         stage,
+        parseStatus,
+        isPlaceholder: isPlaceholderCandidate(candidate),
         searchBlob,
       };
     })
@@ -258,6 +322,12 @@ function buildDatabaseRecords(
       const stageDiff = (right.experienceYears ?? -1) - (left.experienceYears ?? -1);
       if (stageDiff !== 0) {
         return stageDiff;
+      }
+
+      const rightTime = parseApiDate(right.rawAddedAt)?.getTime() ?? 0;
+      const leftTime = parseApiDate(left.rawAddedAt)?.getTime() ?? 0;
+      if (rightTime !== leftTime) {
+        return rightTime - leftTime;
       }
       return left.name.localeCompare(right.name);
     });
@@ -295,7 +365,40 @@ function buildDatabaseRecords(
     }
   }
 
-  return [...dedupedByCandidate.values()];
+  return [...dedupedByCandidate.values()].filter((record) => !record.isPlaceholder);
+}
+
+function ScoreRing({ value, tone = "primary" }: { value: number | null; tone?: "primary" | "muted" }) {
+  const hasValue = value !== null && Number.isFinite(value);
+  const numeric = hasValue ? Math.max(0, Math.min(100, Math.round(value))) : 0;
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (numeric / 100) * circumference;
+  const strokeColor = tone === "primary" ? "#a9e9ff" : "rgba(169,233,255,0.7)";
+
+  return (
+    <div className="relative flex h-10 w-10 items-center justify-center">
+      <svg className="h-full w-full -rotate-90" viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r={radius} fill="transparent" stroke="rgba(255,255,255,0.08)" strokeWidth="2" />
+        {hasValue ? (
+          <circle
+            cx="20"
+            cy="20"
+            r={radius}
+            fill="transparent"
+            stroke={strokeColor}
+            strokeWidth="2"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+          />
+        ) : null}
+      </svg>
+      <span className={`absolute text-[10px] font-bold ${tone === "primary" ? "text-[#a9e9ff]" : "text-[#8bcce2]"}`}>
+        {hasValue ? `${numeric}%` : "--"}
+      </span>
+    </div>
+  );
 }
 
 export function CandidateDatabasePageClient() {
@@ -312,10 +415,10 @@ export function CandidateDatabasePageClient() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [selectedVacancyId, setSelectedVacancyId] = useState("all");
-  const [roleFilter, setRoleFilter] = useState("");
-  const [maxExperience, setMaxExperience] = useState(20);
-  const [experienceFilterEnabled, setExperienceFilterEnabled] = useState(false);
+  const [experienceBand, setExperienceBand] = useState("all");
+  const [matchScoreFilter, setMatchScoreFilter] = useState<0 | 60 | 80>(0);
   const [dateFilter, setDateFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const load = async () => {
     setLoading(true);
@@ -348,7 +451,6 @@ export function CandidateDatabasePageClient() {
   );
 
   const filteredRecords = useMemo(() => {
-    const roleQuery = roleFilter.trim().toLowerCase();
     const freeTextQuery = searchQuery.trim().toLowerCase();
     const now = Date.now();
     const maxAgeDays = Number(dateFilter);
@@ -364,15 +466,22 @@ export function CandidateDatabasePageClient() {
         }
       }
 
-      if (roleQuery && !record.roleTitle.toLowerCase().includes(roleQuery)) {
-        return false;
-      }
-
       if (freeTextQuery && !record.searchBlob.includes(freeTextQuery)) {
         return false;
       }
 
-      if (experienceFilterEnabled && (record.experienceYears ?? 0) > maxExperience) {
+      const years = record.experienceYears ?? 0;
+      if (experienceBand === "senior" && years < 5) {
+        return false;
+      }
+      if (experienceBand === "mid" && (years < 2 || years > 5)) {
+        return false;
+      }
+      if (experienceBand === "junior" && years > 2) {
+        return false;
+      }
+
+      if ((record.appliedMatchScore ?? 0) < matchScoreFilter) {
         return false;
       }
 
@@ -388,16 +497,22 @@ export function CandidateDatabasePageClient() {
 
       return true;
     });
-  }, [databaseRecords, dateFilter, maxExperience, roleFilter, searchQuery, selectedVacancyId, vacancies]);
+  }, [databaseRecords, dateFilter, experienceBand, matchScoreFilter, searchQuery, selectedVacancyId]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / PAGE_SIZE));
+  const paginatedRecords = filteredRecords.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const showingFrom = filteredRecords.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const showingTo = Math.min(currentPage * PAGE_SIZE, filteredRecords.length);
+  const visiblePageNumbers = Array.from(new Set([1, 2, 3, totalPages].filter((page) => page <= totalPages)));
 
   const handleResetFilters = () => {
     setSelectedVacancyId("all");
-    setRoleFilter("");
-    setMaxExperience(20);
-    setExperienceFilterEnabled(false);
+    setExperienceBand("all");
+    setMatchScoreFilter(0);
     setDateFilter("all");
     setSearchInput("");
     setSearchQuery("");
+    setCurrentPage(1);
   };
 
   const handleBackfill = async () => {
@@ -426,110 +541,72 @@ export function CandidateDatabasePageClient() {
     }
   };
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedVacancyId, experienceBand, matchScoreFilter, dateFilter, searchQuery]);
+
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="space-y-3">
-          <h1 className="text-[2.9rem] font-semibold tracking-[-0.05em] text-white">
-            Candidate Database
-          </h1>
-          <p className="max-w-[860px] text-[1.05rem] leading-8 text-[#97aaba]">
-            Manage your global talent pipeline. Filter through parsed qualifications and historical
-            candidate data in one clean database view.
+      <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h2 className="text-[2.8rem] font-semibold tracking-[-0.04em] text-[#dae3ee]">Candidate Database</h2>
+          <p className="mt-1 text-[1.05rem] text-[#bdc8cd]">
+            Manage and evaluate your talent pool with precision.
           </p>
         </div>
 
-        <div className="flex w-full max-w-[760px] flex-col gap-3 xl:items-end">
-          <div className="flex w-full flex-col gap-3 rounded-[24px] border border-white/10 bg-[#151b22] p-2 sm:flex-row sm:items-center sm:justify-between xl:max-w-[760px]">
-            <div className="grid flex-1 gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setActiveTab("database")}
-                className={`rounded-[18px] border px-4 py-3 text-left transition ${
-                  activeTab === "database"
-                    ? "border-[#7eb9df]/35 bg-[#1b2734] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                    : "border-transparent bg-transparent text-[#a7bbcb] hover:border-white/10 hover:text-white"
-                }`}
-              >
-                <p className="text-[1rem] font-semibold">Candidate Database</p>
-                <p className="mt-1 text-sm text-inherit/80">Browse and filter stored candidates</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("bulk_parse")}
-                className={`rounded-[18px] border px-4 py-3 text-left transition ${
-                  activeTab === "bulk_parse"
-                    ? "border-[#7eb9df]/35 bg-[#1b2734] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                    : "border-transparent bg-transparent text-[#a7bbcb] hover:border-white/10 hover:text-white"
-                }`}
-              >
-                <p className="text-[1rem] font-semibold">Bulk Parse CVs</p>
-                <p className="mt-1 text-sm text-inherit/80">Upload and parse new CVs</p>
-              </button>
-            </div>
-
-            {role === "HR" || role === "Admin" ? (
-              <div className="flex shrink-0 items-center justify-between gap-3 rounded-[18px] border border-[#7eb9df]/14 bg-[#131a22] px-4 py-3 sm:min-w-[290px]">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8fb6d3]">
-                    Refresh Matches
-                  </p>
-                  <p className="mt-1 text-xs text-[#9ab0c2]">
-                    Re-score stored candidates
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleBackfill}
-                  disabled={backfillLoading}
-                  className="shrink-0 rounded-[16px] border-[#7eb9df]/20 px-4"
-                >
-                  {backfillLoading ? "Refreshing..." : "Run"}
-                </Button>
-              </div>
-            ) : null}
-          </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg border border-white/5 bg-[#222b33] px-4 py-2 text-[#bdc8cd] transition hover:text-[#a9e9ff]"
+          >
+            <Filter className="h-4 w-4" />
+            <span className="text-[1rem]">Filters</span>
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg border border-white/5 bg-[#222b33] px-4 py-2 text-[#bdc8cd] transition hover:text-[#a9e9ff]"
+          >
+            <Download className="h-4 w-4" />
+            <span className="text-[1rem]">Export</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("bulk_parse")}
+            className="inline-flex items-center rounded-lg border border-[#72d0ed]/20 bg-[#72d0ed]/10 px-4 py-2 text-[#a9e9ff] transition hover:bg-[#72d0ed]/15"
+          >
+            Bulk Parse CVs
+          </button>
         </div>
       </div>
 
-      {activeTab === "bulk_parse" ? <CandidateUploadPanel onCandidatesImported={load} /> : null}
-
-      {activeTab !== "database" ? null : (
+      {activeTab === "bulk_parse" ? (
+        <CandidateUploadPanel onCandidatesImported={load} />
+      ) : (
         <>
+          {errorMessage ? (
+            <Panel className="border-[#8f3a47] bg-[rgba(77,19,28,0.55)] text-[#ffd0d7]">
+              {errorMessage}
+            </Panel>
+          ) : null}
 
-      {errorMessage ? (
-        <Panel className="border-[#8f3a47] bg-[rgba(77,19,28,0.55)] text-[#ffd0d7]">
-          {errorMessage}
-        </Panel>
-      ) : null}
+          {successMessage ? (
+            <Panel className="border-[#2f6550] bg-[rgba(16,42,33,0.72)] text-[#b8efcf]">
+              {successMessage}
+            </Panel>
+          ) : null}
 
-      {successMessage ? (
-        <Panel className="border-[#2f6550] bg-[rgba(16,42,33,0.72)] text-[#b8efcf]">
-          {successMessage}
-        </Panel>
-      ) : null}
-
-      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="space-y-6">
-          <Panel className="rounded-[28px] border-white/12 bg-[#171717] p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[1.1rem] font-medium text-white">Filters</h2>
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="text-[0.98rem] text-[#b8cbff] transition hover:text-white"
-              >
-                Reset All
-              </button>
-            </div>
-
-            <div className="mt-7 space-y-7">
-              <div className="space-y-3">
-                <label className="text-[0.98rem] text-[#cbd8e2]">Vacancy</label>
-                <Select value={selectedVacancyId} onChange={(event) => setSelectedVacancyId(event.target.value)}>
-                  <option value="all">All Vacancies</option>
-                  <option value="no_vacancy">No vacancy / Talent pool</option>
+          <div className="rounded-xl border border-white/5 bg-[rgba(24,32,40,0.7)] p-4 backdrop-blur-md">
+            <div className="flex items-center gap-6 overflow-x-auto">
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] uppercase tracking-[0.22em] text-[#bdc8cd]">Vacancy:</span>
+                <Select
+                  value={selectedVacancyId}
+                  onChange={(event) => setSelectedVacancyId(event.target.value)}
+                  className="h-9 rounded-md border-none bg-[#060f16] py-1 pr-8 text-[#a9e9ff]"
+                >
+                  <option value="all">All open vacancies</option>
+                  <option value="no_vacancy">No linked vacancy / Talent pool</option>
                   {vacancies.map((vacancy) => (
                     <option key={vacancy.id} value={String(vacancy.id)}>
                       {vacancy.title}
@@ -538,43 +615,106 @@ export function CandidateDatabasePageClient() {
                 </Select>
               </div>
 
-              <div className="space-y-3">
-                <label className="text-[0.98rem] text-[#cbd8e2]">Role / Job Title</label>
-                <Input
-                  value={roleFilter}
-                  onChange={(event) => setRoleFilter(event.target.value)}
-                  placeholder="e.g. Developer"
-                />
+              <div className="h-6 w-px shrink-0 bg-white/10" />
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] uppercase tracking-[0.22em] text-[#bdc8cd]">Experience:</span>
+                <Select
+                  value={experienceBand}
+                  onChange={(event) => setExperienceBand(event.target.value)}
+                  className="h-9 rounded-md border-none bg-[#060f16] py-1 pr-8 text-[#a9e9ff]"
+                >
+                  {experienceBandOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
               </div>
 
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-[0.98rem] text-[#cbd8e2]">Experience (Years)</label>
-                  <span className="text-sm text-[#8ea2b4]">
-                    {experienceFilterEnabled ? `0 - ${maxExperience}+ yrs` : "All experience levels"}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="20"
-                  step="1"
-                  value={maxExperience}
-                  onChange={(event) => {
-                    setMaxExperience(Number(event.target.value));
-                    setExperienceFilterEnabled(true);
-                  }}
-                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-[#a7bbf7]"
-                />
-                <div className="flex items-center justify-between text-sm text-[#8ea2b4]">
-                  <span>0 yrs</span>
-                  <span>20+ yrs</span>
+              <div className="h-6 w-px shrink-0 bg-white/10" />
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] uppercase tracking-[0.22em] text-[#bdc8cd]">Match Score:</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMatchScoreFilter(0)}
+                    className={`rounded px-3 py-1 text-xs font-bold ${
+                      matchScoreFilter === 0
+                        ? "border border-[#a9e9ff]/20 bg-[#a9e9ff]/10 text-[#a9e9ff]"
+                        : "border border-white/5 bg-[#060f16] text-[#bdc8cd]"
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMatchScoreFilter(60)}
+                    className={`rounded px-3 py-1 text-xs ${
+                      matchScoreFilter === 60
+                        ? "border border-[#a9e9ff]/20 bg-[#a9e9ff]/10 text-[#a9e9ff]"
+                        : "border border-white/5 bg-[#060f16] text-[#bdc8cd]"
+                    }`}
+                  >
+                    60%+
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMatchScoreFilter(80)}
+                    className={`rounded px-3 py-1 text-xs ${
+                      matchScoreFilter === 80
+                        ? "border border-[#a9e9ff]/20 bg-[#a9e9ff]/10 text-[#a9e9ff]"
+                        : "border border-white/5 bg-[#060f16] text-[#bdc8cd]"
+                    }`}
+                  >
+                    80%+
+                  </button>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <label className="text-[0.98rem] text-[#cbd8e2]">Date Added</label>
-                <Select value={dateFilter} onChange={(event) => setDateFilter(event.target.value)}>
+              <div className="ml-auto flex items-center gap-2 shrink-0">
+                <span className="inline-flex rounded bg-[#a9e9ff]/20 px-2 py-1 text-[10px] font-bold uppercase tracking-tight text-[#a9e9ff]">
+                  Active: {filteredRecords.length.toLocaleString("en-US")} Candidates
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-12 px-6 py-2 text-[11px] uppercase tracking-[0.22em] text-[#bdc8cd]">
+              <div className="col-span-3">Candidate Information</div>
+              <div className="col-span-3 text-center">Applied Match &amp; Role</div>
+              <div className="col-span-3 text-center">Potential Match &amp; Role</div>
+              <div className="col-span-1">Exp.</div>
+              <div className="col-span-2 text-right">Actions</div>
+            </div>
+
+            <div className="rounded-xl border border-white/5 bg-[#182028] p-3 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)]">
+              <div className="flex flex-col gap-3 lg:flex-row">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#889297]" />
+                  <Input
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    placeholder="Search candidates, skills, or roles..."
+                    className="h-12 rounded-full border-white/5 bg-[#060f16] pl-12 pr-16"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        setSearchQuery(searchInput);
+                      }
+                    }}
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 rounded bg-[#2d363e] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-[#bdc8cd]">
+                    ⌘ K
+                  </div>
+                </div>
+
+                <Select
+                  value={dateFilter}
+                  onChange={(event) => setDateFilter(event.target.value)}
+                  className="h-12 min-w-[200px] rounded-full border-white/5 bg-[#060f16]"
+                >
                   {dateFilterOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -583,143 +723,133 @@ export function CandidateDatabasePageClient() {
                 </Select>
               </div>
             </div>
-          </Panel>
 
-          <Panel className="rounded-[28px] border-white/12 bg-[#171717] p-5">
-            <p className="text-[0.95rem] uppercase tracking-[0.26em] text-[#9ba9d6]">
-              Active Database
-            </p>
-            <p className="mt-5 text-[2.55rem] font-semibold tracking-[-0.04em] text-[#b8cbff]">
-              {databaseRecords.length.toLocaleString("en-US")}
-            </p>
-            <p className="mt-2 text-[0.98rem] text-[#c7d4df]">Total Parsed Profiles</p>
-          </Panel>
-        </div>
-
-        <div className="space-y-6">
-          <div className="rounded-[28px] border border-white/12 bg-[#171717] p-3 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-            <div className="flex flex-col gap-3 lg:flex-row">
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#aabce0]" />
-                <Input
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder="Search by name, skill, or keyword across the entire database..."
-                  className="h-14 border-white/12 bg-transparent pl-14 text-[1.02rem]"
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      setSearchQuery(searchInput);
-                    }
-                  }}
-                />
-              </div>
-              <Button
-                type="button"
-                onClick={() => setSearchQuery(searchInput)}
-                className="h-14 min-w-[150px] justify-center rounded-[20px] bg-[#a9bcf3] text-[#10203a] hover:bg-[#b8c9f6]"
-              >
-                Search
-              </Button>
-            </div>
-          </div>
-
-          <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_140px_140px_150px_160px_48px] gap-6 px-5 text-[0.95rem] uppercase tracking-[0.12em] text-[#cfd6df] xl:grid">
-            <div>Candidate</div>
-            <div>Role / Applied Vacancy</div>
-            <div>Experience</div>
-            <div>Applied Match</div>
-            <div>Overall Talent</div>
-            <div>Status</div>
-            <div />
-          </div>
-
-          <div className="space-y-4">
             {loading ? (
-              <Panel className="rounded-[28px] border-white/12 bg-[#171717] p-6 text-[#97aaba]">
+              <Panel className="rounded-xl border-white/5 bg-[#182028] p-6 text-[#97aaba]">
                 Loading candidate database...
               </Panel>
-            ) : filteredRecords.length === 0 ? (
-              <Panel className="rounded-[28px] border-white/12 bg-[#171717] p-6 text-[#97aaba]">
+            ) : paginatedRecords.length === 0 ? (
+              <Panel className="rounded-xl border-white/5 bg-[#182028] p-6 text-[#97aaba]">
                 No candidates matched the current filters.
               </Panel>
             ) : (
-              filteredRecords.map((candidate) => (
-                <Panel
+              paginatedRecords.map((candidate) => (
+                <button
                   key={candidate.id}
-                  className="rounded-[26px] border-white/12 bg-[#171717] px-5 py-5 md:px-6"
+                  type="button"
+                  className="grid w-full grid-cols-12 items-center rounded-xl border border-white/5 bg-[rgba(24,32,40,0.7)] px-6 py-4 text-left backdrop-blur-md transition hover:-translate-y-0.5 hover:border-[#a9e9ff]/40 hover:shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)]"
                 >
-                  <div className="flex flex-col gap-5 xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_140px_140px_150px_160px_48px] xl:items-center xl:gap-6">
-                    <div className="flex min-w-0 items-center gap-4">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#32415a] text-[1rem] font-semibold text-[#dce7ff]">
-                        {candidate.initials}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="break-words text-[1.02rem] font-medium text-white xl:truncate">
-                          {candidate.name}
-                        </p>
-                        <p className="mt-1 text-[0.98rem] text-[#aab8c6]">
-                          Added: {candidate.addedAt}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="min-w-0">
-                      <p className="truncate text-[1rem] text-white">{candidate.roleTitle}</p>
-                      <p className="mt-1 truncate text-[0.82rem] uppercase tracking-[0.16em] text-[#7f93a5]">
-                        {candidate.vacancyLabel}
-                      </p>
-                      <p className="mt-1 truncate text-[0.98rem] text-[#9db7ef]">
-                        {candidate.vacancyTitle}
-                      </p>
-                      {candidate.potentialRole ? (
-                        <p className="mt-1 truncate text-[0.92rem] text-[#8ea2b4]">
-                          Potential: {candidate.potentialRole}
-                        </p>
-                      ) : null}
-                    </div>
-
-                    <div className="text-[1rem] text-white">
-                      {candidate.experienceYears !== null ? `${candidate.experienceYears} Years` : "Not set"}
-                    </div>
-
-                    <div className="text-[1rem] font-medium text-[#b8cbff]">
-                      {formatScore(candidate.appliedMatchScore)}
-                    </div>
-
-                    <div className="text-[1rem] font-medium text-[#9fd0be]">
-                      {formatScore(candidate.overallTalentScore)}
-                    </div>
-
+                  <div className="col-span-3 flex items-center gap-4">
                     <div>
-                      <span
-                        className={`inline-flex items-center rounded-full border px-4 py-2 text-[0.95rem] font-medium ${getStageTone(
-                          candidate.stage
-                        )}`}
-                      >
-                        {stageLabels[candidate.stage] ?? candidate.stage}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        className="rounded-full p-2 text-[#b6c4d4] transition hover:bg-white/5 hover:text-white"
-                        aria-label={`Open actions for ${candidate.name}`}
-                      >
-                        <MoreVertical className="h-5 w-5" />
-                      </button>
+                      <h4 className="text-[1.05rem] text-[#dae3ee]">{candidate.name}</h4>
+                      <p className="text-sm text-[#bdc8cd]">{candidate.email}</p>
                     </div>
                   </div>
-                </Panel>
+
+                  <div className="col-span-3 flex flex-col items-center gap-1">
+                    <ScoreRing value={candidate.appliedMatchScore} tone="primary" />
+                    <p className="text-center text-[10px] text-[#dae3ee]">
+                      Applied: {candidate.appliedMatchScore !== null ? candidate.roleTitle : "Not matched yet"}
+                    </p>
+                  </div>
+
+                  <div className="col-span-3 flex flex-col items-center gap-1">
+                    <ScoreRing value={candidate.overallTalentScore ?? candidate.appliedMatchScore} tone="muted" />
+                    <p className="text-center text-[10px] text-[#bdc8cd]">
+                      Potential: {candidate.potentialRole ?? "No potential role yet"}
+                    </p>
+                  </div>
+
+                  <div className="col-span-1">
+                    <p className="text-[1rem] text-[#dae3ee]">
+                      {candidate.experienceYears !== null ? `${candidate.experienceYears}y` : "-"}
+                    </p>
+                  </div>
+
+                  <div className="col-span-2 flex items-center justify-end gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#a9e9ff]">
+                      View Profile
+                    </span>
+                    <span
+                      className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${getStagePillTone(
+                        candidate.stage
+                      )}`}
+                    >
+                      {candidate.parseStatus === "failed"
+                        ? "Needs Review"
+                        : stageLabels[candidate.stage] ?? candidate.stage}
+                    </span>
+                  </div>
+                </button>
               ))
             )}
           </div>
 
-          <div className="px-1 pb-2 text-[1rem] text-[#b9c5d2]">
-            <p>Showing all {filteredRecords.length.toLocaleString("en-US")} candidates</p>
+          <div className="flex items-center justify-between border-t border-white/5 pt-8">
+            <p className="text-sm text-[#bdc8cd]">
+              Showing {showingFrom} to {showingTo} of {filteredRecords.length.toLocaleString("en-US")} candidates
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={currentPage === 1}
+                className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/5 text-[#bdc8cd] transition hover:bg-[#2d363e] disabled:opacity-30"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              {visiblePageNumbers.map((page) => (
+                <button
+                  key={page}
+                  type="button"
+                  onClick={() => setCurrentPage(page)}
+                  className={`flex h-10 w-10 items-center justify-center rounded-lg border transition ${
+                    currentPage === page
+                      ? "border-[#72d0ed] bg-[#72d0ed] font-bold text-[#003642]"
+                      : "border-white/5 text-[#dae3ee] hover:bg-[#2d363e]"
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+
+              {totalPages > 3 ? <span className="px-2 text-[#bdc8cd]">...</span> : null}
+
+              {totalPages > 3 && !visiblePageNumbers.includes(totalPages) ? (
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/5 text-[#dae3ee] transition hover:bg-[#2d363e]"
+                >
+                  {totalPages}
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                disabled={currentPage === totalPages}
+                className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/5 text-[#bdc8cd] transition hover:bg-[#2d363e] disabled:opacity-30"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-        </div>
-      </div>
+
+          {(role === "HR" || role === "Admin") && (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleBackfill}
+                disabled={backfillLoading}
+                className="rounded-xl border-[#7eb9df]/14 bg-[#222b33] px-4 py-2 text-[#bdc8cd] hover:text-[#a9e9ff]"
+              >
+                {backfillLoading ? "Refreshing..." : "Refresh Matches"}
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -14,4 +14,7 @@ class WebsitePublishRead(BaseSchema):
     published: bool
     action: str
     job_info_id: int | None = None
+    pdf_generated: bool = False
+    pdf_filename: str | None = None
+    pdf_url: str | None = None
     mapped_fields: dict[str, Any]

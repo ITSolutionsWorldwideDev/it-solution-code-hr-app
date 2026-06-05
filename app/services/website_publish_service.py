@@ -33,12 +33,33 @@ def build_website_publish_preview(vacancy: Vacancy, *, public_base_url: str) -> 
         published=bool(mapped_fields["published"]),
         action="preview",
         job_info_id=None,
+        pdf_generated=False,
+        pdf_filename=str(mapped_fields.get("pdf_filename") or ""),
+        pdf_url=str(mapped_fields.get("pdf_url") or ""),
+        mapped_fields=mapped_fields,
+    )
+
+
+def generate_website_pdf_preview(vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
+    _pdf_path, filename = build_website_pdf_for_vacancy(vacancy)
+    mapped_fields = _build_mapped_fields(vacancy, public_base_url=public_base_url)
+    pdf_url = str(mapped_fields.get("pdf_url") or "")
+    return WebsitePublishRead(
+        success=True,
+        dry_run=False,
+        message="Website PDF generated locally. Review it before publishing.",
+        published=False,
+        action="generated_pdf",
+        job_info_id=None,
+        pdf_generated=True,
+        pdf_filename=filename,
+        pdf_url=pdf_url,
         mapped_fields=mapped_fields,
     )
 
 
 def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
-    build_website_pdf_for_vacancy(vacancy)
+    _pdf_path, filename = build_website_pdf_for_vacancy(vacancy)
     mapped_fields = _build_mapped_fields(vacancy, public_base_url=public_base_url)
     schema_name, table_name = _parse_table_name(settings.website_jobs_table)
     qualified_table_name = _qualify_table_name(schema_name, table_name)
@@ -110,6 +131,9 @@ def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_bas
         published=bool(mapped_fields["published"]),
         action=action,
         job_info_id=job_info_id,
+        pdf_generated=True,
+        pdf_filename=filename,
+        pdf_url=str(mapped_fields.get("pdf_url") or ""),
         mapped_fields=mapped_fields,
     )
 
@@ -140,6 +164,7 @@ def _build_mapped_fields(vacancy: Vacancy, *, public_base_url: str) -> dict[str,
         "title": title,
         "location": location,
         "type": employment_type,
+        "pdf_filename": pdf_filename,
         "pdf_url": pdf_url,
         "published": 1,
         "created_by": created_by,
@@ -220,7 +245,11 @@ def _resolve_job_info_id_column(columns: set[str]) -> str:
 
 
 def _filter_insertable_payload(mapped_fields: dict[str, object], columns: set[str]) -> dict[str, object]:
-    payload = {key: value for key, value in mapped_fields.items() if key in columns}
+    payload = {
+        key: value
+        for key, value in mapped_fields.items()
+        if key in columns and key != "pdf_filename"
+    }
     if "created_at" in columns:
         payload["created_at"] = datetime.utcnow()
     if "updated_at" in columns:

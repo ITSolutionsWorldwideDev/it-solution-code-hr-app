@@ -1,61 +1,60 @@
 "use client";
 
-import Link from "next/link";
-import { Bell, MessageSquareMore, Search } from "lucide-react";
+import { Bell, Grid2x2, Plus, Search } from "lucide-react";
 
 import { useRole } from "@/components/providers/role-provider";
-import { roleProfiles, roleWorkspaceLabels } from "@/lib/session";
+import { roleProfiles } from "@/lib/session";
 
 export function TopBar() {
-  const { role, name } = useRole();
+  const { role } = useRole();
   const profile = roleProfiles[role];
-  const workspaceLabel = roleWorkspaceLabels[role];
 
   return (
-    <div className="border-b border-white/8 bg-[#161d24] px-5 lg:px-10 xl:px-12">
-      <div className="flex h-[122px] flex-col justify-center gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <p className="text-[2rem] font-semibold tracking-[-0.05em] text-[#eef2ff]">Recruitment Command Center</p>
-          <p className="mt-1 text-sm text-[#95a199]">
-            {name} / {profile.title}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 xl:justify-end">
-          <div className="inline-flex h-[52px] items-center gap-3 rounded-[18px] border border-white/10 bg-[#10161c] px-5 text-[0.98rem] text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)]">
-            <Search className="h-5 w-5 text-[#63e7ff]" />
-            <span className="text-white/62">Search candidates</span>
-          </div>
-          <button
-            type="button"
-            className="inline-flex h-[52px] w-[52px] items-center justify-center rounded-[18px] border border-white/10 bg-[#10161c] text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)]"
-          >
-            <MessageSquareMore className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            className="relative inline-flex h-[52px] w-[52px] items-center justify-center rounded-[18px] border border-white/10 bg-[#10161c] text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)]"
-          >
-            <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-[#63e7ff]" />
-            <Bell className="h-5 w-5" />
-          </button>
-          <div className="hidden h-12 w-px bg-white/8 xl:block" />
-          <div className="hidden min-w-[140px] text-right xl:block">
-            <div className="text-[1.05rem] font-semibold text-[#eef2ff]">{name}</div>
-            <div className="text-sm text-[#95a199]">{profile.title}</div>
-          </div>
-          <div className="inline-flex h-[44px] items-center gap-3 rounded-full border border-white/10 bg-[#10161c] px-4 text-sm font-medium text-white">
-            <span className="text-white/60">Workspace</span>
-            <span className="rounded-full bg-[#182633] px-3 py-1 text-sm font-semibold text-[#c9f6ff]">
-              {workspaceLabel}
+    <div className="border-b border-white/5 bg-[rgba(11,20,28,0.8)] px-5 backdrop-blur-md lg:px-8 xl:px-10">
+      <div className="flex min-h-16 flex-col gap-4 py-4 xl:flex-row xl:items-center xl:justify-between xl:py-0">
+        <div className="flex min-w-0 flex-1 items-center">
+          <div className="flex h-12 w-full max-w-[700px] items-center rounded-full border border-white/5 bg-[#060f16] px-5 text-[#dae3ee]">
+            <Search className="mr-3 h-5 w-5 text-[#889297]" />
+            <span className="text-[0.98rem] text-[#889297]">Search candidates, skills, or roles...</span>
+            <span className="ml-auto rounded-md border border-white/10 bg-[#2d363e] px-2 py-1 text-[0.7rem] uppercase tracking-[0.14em] text-[#dae3ee]">
+              ⌘ K
             </span>
           </div>
-          <Link
-            href="/#employee-login"
-            className="inline-flex h-[52px] items-center rounded-[16px] bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-6 text-[1rem] font-semibold text-[#06141c] shadow-[0_18px_34px_rgba(0,0,0,0.18)]"
+        </div>
+
+        <div className="ml-6 flex flex-wrap items-center gap-6">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="p-2 text-[#bdc8cd] transition hover:text-[#a9e9ff]"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              className="p-2 text-[#bdc8cd] transition hover:text-[#a9e9ff]"
+              aria-label="Apps"
+            >
+              <Grid2x2 className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="h-8 w-px bg-white/10" />
+
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#72d0ed] px-6 py-2 text-[1rem] font-bold text-[#003642] transition hover:opacity-90 active:scale-95"
           >
-            Change workspace
-          </Link>
+            <Plus className="h-4 w-4" />
+            Add Candidate
+          </button>
+
+          <div className="flex items-center gap-3 pl-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#a9e9ff]/20 bg-[#182028] text-sm font-semibold text-[#dae3ee]">
+              {profile.initials}
+            </div>
+          </div>
         </div>
       </div>
     </div>

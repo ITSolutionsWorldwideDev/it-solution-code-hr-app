@@ -1,6 +1,7 @@
 "use client";
 
-import { Globe, Send } from "lucide-react";
+import Link from "next/link";
+import { FileText, Globe, Send } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,7 @@ function formatMappedValue(value: unknown) {
 
 export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardProps) {
   const [result, setResult] = useState<WebsitePublishApiRecord | null>(null);
-  const [loadingAction, setLoadingAction] = useState<"preview" | "publish" | null>(null);
+  const [loadingAction, setLoadingAction] = useState<"preview" | "generate-pdf" | "publish" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handlePreview = async () => {
@@ -53,6 +54,26 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
       setResult(response);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to generate website publish preview.");
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleGeneratePdf = async () => {
+    setLoadingAction("generate-pdf");
+    setErrorMessage(null);
+
+    try {
+      const response = await apiRequest<WebsitePublishApiRecord>({
+        path: "/integrations/website/generate-pdf",
+        method: "POST",
+        body: JSON.stringify({
+          vacancy_id: Number(vacancyId),
+        }),
+      });
+      setResult(response);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to generate website PDF.");
     } finally {
       setLoadingAction(null);
     }
@@ -104,6 +125,16 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
 
           <Button
             type="button"
+            variant="secondary"
+            onClick={handleGeneratePdf}
+            disabled={loadingAction !== null}
+            icon={FileText}
+          >
+            {loadingAction === "generate-pdf" ? "Generating PDF..." : "Generate Website PDF"}
+          </Button>
+
+          <Button
+            type="button"
             onClick={handlePublish}
             disabled={loadingAction !== null}
             icon={Send}
@@ -126,6 +157,22 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
             <p className="mt-1 text-[#bcd3e4]">Action: {result.action}</p>
             <p className="mt-1 text-[#bcd3e4]">Published: {result.published ? "Yes" : "No"}</p>
             <p className="mt-1 text-[#bcd3e4]">Job info id: {result.job_info_id ?? "Not created yet"}</p>
+            <p className="mt-1 text-[#bcd3e4]">PDF generated: {result.pdf_generated ? "Yes" : "No"}</p>
+            {result.action === "preview" ? (
+              <p className="mt-1 text-[#bcd3e4]">Preview only. No PDF file has been created yet.</p>
+            ) : null}
+            {result.pdf_generated && result.pdf_url ? (
+              <div className="mt-3">
+                <Link
+                  href={result.pdf_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-[#8bd8ff] transition hover:text-white"
+                >
+                  Open Generated PDF
+                </Link>
+              </div>
+            ) : null}
           </div>
 
           <div className="overflow-hidden rounded-[24px] border border-white/8 bg-[#0f1319]">
