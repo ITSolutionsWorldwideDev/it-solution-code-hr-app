@@ -330,7 +330,7 @@ def _generate_gemini_text(
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail=(
-            f"Gemini API request failed for all configured models. "
+            f"Gemini API request failed for all configured models due to provider capacity or availability. "
             f"Attempted models: {', '.join(attempted_models)}. Last errors: {diagnostic}"
         ),
     )

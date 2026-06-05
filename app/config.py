@@ -65,12 +65,6 @@ def build_database_url() -> str:
 
 
 def build_vertex_model_candidates() -> list[str]:
-    configured = os.getenv("VERTEX_GENERATIVE_MODELS")
-    if configured:
-        candidates = [item.strip() for item in configured.split(",") if item.strip()]
-        if candidates:
-            return candidates
-
     primary = os.getenv("VERTEX_GENERATIVE_MODEL", "gemini-3.1-flash-lite")
     defaults = [
         primary,
@@ -81,9 +75,15 @@ def build_vertex_model_candidates() -> list[str]:
         "gemini-2.0-flash",
     ]
 
+    configured = os.getenv("VERTEX_GENERATIVE_MODELS")
+    if configured:
+        candidates = [item.strip() for item in configured.split(",") if item.strip()]
+    else:
+        candidates = []
+
     deduped: list[str] = []
     seen: set[str] = set()
-    for item in defaults:
+    for item in [*candidates, *defaults]:
         normalized = item.strip()
         if not normalized or normalized in seen:
             continue
