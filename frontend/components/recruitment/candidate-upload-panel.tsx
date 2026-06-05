@@ -1034,6 +1034,10 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
     selectedCandidateView && selectedCandidateView.matchedSkills.length > 0
       ? selectedCandidateView.matchedSkills
       : selectedCandidateView?.skills ?? [];
+  const selectedCandidateScoreLabel =
+    selectedCandidateView?.matchScore !== null && selectedCandidateView?.matchScore !== undefined
+      ? `${Math.max(0, Math.min(100, Math.round(selectedCandidateView.matchScore)))}% talent-pool fit`
+      : "No open-vacancy score yet";
 
   return (
     <div className="space-y-8">
@@ -1314,6 +1318,9 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                       {selectedCandidateView.name}
                     </h4>
                     <p className="text-[1rem] text-[#bdc8cd]">{selectedCandidateView.vacancyLabelTitle}</p>
+                    <p className="mt-2 text-[0.88rem] font-medium text-[#a9e9ff]">
+                      {selectedCandidateScoreLabel}
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -1351,6 +1358,10 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               </div>
 
               <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Potential Role Score</p>
+                  <p className="mt-2 text-[1rem] text-[#dae3ee]">{selectedCandidateScoreLabel}</p>
+                </div>
                 <div>
                   <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Experience</p>
                   <p className="mt-2 text-[1rem] text-[#dae3ee]">{selectedCandidateView.experience}</p>

@@ -533,7 +533,8 @@ export function CandidateDatabasePageClient() {
         return false;
       }
 
-      if ((record.appliedMatchScore ?? 0) < matchScoreFilter) {
+      const effectiveScore = record.appliedMatchScore ?? record.overallTalentScore ?? 0;
+      if (effectiveScore < matchScoreFilter) {
         return false;
       }
 
