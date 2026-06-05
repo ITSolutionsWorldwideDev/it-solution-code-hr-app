@@ -885,10 +885,10 @@ def _coerce_fit_score(value: Any) -> float | None:
 def _build_fit_explanation(summary: str, pros: list[str], cons: list[str]) -> str:
     parts = [sanitize_text(summary) or ""]
     if pros:
-        parts.append(f"Sterke punten: {'; '.join(pros[:3])}.")
+        parts.append(f"Key strengths: {'; '.join(pros[:3])}.")
     if cons:
-        parts.append(f"Aandachtspunten: {'; '.join(cons[:2])}.")
-    return sanitize_text(" ".join(part for part in parts if part).strip()) or "Geen fit-uitleg beschikbaar."
+        parts.append(f"Attention points: {'; '.join(cons[:2])}.")
+    return sanitize_text(" ".join(part for part in parts if part).strip()) or "No fit explanation available."
 
 
 def fallback_non_ai_parser(
@@ -900,7 +900,6 @@ def fallback_non_ai_parser(
     parsed = parse_candidate_text(cv_text)
     selected_vacancy = vacancy_context
     fit_score: float | None = None
-    fit_explanation = "Parsing tijdelijk beperkt beschikbaar wegens verbindingsfout met de AI-engine."
 
     if selected_vacancy is None and active_vacancies:
         best_score = -1.0
@@ -910,18 +909,18 @@ def fallback_non_ai_parser(
             if score > best_score:
                 best_score = score
                 best_vacancy = vacancy_item
-        selected_vacancy = best_vacancy if best_score >= 50.0 else None
-        fit_score = best_score if selected_vacancy is not None else None
+        selected_vacancy = best_vacancy
+        fit_score = best_score if best_vacancy is not None else None
     elif selected_vacancy is not None:
         fit_score, _, _ = _score_candidate_against_vacancy(parsed, cv_text, selected_vacancy)
 
     title = sanitize_text(str(selected_vacancy.get("title") or "")) if selected_vacancy else None
     summary = (
-        f"{parsed.get('name') or 'Deze kandidaat'} heeft een basisprofiel kunnen opleveren uit de CV, "
-        "maar de AI-parser was tijdelijk offline."
+        f"{parsed.get('name') or 'This candidate'} could be partially parsed from the CV, "
+        "but the AI parser was temporarily unavailable."
     )
     if title:
-        summary += f" Eerste indicatie voor {title}: beperkte fallback-score beschikbaar."
+        summary += f" Initial fallback matching suggests possible alignment with {title}."
 
     pros = _normalize_bullet_items(parsed.get("skills", [])[:3], limit=3)
     return ConsolidatedParserResponse(
@@ -932,10 +931,10 @@ def fallback_non_ai_parser(
         experience=sanitize_text(parsed.get("experience")),
         education=sanitize_text(parsed.get("education")),
         experience_years=_candidate_years(cv_text),
-        executive_summary=sanitize_text(summary) or "Parsing tijdelijk beperkt beschikbaar wegens verbindingsfout met de AI-engine.",
+        executive_summary=sanitize_text(summary) or "The AI parser was temporarily unavailable, so only a limited fallback profile was generated.",
         fit_score=fit_score,
         pros=pros,
-        cons=["AI Parser is momenteel offline"],
+        cons=["The AI parser is currently offline"],
         selected_vacancy_id=int(selected_vacancy["id"]) if selected_vacancy and selected_vacancy.get("id") is not None else None,
         selected_vacancy_title=title,
     )
@@ -957,14 +956,14 @@ CRITICAL RULES:
 2. Tone & Conciseness: Write like a sharp, top-tier executive recruiter. Keep text blocks extremely brief and punchy for a "quick check" UI (maximum 2-3 sentences for summaries).
 3. Strict JSON output: You must ONLY return a valid JSON object matching the exact schema provided. Do not wrap it in markdown code blocks, and do not add trailing text.
 4. Flexible Matching (No Keyword Penalties): Do not score rigidly based on exact keyword overlap. Understand synonyms and adjacent expertise.
-5. Vacancy Selection: If one explicit vacancy is provided, score only that vacancy. If several open vacancies are provided, choose the single best fit only when there is a credible role match. Otherwise leave the vacancy fields null.
+5. Vacancy Selection: If one explicit vacancy is provided, score only that vacancy. If several open vacancies are provided, always choose the single best fit from that list and return its id/title plus the best score, even if the score is modest.
 
 SCORING CRITERIA (0 - 100):
 - 85-100: Exceptional fit; possesses all core skills, required seniority, and contextually aligns perfectly.
 - 70-84: Solid fit; missing minor nice-to-haves but highly capable of performing the role effectively.
 - 50-69: Potential fit; transferable skills or adjacent experience, but requires upskilling or lacks direct domain authority.
 - 0-49: Poor fit; no alignment with the open role.
-- If NO vacancy context is provided, set fit_score to null and selected vacancy fields to null.
+- If NO vacancy context is provided but open vacancies are listed, you must still return the single best matching vacancy and its score.
 """
 
     user_prompt = f"""Analyze the following candidate information and execute the parse, summary, and match scoring.
@@ -984,15 +983,15 @@ SCORING CRITERIA (0 - 100):
   "experience": "Maximum 2 short sentences on relevant work experience or null",
   "education": "Maximum 2 short sentences on relevant education or null",
   "experience_years": 0,
-  "executive_summary": "A punchy, maximum 2-to-3 sentence summary in Dutch explaining exactly who this candidate is, their seniority, and why they fit (or don't fit) the vacancy context.",
+  "executive_summary": "A punchy, maximum 2-to-3 sentence summary in English explaining exactly who this candidate is, their seniority, and why they fit (or don't fit) the vacancy context.",
   "fit_score": 0,
   "selected_vacancy_id": 0,
   "selected_vacancy_title": "Best matching vacancy title or null",
   "pros": [
-    "Maximum 3 bullet-points in Dutch highlighting key strengths matching the vacancy or general expertise"
+    "Maximum 3 bullet-points in English highlighting key strengths matching the vacancy or general expertise"
   ],
   "cons": [
-    "Maximum 2 bullet-points in Dutch highlighting critical gaps, missing tech stacks, or red flags. If none, leave empty"
+    "Maximum 2 bullet-points in English highlighting critical gaps, missing tech stacks, or red flags. If none, leave empty"
   ]
 }}
 
@@ -1051,8 +1050,32 @@ Return JSON only."""
     fit_score = _coerce_fit_score(parsed_payload.fit_score)
     is_talent_pool_parse = vacancy_context is None
 
+    heuristic_candidate = {
+        "name": sanitize_text(parsed_payload.name),
+        "email": sanitize_text(parsed_payload.email),
+        "phone": sanitize_text(parsed_payload.phone),
+        "skills": [
+            sanitize_text(skill.lower()) if isinstance(skill, str) else None
+            for skill in parsed_payload.skills[:8]
+        ],
+        "experience": sanitize_text(parsed_payload.experience),
+        "education": sanitize_text(parsed_payload.education),
+    }
+    heuristic_candidate["skills"] = [skill for skill in heuristic_candidate["skills"] if skill]
+
     if selected_vacancy is None and not normalized_vacancies:
         fit_score = None
+    elif is_talent_pool_parse and normalized_vacancies and (selected_vacancy is None or fit_score is None):
+        best_score = -1.0
+        best_vacancy: dict[str, Any] | None = None
+        for vacancy_item in normalized_vacancies:
+            score, _, _ = _score_candidate_against_vacancy(heuristic_candidate, cv_text, vacancy_item)
+            if score > best_score:
+                best_score = score
+                best_vacancy = vacancy_item
+        if best_vacancy is not None:
+            selected_vacancy = best_vacancy
+            fit_score = round(best_score, 2)
 
     selected_vacancy_title = (
         sanitize_text(str(selected_vacancy.get("title") or ""))
@@ -1121,7 +1144,7 @@ Return JSON only."""
         ],
         experience=sanitize_text(parsed_payload.experience),
         education=sanitize_text(parsed_payload.education),
-        ai_summary=sanitize_text(parsed_payload.executive_summary) or "Geen executive summary beschikbaar.",
+        ai_summary=sanitize_text(parsed_payload.executive_summary) or "No executive summary available.",
         fit_explanation=fit_explanation,
         role_suggestions=[],
         matched_skills=matched_skills,

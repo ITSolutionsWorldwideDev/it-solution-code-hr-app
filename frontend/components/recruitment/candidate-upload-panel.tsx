@@ -1037,7 +1037,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
   const selectedCandidateScoreLabel =
     selectedCandidateView?.matchScore !== null && selectedCandidateView?.matchScore !== undefined
       ? `${Math.max(0, Math.min(100, Math.round(selectedCandidateView.matchScore)))}% talent-pool fit`
-      : "No open-vacancy score yet";
+      : "No talent-pool score stored yet";
 
   return (
     <div className="space-y-8">
