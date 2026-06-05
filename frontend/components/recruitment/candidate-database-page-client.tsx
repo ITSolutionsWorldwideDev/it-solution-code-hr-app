@@ -1186,11 +1186,60 @@ export function CandidateDatabasePageClient() {
 
                   <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
                     <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
-                      Parsed Data Snapshot
+                      Parsing Details
                     </h5>
-                    <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-white/5 bg-[#0b141c] p-4 text-[0.86rem] leading-6 text-[#dae3ee]">
-                      {JSON.stringify(selectedCandidate.parsedData, null, 2)}
-                    </pre>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4">
+                        <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Parse Status</p>
+                        <p className="mt-2 text-[0.96rem] text-[#dae3ee]">
+                          {asString(selectedCandidate.parsedData?.parse_status) ?? selectedCandidate.parseStatus ?? "Not stored"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4">
+                        <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Match Status</p>
+                        <p className="mt-2 text-[0.96rem] text-[#dae3ee]">
+                          {asString(selectedCandidate.parsedData?.match_status) ?? "Not stored"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4">
+                        <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Source</p>
+                        <p className="mt-2 text-[0.96rem] text-[#dae3ee]">
+                          {asString(selectedCandidate.parsedData?.source) ?? "Unknown source"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4">
+                        <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Source File</p>
+                        <p className="mt-2 break-words text-[0.96rem] text-[#dae3ee]">
+                          {asString(selectedCandidate.parsedData?.filename) ??
+                            asString(selectedCandidate.parsedData?.original_file_name) ??
+                            "No file name stored"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4">
+                        <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Content Type</p>
+                        <p className="mt-2 text-[0.96rem] text-[#dae3ee]">
+                          {asString(selectedCandidate.parsedData?.content_type) ?? "Not stored"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4">
+                        <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Page Count</p>
+                        <p className="mt-2 text-[0.96rem] text-[#dae3ee]">
+                          {asNumber(selectedCandidate.parsedData?.page_count) ?? "Not stored"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4 md:col-span-2">
+                        <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">File Checksum</p>
+                        <p className="mt-2 break-all text-[0.96rem] text-[#dae3ee]">
+                          {asString(selectedCandidate.parsedData?.file_checksum) ?? "Not stored"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4 md:col-span-2">
+                        <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Latest Parser Note</p>
+                        <p className="mt-2 text-[0.96rem] leading-7 text-[#dae3ee]">
+                          {asString(selectedCandidate.parsedData?.last_error) ?? "No parser errors were stored for this candidate."}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </main>
