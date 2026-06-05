@@ -589,15 +589,31 @@ def _find_existing_candidate_by_resume_identity(
     file_checksum: str | None,
 ) -> Candidate | None:
     candidates = list(session.exec(select(Candidate)).all())
+    matching_candidates: list[Candidate] = []
     for candidate in candidates:
         parsed_data = candidate.parsed_data or {}
         parsed_resume_path = parsed_data.get("resume_path")
         parsed_file_checksum = parsed_data.get("file_checksum")
         if file_checksum and parsed_file_checksum == file_checksum:
-            return candidate
+            matching_candidates.append(candidate)
+            continue
         if resume_path and parsed_resume_path == resume_path:
-            return candidate
-    return None
+            matching_candidates.append(candidate)
+
+    if not matching_candidates:
+        return None
+
+    canonical_candidate = _choose_canonical_candidate(matching_candidates)
+    for duplicate_candidate in matching_candidates:
+        if duplicate_candidate.id == canonical_candidate.id:
+            continue
+        canonical_candidate = _merge_candidate_records(
+            session,
+            source_candidate=duplicate_candidate,
+            target_candidate=canonical_candidate,
+        )
+
+    return canonical_candidate
 
 
 def _find_existing_candidate(
@@ -642,6 +658,33 @@ def _resolve_email_conflict_candidate(
         source_candidate=candidate,
         target_candidate=email_candidate,
     )
+
+
+def _choose_canonical_candidate(candidates: list[Candidate]) -> Candidate:
+    def parsed_at_value(candidate: Candidate) -> float:
+        parsed_data = candidate.parsed_data or {}
+        parsed_at = parsed_data.get("parsed_at")
+        if isinstance(parsed_at, str):
+            try:
+                normalized = parsed_at if parsed_at.endswith("Z") else f"{parsed_at}Z"
+                return datetime.fromisoformat(normalized.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                return 0.0
+        return 0.0
+
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            not _is_placeholder_like_candidate(candidate),
+            parsed_at_value(candidate),
+            candidate.id,
+        ),
+        reverse=True,
+    )[0]
+
+
+def _is_placeholder_like_candidate(candidate: Candidate) -> bool:
+    return candidate.name == "Pending Candidate" or candidate.email.endswith("@placeholder.local")
 
 
 def _merge_candidate_records(

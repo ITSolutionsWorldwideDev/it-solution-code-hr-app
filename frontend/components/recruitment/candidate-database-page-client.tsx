@@ -24,6 +24,7 @@ type CandidateDatabaseRecord = {
   email: string;
   rawAddedAt: string | null;
   addedAt: string;
+  dedupeKey: string;
   vacancyId: number | null;
   vacancyIds: number[];
   roleTitle: string;
@@ -321,6 +322,10 @@ function buildDatabaseRecords(
         typeof parsedData.parse_status === "string"
           ? parsedData.parse_status
           : null;
+      const dedupeKey =
+        asString(parsedData.file_checksum)?.toLowerCase() ??
+        candidate.email.trim().toLowerCase() ??
+        candidate.name.trim().toLowerCase();
       const searchBlob = [
         candidate.name,
         candidate.email,
@@ -341,6 +346,7 @@ function buildDatabaseRecords(
         email: candidate.email,
         rawAddedAt: addedAt,
         addedAt: formatAddedDate(addedAt),
+        dedupeKey,
         vacancyId: selectedVacancyId ?? latestApplication?.vacancy_id ?? null,
         vacancyIds: Array.from(new Set([
           ...linkedApplications.map((application) => application.vacancy_id),
@@ -360,39 +366,38 @@ function buildDatabaseRecords(
       };
     })
     .sort((left, right) => {
-      const stageDiff = (right.experienceYears ?? -1) - (left.experienceYears ?? -1);
-      if (stageDiff !== 0) {
-        return stageDiff;
-      }
-
       const rightTime = parseApiDate(right.rawAddedAt)?.getTime() ?? 0;
       const leftTime = parseApiDate(left.rawAddedAt)?.getTime() ?? 0;
       if (rightTime !== leftTime) {
         return rightTime - leftTime;
       }
+
+      const stageDiff = (right.experienceYears ?? -1) - (left.experienceYears ?? -1);
+      if (stageDiff !== 0) {
+        return stageDiff;
+      }
       return left.name.localeCompare(right.name);
     });
 
-  const dedupedByEmail = new Map<string, CandidateDatabaseRecord>();
+  const dedupedByIdentity = new Map<string, CandidateDatabaseRecord>();
   for (const record of records) {
-    const dedupeKey = record.name.trim().toLowerCase() + "|" + record.id;
-    const emailKey = `${dedupeKey}|${record.vacancyId ?? "no-vacancy"}`;
-    const existing = dedupedByEmail.get(emailKey);
+    const identityKey = `${record.dedupeKey}|${record.vacancyId ?? "no-vacancy"}`;
+    const existing = dedupedByIdentity.get(identityKey);
     if (!existing) {
-      dedupedByEmail.set(emailKey, record);
+      dedupedByIdentity.set(identityKey, record);
       continue;
     }
 
     const existingTime = parseApiDate(existing.rawAddedAt)?.getTime() ?? 0;
     const recordTime = parseApiDate(record.rawAddedAt)?.getTime() ?? 0;
     if (recordTime >= existingTime) {
-      dedupedByEmail.set(emailKey, record);
+      dedupedByIdentity.set(identityKey, record);
     }
   }
 
   const dedupedByCandidate = new Map<string, CandidateDatabaseRecord>();
-  for (const record of dedupedByEmail.values()) {
-    const candidateKey = record.id.toString();
+  for (const record of dedupedByIdentity.values()) {
+    const candidateKey = record.dedupeKey;
     const existing = dedupedByCandidate.get(candidateKey);
     if (!existing) {
       dedupedByCandidate.set(candidateKey, record);
