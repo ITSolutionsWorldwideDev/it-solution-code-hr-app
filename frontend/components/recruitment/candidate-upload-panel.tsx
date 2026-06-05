@@ -68,6 +68,12 @@ function asNumber(value: unknown) {
   return null;
 }
 
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 function asStringArray(value: unknown) {
   if (!Array.isArray(value)) {
     return [] as string[];
@@ -1146,6 +1152,39 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
     selectedCandidateView && selectedCandidateView.matchedSkills.length > 0
       ? selectedCandidateView.matchedSkills
       : selectedCandidateView?.skills ?? [];
+  const selectedCandidateParsedData = asRecord(selectedCandidateView?.parsedData) ?? {};
+  const selectedCandidateParsedFields = asRecord(selectedCandidateParsedData.parsed_fields) ?? {};
+  const selectedCandidateName =
+    asString(selectedCandidateParsedFields.name) ?? selectedCandidateView?.name ?? "Parsed candidate";
+  const selectedCandidateEmail =
+    asString(selectedCandidateParsedFields.email) ?? selectedCandidateView?.email ?? "No email parsed";
+  const selectedCandidatePhone =
+    asString(selectedCandidateParsedFields.phone) ??
+    asString(selectedCandidateParsedData.phone) ??
+    "No phone parsed";
+  const selectedCandidateExperience =
+    asString(selectedCandidateParsedFields.experience) ??
+    selectedCandidateView?.experience ??
+    "No experience parsed";
+  const selectedCandidateEducation =
+    asString(selectedCandidateParsedFields.education) ??
+    selectedCandidateView?.education ??
+    "No education parsed";
+  const selectedCandidateExperienceYears =
+    asNumber(selectedCandidateParsedData.experience_years) ??
+    asNumber(selectedCandidateParsedData.years_experience) ??
+    asNumber(selectedCandidateParsedFields.experience_years);
+  const selectedCandidateParsedAt = asString(selectedCandidateParsedData.parsed_at);
+  const selectedCandidateResumeFile =
+    asString(selectedCandidateParsedData.filename) ??
+    asString(selectedCandidateParsedData.original_file_name) ??
+    "No file name stored";
+  const selectedCandidateBestVacancy =
+    asString(selectedCandidateParsedData.selected_vacancy_title) ??
+    selectedCandidateView?.linkedVacancyTitle ??
+    "No best vacancy stored";
+  const selectedCandidatePros = asStringArray(selectedCandidateParsedData.pros);
+  const selectedCandidateCons = asStringArray(selectedCandidateParsedData.cons);
   const selectedCandidateScoreLabel =
     vacancies.some((vacancy) => vacancy.status === "open")
       ? selectedCandidateView?.matchScore !== null && selectedCandidateView?.matchScore !== undefined
@@ -1458,6 +1497,52 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                     "{selectedCandidateView.aiSummary}"
                   </p>
                 </div>
+
+                <div className="rounded-xl border border-white/5 bg-[#141c24] p-5">
+                  <h5 className="mb-4 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                    Parsed Candidate Profile
+                  </h5>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Name</p>
+                      <p className="mt-2 text-[0.98rem] text-[#dae3ee] break-words">{selectedCandidateName}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Email</p>
+                      <p className="mt-2 text-[0.98rem] text-[#dae3ee] break-all">{selectedCandidateEmail}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Phone</p>
+                      <p className="mt-2 text-[0.98rem] text-[#dae3ee] break-words">{selectedCandidatePhone}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Parsed At</p>
+                      <p className="mt-2 text-[0.98rem] text-[#dae3ee]">
+                        {selectedCandidateParsedAt ? formatTimestamp(selectedCandidateParsedAt) : "No parse timestamp stored"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Best Open Vacancy</p>
+                      <p className="mt-2 text-[0.98rem] text-[#dae3ee] break-words">{selectedCandidateBestVacancy}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Source File</p>
+                      <p className="mt-2 text-[0.98rem] text-[#dae3ee] break-words">{selectedCandidateResumeFile}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Potential Role Score</p>
+                      <p className="mt-2 text-[0.98rem] text-[#dae3ee]">{selectedCandidateScoreLabel}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Experience Years</p>
+                      <p className="mt-2 text-[0.98rem] text-[#dae3ee]">
+                        {selectedCandidateExperienceYears !== null && selectedCandidateExperienceYears !== undefined
+                          ? `${Math.max(0, Math.round(selectedCandidateExperienceYears))} years`
+                          : "No experience years parsed"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -1483,13 +1568,50 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                 </div>
                 <div>
                   <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Experience</p>
-                  <p className="mt-2 text-[1rem] text-[#dae3ee]">{selectedCandidateView.experience}</p>
+                  <p className="mt-2 text-[1rem] text-[#dae3ee]">{selectedCandidateExperience}</p>
                 </div>
                 <div>
                   <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Education</p>
-                  <p className="mt-2 text-[1rem] text-[#dae3ee]">{selectedCandidateView.education}</p>
+                  <p className="mt-2 text-[1rem] text-[#dae3ee]">{selectedCandidateEducation}</p>
                 </div>
               </div>
+
+              {selectedCandidatePros.length > 0 || selectedCandidateCons.length > 0 ? (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-white/5 bg-[#141c24] p-5">
+                    <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Key Strengths
+                    </h5>
+                    {selectedCandidatePros.length > 0 ? (
+                      <div className="space-y-2">
+                        {selectedCandidatePros.map((item) => (
+                          <p key={item} className="text-[0.96rem] text-[#dae3ee]">
+                            {item}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[0.96rem] text-[#bdc8cd]">No strengths were stored.</p>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-white/5 bg-[#141c24] p-5">
+                    <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Attention Points
+                    </h5>
+                    {selectedCandidateCons.length > 0 ? (
+                      <div className="space-y-2">
+                        {selectedCandidateCons.map((item) => (
+                          <p key={item} className="text-[0.96rem] text-[#dae3ee]">
+                            {item}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[0.96rem] text-[#bdc8cd]">No attention points were stored.</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="border-t border-white/5 pt-4">
                 <h5 className="mb-4 text-[0.74rem] font-medium uppercase tracking-[0.22em] text-[#bdc8cd]">
