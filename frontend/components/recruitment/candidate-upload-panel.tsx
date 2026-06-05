@@ -42,6 +42,7 @@ const MAX_UPLOAD_BATCH_FILES = 5;
 const MAX_UPLOAD_BATCH_BYTES = 4 * 1024 * 1024;
 const MAX_SINGLE_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PARALLEL_UPLOAD_BATCHES = 2;
+const MIN_RECOVERY_BATCH_SIZE = 1;
 
 type UploadProgressState = {
   processedFiles: number;
@@ -318,6 +319,25 @@ async function mapWithConcurrency<TInput, TOutput>(
   const workerCount = Math.min(concurrency, items.length);
   await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
   return results;
+}
+
+function buildBatchFailureResult(
+  file: File,
+  error: string
+): CandidateManualImportResponse {
+  return {
+    total_files: 1,
+    results: [
+      {
+        filename: file.name,
+        parse_status: "failed",
+        match_status: "pending_manual_review",
+        skills: [],
+        parsed_data: {},
+        error_message: error,
+      },
+    ],
+  };
 }
 
 function getCandidateTimestamp(
@@ -855,6 +875,62 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       const aggregatedResults: CandidateManualImportResponse["results"] = [];
       let processedFiles = 0;
 
+      const uploadBatch = async (batch: File[]) => {
+        const formData = new FormData();
+        if (vacancyId) {
+          formData.append("vacancy_id", vacancyId);
+        }
+        for (const file of batch) {
+          formData.append("files", file);
+        }
+
+        return apiRequest<CandidateManualImportResponse>({
+          path: "/candidates/manual-import",
+          method: "POST",
+          body: formData,
+        });
+      };
+
+      const recoverBatchUpload = async (
+        batch: File[],
+        batchIndex: number
+      ): Promise<CandidateManualImportResponse> => {
+        try {
+          return await uploadBatch(batch);
+        } catch (error) {
+          if (batch.length <= MIN_RECOVERY_BATCH_SIZE) {
+            const message =
+              error instanceof Error && error.message.includes("Failed to fetch")
+                ? "This file could not be uploaded reliably to the Vercel parser. Try this file on its own or use the async queue flow."
+                : error instanceof Error
+                  ? error.message
+                  : "Import failed.";
+            return buildBatchFailureResult(batch[0], message);
+          }
+
+          const midpoint = Math.ceil(batch.length / 2);
+          const leftBatch = batch.slice(0, midpoint);
+          const rightBatch = batch.slice(midpoint);
+
+          setUploadProgress({
+            processedFiles,
+            totalFiles: files.length,
+            currentBatch: batchIndex + 1,
+            totalBatches: uploadBatches.length,
+          });
+
+          const [leftResult, rightResult] = await Promise.all([
+            recoverBatchUpload(leftBatch, batchIndex),
+            recoverBatchUpload(rightBatch, batchIndex),
+          ]);
+
+          return {
+            total_files: leftResult.total_files + rightResult.total_files,
+            results: [...leftResult.results, ...rightResult.results],
+          };
+        }
+      };
+
       setUploadProgress({
         processedFiles: 0,
         totalFiles: files.length,
@@ -872,20 +948,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
             currentBatch: index + 1,
             totalBatches: uploadBatches.length,
           });
-
-          const formData = new FormData();
-          if (vacancyId) {
-            formData.append("vacancy_id", vacancyId);
-          }
-          for (const file of batch) {
-            formData.append("files", file);
-          }
-
-          const response = await apiRequest<CandidateManualImportResponse>({
-            path: "/candidates/manual-import",
-            method: "POST",
-            body: formData,
-          });
+          const response = await recoverBatchUpload(batch, index);
 
           processedFiles += batch.length;
           setUploadProgress({
@@ -921,13 +984,16 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       setSessionCandidateIds(parsedCandidateIds);
       setRecentParsedCandidates(immediateStoredCandidates);
       const successCount = aggregatedResults.filter((item) => item.parse_status !== "failed").length;
+      const failedCount = aggregatedResults.length - successCount;
       const nextSuccessMessage = `${successCount} CV${
         successCount === 1 ? "" : "s"
       } parsed successfully${vacancyId ? " for the selected vacancy" : " without a linked vacancy"} across ${
         uploadBatches.length
-      } batch${uploadBatches.length === 1 ? "" : "es"}.`;
+      } batch${uploadBatches.length === 1 ? "" : "es"}${
+        failedCount > 0 ? `, with ${failedCount} file${failedCount === 1 ? "" : "s"} automatically isolated after retry.` : "."
+      }`;
 
-      setSuccessMessage(nextSuccessMessage);
+      setSuccessMessage(successCount > 0 ? nextSuccessMessage : null);
       if (immediateStoredCandidates.length > 0) {
         setStoredCandidates(immediateStoredCandidates);
       }
@@ -936,13 +1002,18 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       if (parsedCandidateIds.length > 0) {
         setSelectedCandidateId(parsedCandidateIds[0]);
       }
-      sendBrowserNotification("Resume parsing completed", nextSuccessMessage);
+      if (successCount > 0) {
+        sendBrowserNotification("Resume parsing completed", nextSuccessMessage);
+      }
+      if (successCount === 0 && failures.length > 0) {
+        setErrorMessage("None of the selected CVs could be parsed. The uploader retried in smaller chunks, but every file still failed.");
+      }
     } catch (error) {
       setSuccessMessage(null);
       const message = error instanceof Error ? error.message : "CV upload failed.";
       setErrorMessage(
         message.includes("Failed to fetch")
-          ? "The upload batch was too large for the backend or the network request was interrupted. Try fewer files per run."
+          ? "The Vercel parser could not complete this upload run. The app will now retry smaller chunks automatically on the next attempt."
           : message
       );
     } finally {
