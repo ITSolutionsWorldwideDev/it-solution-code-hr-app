@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   Plus,
   Sparkles,
+  X,
 } from "lucide-react";
 
 import { apiRequest } from "@/lib/api/client";
@@ -714,6 +715,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [detailErrorMessage, setDetailErrorMessage] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
+  const [isExpandedProfileOpen, setIsExpandedProfileOpen] = useState(false);
   const acceptedFileTypes =
     ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -1185,6 +1187,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
     "No best vacancy stored";
   const selectedCandidatePros = asStringArray(selectedCandidateParsedData.pros);
   const selectedCandidateCons = asStringArray(selectedCandidateParsedData.cons);
+  const selectedCandidatePreviewBlocks = getResumePreviewBlocks(selectedCandidateParsedData);
   const selectedCandidateScoreLabel =
     vacancies.some((vacancy) => vacancy.status === "open")
       ? selectedCandidateView?.matchScore !== null && selectedCandidateView?.matchScore !== undefined
@@ -1482,6 +1485,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                   </div>
                   <button
                     type="button"
+                    onClick={() => setIsExpandedProfileOpen(true)}
                     className="rounded-lg border border-white/10 p-3 text-[#a9e9ff] transition hover:border-[#a9e9ff]/40"
                     aria-label="Open candidate details"
                   >
@@ -1624,6 +1628,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                   </p>
                   <button
                     type="button"
+                    onClick={() => setIsExpandedProfileOpen(true)}
                     className="absolute bottom-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-[#a9e9ff] text-[#003642] transition hover:scale-105"
                     aria-label="Expand formatted CV preview"
                   >
@@ -1648,6 +1653,169 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       >
         <Plus className="h-8 w-8" />
       </button>
+
+      {isExpandedProfileOpen && selectedCandidateView ? (
+        <div className="fixed inset-0 z-[140] bg-[#060f16]/90 backdrop-blur-sm">
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-white/5 px-6 py-5">
+              <div>
+                <h3 className="text-[1.8rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
+                  {selectedCandidateName}
+                </h3>
+                <p className="mt-1 text-[0.98rem] text-[#bdc8cd]">
+                  {selectedCandidateEmail} · {selectedCandidateScoreLabel}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsExpandedProfileOpen(false)}
+                className="rounded-lg border border-white/10 p-3 text-[#dae3ee] transition hover:border-[#a9e9ff]/40 hover:text-[#a9e9ff]"
+                aria-label="Close expanded parsed profile"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid flex-1 gap-0 overflow-hidden lg:grid-cols-[420px_minmax(0,1fr)]">
+              <aside className="overflow-y-auto border-b border-white/5 bg-[#101922] p-6 lg:border-b-0 lg:border-r">
+                <div className="space-y-6">
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-4 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Parsed Candidate Profile
+                    </h5>
+                    <div className="space-y-4 text-[0.98rem] text-[#dae3ee]">
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Name</p>
+                        <p className="mt-1 break-words">{selectedCandidateName}</p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Email</p>
+                        <p className="mt-1 break-all">{selectedCandidateEmail}</p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Phone</p>
+                        <p className="mt-1 break-words">{selectedCandidatePhone}</p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Best Open Vacancy</p>
+                        <p className="mt-1 break-words">{selectedCandidateBestVacancy}</p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Potential Role Score</p>
+                        <p className="mt-1">{selectedCandidateScoreLabel}</p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Parsed At</p>
+                        <p className="mt-1">
+                          {selectedCandidateParsedAt ? formatTimestamp(selectedCandidateParsedAt) : "No parse timestamp stored"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Experience Years</p>
+                        <p className="mt-1">
+                          {selectedCandidateExperienceYears !== null && selectedCandidateExperienceYears !== undefined
+                            ? `${Math.max(0, Math.round(selectedCandidateExperienceYears))} years`
+                            : "No experience years parsed"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Source File</p>
+                        <p className="mt-1 break-words">{selectedCandidateResumeFile}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Experience
+                    </h5>
+                    <p className="text-[0.98rem] leading-7 text-[#dae3ee]">{selectedCandidateExperience}</p>
+                  </div>
+
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Education
+                    </h5>
+                    <p className="text-[0.98rem] leading-7 text-[#dae3ee]">{selectedCandidateEducation}</p>
+                  </div>
+                </div>
+              </aside>
+
+              <main className="overflow-y-auto p-6">
+                <div className="space-y-6">
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      AI Candidate Summary
+                    </h5>
+                    <p className="text-[1rem] italic leading-8 text-[#dae3ee]/90">
+                      "{selectedCandidateView.aiSummary}"
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-4 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Matched Skills
+                    </h5>
+                    <div className="flex flex-wrap gap-2">
+                      {primarySkills.map((skill) => (
+                        <span
+                          key={skill}
+                          className="rounded-md border border-white/5 bg-[#2d363e]/60 px-3 py-1 text-[0.78rem] text-[#dae3ee]"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {selectedCandidatePros.length > 0 || selectedCandidateCons.length > 0 ? (
+                    <div className="grid gap-6 md:grid-cols-2">
+                      <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                        <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                          Key Strengths
+                        </h5>
+                        <div className="space-y-2">
+                          {selectedCandidatePros.length > 0 ? selectedCandidatePros.map((item) => (
+                            <p key={item} className="text-[0.96rem] text-[#dae3ee]">{item}</p>
+                          )) : <p className="text-[0.96rem] text-[#bdc8cd]">No strengths were stored.</p>}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                        <h5 className="mb-3 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                          Attention Points
+                        </h5>
+                        <div className="space-y-2">
+                          {selectedCandidateCons.length > 0 ? selectedCandidateCons.map((item) => (
+                            <p key={item} className="text-[0.96rem] text-[#dae3ee]">{item}</p>
+                          )) : <p className="text-[0.96rem] text-[#bdc8cd]">No attention points were stored.</p>}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-xl border border-white/5 bg-[#182028] p-5">
+                    <h5 className="mb-4 text-[0.74rem] font-medium uppercase tracking-[0.18em] text-[#a9e9ff]">
+                      Formatted CV Preview
+                    </h5>
+                    <div className="space-y-4">
+                      {selectedCandidatePreviewBlocks.map((block, index) => (
+                        <div
+                          key={`${selectedCandidateView.id}-preview-${index}`}
+                          className="rounded-lg border border-white/5 bg-[#0b141c] p-4"
+                        >
+                          <pre className="whitespace-pre-wrap break-words font-sans text-[0.95rem] leading-7 text-[#dae3ee]">
+                            {block}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </main>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
