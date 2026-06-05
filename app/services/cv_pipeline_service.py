@@ -591,6 +591,15 @@ def process_candidate_file(
     except Exception as exc:  # pragma: no cover - defensive parser guard
         error_message = sanitize_text(str(exc)) or "Candidate parsing failed."
 
+    session.rollback()
+    candidate = session.get(Candidate, candidate.id) if candidate is not None else None
+    application = session.get(Application, application.id) if application is not None else None
+    if candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_message,
+        )
+
     candidate.match_score = None
     _sync_candidate_metadata(
         candidate=candidate,
@@ -619,6 +628,7 @@ def process_candidate_file(
         )
         session.add(application)
     if parse_job:
+        parse_job = session.get(ParseJob, parse_job.id) or parse_job
         parse_job.status = "failed"
         parse_job.error_message = error_message
         parse_job.raw_text = None

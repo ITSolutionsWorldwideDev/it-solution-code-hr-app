@@ -12,6 +12,9 @@ from app.models.candidate import Candidate
 from app.models.candidate_match import CandidateMatch
 from app.models.candidate_role_suggestion import CandidateRoleSuggestion
 from app.models.enums import VacancyStatus
+from app.models.employee import Employee
+from app.models.parse_job import ParseJob
+from app.models.potential_match import PotentialMatch
 from app.models.vacancy import Vacancy
 from app.schemas.candidate import CandidateCreate
 from app.services.ai_service import (
@@ -50,6 +53,11 @@ def create_candidate_from_cv(
         email=parsed_candidate.get("email"),
         resume_path=pdf_content.get("resume_path"),
         file_checksum=pdf_content.get("file_checksum"),
+    )
+    existing_candidate = _resolve_email_conflict_candidate(
+        session,
+        candidate=existing_candidate,
+        parsed_email=parsed_candidate.get("email"),
     )
 
     if existing_candidate is not None:
@@ -127,6 +135,11 @@ def update_candidate_from_cv(
     if parse_result.matching_result:
         parsed_data["matching"] = sanitize_payload(parse_result.matching_result.model_dump())
     parsed_data["formatted_resume_preview"] = sanitize_text(cv_text[:5000]) or cv_text[:5000]
+    candidate = _resolve_email_conflict_candidate(
+        session,
+        candidate=candidate,
+        parsed_email=parsed_candidate.get("email"),
+    )
 
     apply_parsed_data_to_candidate(
         candidate,
@@ -226,6 +239,11 @@ def create_candidate_from_cv_fast(
         email=parsed_candidate.get("email"),
         resume_path=pdf_content.get("resume_path"),
         file_checksum=pdf_content.get("file_checksum"),
+    )
+    existing_candidate = _resolve_email_conflict_candidate(
+        session,
+        candidate=existing_candidate,
+        parsed_email=parsed_candidate.get("email"),
     )
 
     if existing_candidate is not None:
@@ -597,3 +615,107 @@ def _find_existing_candidate(
     if by_resume is not None:
         return by_resume
     return _find_existing_candidate_by_email(session, email)
+
+
+def _resolve_email_conflict_candidate(
+    session: Session,
+    *,
+    candidate: Candidate | None,
+    parsed_email: str | None,
+) -> Candidate | None:
+    normalized_email = sanitize_text(parsed_email)
+    if normalized_email is None:
+        return candidate
+
+    email_candidate = _find_existing_candidate_by_email(session, normalized_email)
+    if email_candidate is None:
+        return candidate
+
+    if candidate is None:
+        return email_candidate
+
+    if email_candidate.id == candidate.id:
+        return candidate
+
+    return _merge_candidate_records(
+        session,
+        source_candidate=candidate,
+        target_candidate=email_candidate,
+    )
+
+
+def _merge_candidate_records(
+    session: Session,
+    *,
+    source_candidate: Candidate,
+    target_candidate: Candidate,
+) -> Candidate:
+    if source_candidate.id == target_candidate.id:
+        return target_candidate
+
+    for application in session.exec(
+        select(Application).where(Application.candidate_id == source_candidate.id)
+    ).all():
+        application.candidate_id = target_candidate.id
+        session.add(application)
+
+    for parse_job in session.exec(
+        select(ParseJob).where(ParseJob.candidate_id == source_candidate.id)
+    ).all():
+        parse_job.candidate_id = target_candidate.id
+        session.add(parse_job)
+
+    for role_suggestion in session.exec(
+        select(CandidateRoleSuggestion).where(CandidateRoleSuggestion.candidate_id == source_candidate.id)
+    ).all():
+        role_suggestion.candidate_id = target_candidate.id
+        session.add(role_suggestion)
+
+    target_match_vacancy_ids = {
+        match.vacancy_id
+        for match in session.exec(
+            select(CandidateMatch).where(CandidateMatch.candidate_id == target_candidate.id)
+        ).all()
+    }
+    for match in session.exec(
+        select(CandidateMatch).where(CandidateMatch.candidate_id == source_candidate.id)
+    ).all():
+        if match.vacancy_id in target_match_vacancy_ids:
+            session.delete(match)
+            continue
+        match.candidate_id = target_candidate.id
+        session.add(match)
+
+    target_potential_vacancy_ids = {
+        match.vacancy_id
+        for match in session.exec(
+            select(PotentialMatch).where(PotentialMatch.candidate_id == target_candidate.id)
+        ).all()
+    }
+    for potential_match in session.exec(
+        select(PotentialMatch).where(PotentialMatch.candidate_id == source_candidate.id)
+    ).all():
+        if potential_match.vacancy_id in target_potential_vacancy_ids:
+            session.delete(potential_match)
+            continue
+        potential_match.candidate_id = target_candidate.id
+        session.add(potential_match)
+
+    source_employee = session.exec(
+        select(Employee).where(Employee.candidate_id == source_candidate.id)
+    ).first()
+    target_employee = session.exec(
+        select(Employee).where(Employee.candidate_id == target_candidate.id)
+    ).first()
+    if source_employee is not None:
+        if target_employee is None:
+            source_employee.candidate_id = target_candidate.id
+            session.add(source_employee)
+        else:
+            source_employee.candidate_id = None
+            session.add(source_employee)
+
+    session.delete(source_candidate)
+    session.commit()
+    session.refresh(target_candidate)
+    return target_candidate
