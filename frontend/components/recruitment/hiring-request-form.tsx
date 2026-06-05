@@ -19,10 +19,16 @@ type HiringRequestCreateResponse = {
 };
 
 const fallbackDepartments: DepartmentOption[] = [
-  { id: 1, name: "Engineering" },
-  { id: 2, name: "Product" },
-  { id: 3, name: "Data" },
-  { id: 4, name: "Operations" },
+  { id: 1, name: "Human Resources (HR)" },
+  { id: 2, name: "Information Technology (IT) & Software Development" },
+  { id: 3, name: "Engineering" },
+  { id: 4, name: "Supply Chain & Procurement" },
+  { id: 5, name: "Marketing & Digital Marketing" },
+  { id: 6, name: "Sales & Business Development" },
+  { id: 7, name: "Finance & Accounting" },
+  { id: 8, name: "Administration & Operations" },
+  { id: 9, name: "Project Management" },
+  { id: 10, name: "Customer Support" },
 ];
 
 export function HiringRequestForm() {
