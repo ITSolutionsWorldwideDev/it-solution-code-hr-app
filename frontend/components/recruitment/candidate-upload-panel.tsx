@@ -38,6 +38,16 @@ type StoredCandidateViewModel = StoredCandidateRecord & {
 const BULK_PARSE_SESSION_STORAGE_KEY = "itsw-bulk-parse-session-results";
 const BULK_PARSE_SESSION_IDS_STORAGE_KEY = "itsw-bulk-parse-session-candidate-ids";
 const BULK_PARSE_SELECTED_CANDIDATE_STORAGE_KEY = "itsw-bulk-parse-selected-candidate";
+const MAX_UPLOAD_BATCH_FILES = 5;
+const MAX_UPLOAD_BATCH_BYTES = 3.5 * 1024 * 1024;
+const MAX_SINGLE_FILE_BYTES = 3 * 1024 * 1024;
+
+type UploadProgressState = {
+  processedFiles: number;
+  totalFiles: number;
+  currentBatch: number;
+  totalBatches: number;
+};
 
 function parseApiDate(value: string) {
   const normalizedValue =
@@ -232,6 +242,33 @@ function getCandidateInitials(name: string) {
   }
 
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+}
+
+function splitFilesIntoUploadBatches(files: File[]) {
+  const batches: File[][] = [];
+  let currentBatch: File[] = [];
+  let currentBytes = 0;
+
+  for (const file of files) {
+    const shouldStartNewBatch =
+      currentBatch.length >= MAX_UPLOAD_BATCH_FILES ||
+      (currentBatch.length > 0 && currentBytes + file.size > MAX_UPLOAD_BATCH_BYTES);
+
+    if (shouldStartNewBatch) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentBytes = 0;
+    }
+
+    currentBatch.push(file);
+    currentBytes += file.size;
+  }
+
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
+  }
+
+  return batches;
 }
 
 function getCandidateTimestamp(
@@ -468,6 +505,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
   const [sessionCandidateIds, setSessionCandidateIds] = useState<string[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [detailErrorMessage, setDetailErrorMessage] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
   const acceptedFileTypes =
     ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -721,47 +759,90 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       return;
     }
 
+    const oversizedFile = files.find((file) => file.size > MAX_SINGLE_FILE_BYTES);
+    if (oversizedFile) {
+      setErrorMessage(
+        `${oversizedFile.name} is too large for direct Vercel parsing. Keep each file under ${Math.round(
+          MAX_SINGLE_FILE_BYTES / (1024 * 1024)
+        )} MB or upload smaller batches.`
+      );
+      setSuccessMessage(null);
+      return;
+    }
+
     setIsUploading(true);
+    setUploadProgress(null);
     setErrorMessage(null);
     setSuccessMessage(null);
     setBatchFailures([]);
 
     try {
-      const formData = new FormData();
-      if (vacancyId) {
-        formData.append("vacancy_id", vacancyId);
-      }
-      for (const file of files) {
-        formData.append("files", file);
-      }
+      const uploadBatches = splitFilesIntoUploadBatches(files);
+      const aggregatedResults: CandidateManualImportResponse["results"] = [];
+      let processedFiles = 0;
 
-      const response = await apiRequest<CandidateManualImportResponse>({
-        path: "/candidates/manual-import",
-        method: "POST",
-        body: formData,
+      setUploadProgress({
+        processedFiles: 0,
+        totalFiles: files.length,
+        currentBatch: 1,
+        totalBatches: uploadBatches.length,
       });
 
-      const failures = response.results
+      for (const [index, batch] of uploadBatches.entries()) {
+        setUploadProgress({
+          processedFiles,
+          totalFiles: files.length,
+          currentBatch: index + 1,
+          totalBatches: uploadBatches.length,
+        });
+
+        const formData = new FormData();
+        if (vacancyId) {
+          formData.append("vacancy_id", vacancyId);
+        }
+        for (const file of batch) {
+          formData.append("files", file);
+        }
+
+        const response = await apiRequest<CandidateManualImportResponse>({
+          path: "/candidates/manual-import",
+          method: "POST",
+          body: formData,
+        });
+
+        aggregatedResults.push(...response.results);
+        processedFiles += batch.length;
+        setUploadProgress({
+          processedFiles,
+          totalFiles: files.length,
+          currentBatch: Math.min(index + 1, uploadBatches.length),
+          totalBatches: uploadBatches.length,
+        });
+      }
+
+      const failures = aggregatedResults
         .filter((item) => item.error_message)
         .map((item) => ({
           filename: item.filename,
           error: item.error_message ?? "Import failed.",
         }));
       setBatchFailures(failures);
-      const parsedCandidateIds = response.results
+      const parsedCandidateIds = aggregatedResults
         .map((item) => (item.candidate_id ? String(item.candidate_id) : null))
         .filter((value): value is string => value !== null);
       const immediateStoredCandidates = buildImmediateStoredCandidatesFromImport(
-        response.results,
+        aggregatedResults,
         vacancies,
         vacancyId
       );
       setSessionCandidateIds(parsedCandidateIds);
       setRecentParsedCandidates(immediateStoredCandidates);
-      const successCount = response.results.filter((item) => item.parse_status !== "failed").length;
+      const successCount = aggregatedResults.filter((item) => item.parse_status !== "failed").length;
       const nextSuccessMessage = `${successCount} CV${
         successCount === 1 ? "" : "s"
-      } parsed successfully${vacancyId ? " for the selected vacancy" : " without a linked vacancy"}.`;
+      } parsed successfully${vacancyId ? " for the selected vacancy" : " without a linked vacancy"} across ${
+        uploadBatches.length
+      } batch${uploadBatches.length === 1 ? "" : "es"}.`;
 
       setSuccessMessage(nextSuccessMessage);
       if (immediateStoredCandidates.length > 0) {
@@ -775,13 +856,25 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       sendBrowserNotification("Resume parsing completed", nextSuccessMessage);
     } catch (error) {
       setSuccessMessage(null);
-      setErrorMessage(error instanceof Error ? error.message : "CV upload failed.");
+      const message = error instanceof Error ? error.message : "CV upload failed.";
+      setErrorMessage(
+        message.includes("Failed to fetch")
+          ? "The upload batch was too large for the backend or the network request was interrupted. Try fewer files per run."
+          : message
+      );
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
     }
   };
 
-  const progressValue = isUploading ? 92 : successMessage ? 100 : 0;
+  const progressValue = uploadProgress
+    ? Math.max(8, Math.min(92, Math.round((uploadProgress.processedFiles / Math.max(uploadProgress.totalFiles, 1)) * 92)))
+    : isUploading
+      ? 8
+      : successMessage
+        ? 100
+        : 0;
   const successCount = renderedCandidates.length;
   const primarySkills =
     selectedCandidateView && selectedCandidateView.matchedSkills.length > 0
@@ -834,7 +927,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               <div className="flex items-start gap-2 text-[#bdc8cd]">
                 <Info className="mt-0.5 h-4 w-4 shrink-0" />
                 <p className="text-[1rem]">
-                  Recommended: upload resumes in batches of 25 to 50 files. Larger uploads may time out.
+                  Direct parsing on Vercel works best in small batches. The uploader now sends up to 5 files per request automatically.
                 </p>
               </div>
               <p className="mt-3 text-sm text-[#889297]">
@@ -920,7 +1013,13 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               <div>
                 <div className="mb-2 flex items-center justify-between text-[1rem]">
                   <span className="text-[#dae3ee]">
-                    {isUploading ? `Parsing ${Math.max(files.length, 1)} files...` : successCount > 0 ? "Parsing completed" : "Waiting for upload..."}
+                    {uploadProgress
+                      ? `Parsing batch ${uploadProgress.currentBatch}/${uploadProgress.totalBatches} (${uploadProgress.processedFiles}/${uploadProgress.totalFiles} files done)`
+                      : isUploading
+                        ? `Parsing ${Math.max(files.length, 1)} files...`
+                        : successCount > 0
+                          ? "Parsing completed"
+                          : "Waiting for upload..."}
                   </span>
                   <span className="font-mono text-[#a9e9ff]">{progressValue}%</span>
                 </div>
