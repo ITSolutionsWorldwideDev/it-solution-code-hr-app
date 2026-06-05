@@ -1049,10 +1049,9 @@ Return JSON only."""
             )
 
     fit_score = _coerce_fit_score(parsed_payload.fit_score)
+    is_talent_pool_parse = vacancy_context is None
+
     if selected_vacancy is None and not normalized_vacancies:
-        fit_score = None
-    elif vacancy_context is None and fit_score is not None and fit_score < 50.0:
-        selected_vacancy = None
         fit_score = None
 
     selected_vacancy_title = (
@@ -1081,13 +1080,26 @@ Return JSON only."""
         )
         vacancy_matches.append(vacancy_match)
         matching_result = CandidateMatchingResult(
-            applied_match=AppliedMatchResult(
-                vacancy_id=str(selected_vacancy_id),
-                role_name=vacancy_match.role_name,
-                score=fit_score,
-                analysis=fit_explanation,
+            applied_match=(
+                None
+                if is_talent_pool_parse
+                else AppliedMatchResult(
+                    vacancy_id=str(selected_vacancy_id),
+                    role_name=vacancy_match.role_name,
+                    score=fit_score,
+                    analysis=fit_explanation,
+                )
             ),
-            potential_match=None,
+            potential_match=(
+                PotentialMatchResult(
+                    vacancy_id=str(selected_vacancy_id),
+                    role_name=vacancy_match.role_name,
+                    score=fit_score,
+                    discovery_reason=fit_explanation,
+                )
+                if is_talent_pool_parse
+                else None
+            ),
             talent_insights=TalentInsightsResult(
                 overall_score=fit_score,
                 top_skills_identified=matched_skills[:5],

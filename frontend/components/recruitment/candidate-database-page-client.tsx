@@ -283,40 +283,46 @@ function buildDatabaseRecords(
       const selectedVacancyId = asNumber(parsedData.selected_vacancy_id);
       const selectedVacancyTitle = asString(parsedData.selected_vacancy_title);
       const selectedVacancy = selectedVacancyId ? vacancyById.get(selectedVacancyId) : null;
+      const hasAppliedVacancy = Boolean(linkedVacancy);
+      const talentPoolPotentialTitle =
+        selectedVacancy?.title ??
+        selectedVacancyTitle ??
+        matching?.potential_match?.role_name ??
+        null;
       const matchedVacancyTitle =
         matching?.applied_match?.role_name ??
         matching?.potential_match?.role_name ??
         (typeof parsedData.role_title === "string" ? parsedData.role_title : null) ??
         (typeof parsedData.job_title === "string" ? parsedData.job_title : null);
       const roleTitle =
-        selectedVacancy?.title ??
-        selectedVacancyTitle ??
         linkedVacancy?.title ??
+        talentPoolPotentialTitle ??
         matchedVacancyTitle ??
         "No linked vacancy";
       const vacancyTitle = roleTitle;
-      const vacancyLabel = selectedVacancyId || selectedVacancyTitle
-        ? "Latest best match"
-        : linkedVacancy
+      const vacancyLabel = hasAppliedVacancy
           ? "Applied vacancy"
-          : "Best vacancy match";
+          : talentPoolPotentialTitle
+            ? "Talent pool best match"
+            : "Best vacancy match";
       const potentialRole =
-        selectedVacancyTitle ??
+        talentPoolPotentialTitle ??
         matching?.potential_match?.role_name ??
         null;
       const stage = latestApplication?.stage ?? "parsed";
       const addedAt = asString(parsedData.parsed_at) ?? latestApplication?.created_at ?? null;
       const experienceYears = extractExperienceYears(candidate);
       const appliedMatchScore =
-        asNumber(parsedData.fit_score) ??
-        candidate.match_score ??
         matching?.applied_match?.score ??
-        latestApplication?.ranking_score ??
+        (hasAppliedVacancy ? latestApplication?.ranking_score : null) ??
         latestApplication?.match_score ??
+        (hasAppliedVacancy ? candidate.match_score : null) ??
         null;
       const overallTalentScore =
         asNumber(parsedData.fit_score) ??
         matching?.talent_insights?.overall_score ??
+        matching?.potential_match?.score ??
+        candidate.match_score ??
         appliedMatchScore;
       const parseStatus =
         typeof parsedData.parse_status === "string"
@@ -347,7 +353,7 @@ function buildDatabaseRecords(
         rawAddedAt: addedAt,
         addedAt: formatAddedDate(addedAt),
         dedupeKey,
-        vacancyId: selectedVacancyId ?? latestApplication?.vacancy_id ?? null,
+        vacancyId: hasAppliedVacancy ? latestApplication?.vacancy_id ?? null : selectedVacancyId ?? null,
         vacancyIds: Array.from(new Set([
           ...linkedApplications.map((application) => application.vacancy_id),
           ...(selectedVacancyId ? [selectedVacancyId] : []),
