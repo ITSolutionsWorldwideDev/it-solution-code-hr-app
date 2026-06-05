@@ -296,8 +296,10 @@ def _resolve_manual_match_state(
                 CandidateMatch.vacancy_id == vacancy_id,
             )
         ).first()
-        if applied_match and applied_match.match_score >= MATCH_THRESHOLD:
-            return "matched", vacancy_id, applied_match.match_score
+        if applied_match:
+            if applied_match.match_score >= MATCH_THRESHOLD:
+                return "matched", vacancy_id, applied_match.match_score
+            return "potential_fit", vacancy_id, applied_match.match_score
         return "potential_fit", None, None
 
     open_vacancy_ids = {
@@ -322,8 +324,52 @@ def _resolve_manual_match_state(
     if ranked_matches and ranked_matches[0].match_score >= MATCH_THRESHOLD:
         winner = ranked_matches[0]
         return "matched", winner.vacancy_id, winner.match_score
+    if ranked_matches:
+        winner = ranked_matches[0]
+        return "potential_fit", winner.vacancy_id, winner.match_score
 
     return "potential_fit", None, None
+
+
+def _store_best_match_on_candidate(
+    *,
+    session: Session,
+    candidate: Candidate,
+    matched_job_id: int | None,
+    score: float | None,
+    vacancy_id: int | None,
+) -> None:
+    parsed_data = dict(candidate.parsed_data or {})
+
+    if score is not None:
+        parsed_data["fit_score"] = round(float(score), 2)
+
+    if matched_job_id is None:
+        candidate.parsed_data = sanitize_payload(parsed_data)
+        return
+
+    matched_vacancy = session.get(Vacancy, matched_job_id)
+    if matched_vacancy is None:
+        candidate.parsed_data = sanitize_payload(parsed_data)
+        return
+
+    parsed_data["selected_vacancy_id"] = matched_vacancy.id
+    parsed_data["selected_vacancy_title"] = matched_vacancy.title
+
+    matching = dict(parsed_data.get("matching") or {})
+    match_payload = {
+        "vacancy_id": str(matched_vacancy.id),
+        "role_name": matched_vacancy.title,
+        "score": round(float(score), 2) if score is not None else None,
+        "analysis": parsed_data.get("fit_explanation"),
+        "discovery_reason": parsed_data.get("fit_explanation"),
+    }
+    if vacancy_id is not None:
+        matching["applied_match"] = match_payload
+    else:
+        matching["potential_match"] = match_payload
+    parsed_data["matching"] = matching
+    candidate.parsed_data = sanitize_payload(parsed_data)
 
 
 def _sync_candidate_metadata(
@@ -537,6 +583,13 @@ def process_candidate_file(
             "file_extension": stored_resume.extension,
         }
         candidate.match_score = score
+        _store_best_match_on_candidate(
+            session=session,
+            candidate=candidate,
+            matched_job_id=matched_job_id,
+            score=score,
+            vacancy_id=vacancy_id,
+        )
         _sync_candidate_metadata(
             candidate=candidate,
             parse_status=parse_status,
