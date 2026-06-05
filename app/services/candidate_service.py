@@ -432,7 +432,7 @@ def _parse_resume_with_context(session: Session, cv_text: str, vacancy: Vacancy 
         cv_text=cv_text,
         vacancy_context=vacancy_context,
         active_vacancies=active_vacancy_contexts,
-        require_ai=False,
+        require_ai=True,
     )
 
 

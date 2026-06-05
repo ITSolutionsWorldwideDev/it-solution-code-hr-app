@@ -386,7 +386,7 @@ async def manual_import_candidates(
                     filename=original_filename,
                     parse_status="failed",
                     match_status="pending_manual_review",
-                    error_message=str(exc.detail),
+                    error_message=_format_batch_error(str(exc.detail)),
                 )
             )
         except Exception as exc:  # pragma: no cover - defensive batch import guard
@@ -395,7 +395,7 @@ async def manual_import_candidates(
                     filename=original_filename,
                     parse_status="failed",
                     match_status="pending_manual_review",
-                    error_message=str(exc),
+                    error_message=_format_batch_error(str(exc)),
                 )
             )
 

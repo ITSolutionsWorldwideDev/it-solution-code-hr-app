@@ -332,7 +332,13 @@ def _normalize_candidate_name(value: str | None) -> str | None:
     if not cleaned:
         return None
 
-    cleaned = re.sub(r"^(candidate\s+name|full\s+name|name)\s*[:\-]\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"^(candidate\s+name|full\s+name|name|contact\s+details?|personal\s+information)\s*[:\-]\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"^(mr|mrs|ms|dr)\.?\s+", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(":-| ")
     return cleaned or None
 
