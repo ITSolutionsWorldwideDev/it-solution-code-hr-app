@@ -108,6 +108,14 @@ function getTimeValue(value?: string | null) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
 }
 
+function getCandidateParsedTime(candidate: CandidateApiRecord) {
+  const parsedAt =
+    typeof candidate.parsed_data?.parsed_at === "string"
+      ? candidate.parsed_data.parsed_at
+      : null;
+  return getTimeValue(parsedAt);
+}
+
 function buildChartSeries(applications: ApplicationApiRecord[]) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -149,6 +157,60 @@ function buildTopVacancyRows(applications: ApplicationApiRecord[], vacancies: Va
     .slice(0, 4);
 }
 
+function buildTalentPoolChartSeries(candidates: CandidateApiRecord[]) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(today);
+    day.setDate(today.getDate() - (6 - index));
+    const dayStart = day.getTime();
+    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+
+    const inDay = candidates.filter((candidate) => {
+      const time = getCandidateParsedTime(candidate);
+      return time !== null && time >= dayStart && time < dayEnd;
+    });
+
+    return {
+      label: formatRelativeDate(day),
+      applications: inDay.length,
+      shortlisted: inDay.filter((candidate) => {
+        const fitScore = Number(candidate.parsed_data?.fit_score ?? candidate.match_score ?? 0);
+        return Number.isFinite(fitScore) && fitScore >= 70;
+      }).length,
+      rejected: inDay.filter((candidate) => {
+        const fitScore = Number(candidate.parsed_data?.fit_score ?? candidate.match_score ?? 0);
+        return Number.isFinite(fitScore) && fitScore > 0 && fitScore < 50;
+      }).length,
+    };
+  });
+}
+
+function buildTalentPoolVacancyRows(candidates: CandidateApiRecord[]) {
+  const counts = new Map<string, number>();
+
+  for (const candidate of candidates) {
+    const title =
+      typeof candidate.parsed_data?.selected_vacancy_title === "string"
+        ? candidate.parsed_data.selected_vacancy_title.trim()
+        : "";
+    if (!title) {
+      continue;
+    }
+    counts.set(title, (counts.get(title) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([title, applications], index) => ({
+      id: index + 1,
+      title,
+      applications,
+    }))
+    .sort((left, right) => right.applications - left.applications)
+    .slice(0, 4);
+}
+
 function buildRecentApplicants(applications: ApplicationApiRecord[], candidates: CandidateApiRecord[], vacancies: VacancyApiRecord[]) {
   return [...applications]
     .sort((left, right) => (getTimeValue(right.created_at) ?? 0) - (getTimeValue(left.created_at) ?? 0))
@@ -170,6 +232,34 @@ function buildRecentApplicants(applications: ApplicationApiRecord[], candidates:
         initials: initials || "CA",
         vacancyTitle: vacancy?.title ?? `Vacancy #${application.vacancy_id}`,
         createdAt: application.created_at,
+      };
+    });
+}
+
+function buildRecentTalentPoolCandidates(candidates: CandidateApiRecord[]) {
+  return [...candidates]
+    .sort((left, right) => (getCandidateParsedTime(right) ?? 0) - (getCandidateParsedTime(left) ?? 0))
+    .slice(0, 5)
+    .map((candidate) => {
+      const name = candidate.name?.trim() || `Candidate #${candidate.id}`;
+      const initials = name
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? "")
+        .join("");
+
+      return {
+        id: candidate.id,
+        name,
+        initials: initials || "CA",
+        vacancyTitle:
+          (typeof candidate.parsed_data?.selected_vacancy_title === "string" &&
+          candidate.parsed_data.selected_vacancy_title.trim()) ||
+          "Talent Pool",
+        createdAt:
+          (typeof candidate.parsed_data?.parsed_at === "string" && candidate.parsed_data.parsed_at) ||
+          new Date().toISOString(),
       };
     });
 }
@@ -271,25 +361,42 @@ export function HRReferenceDashboard({
 }: HRReferenceDashboardProps) {
   const profile = roleProfiles.HR;
   const totalApplications = applications.length;
+  const hasTalentPoolOnly = applications.length === 0 && candidates.length > 0;
   const openVacancies = vacancies.filter((vacancy) => vacancy.status === "open").length;
-  const shortlisted = applications.filter((application) => ["primary", "reserve"].includes(application.shortlist_bucket)).length;
-  const rejected = applications.filter((application) => application.stage.endsWith("_rejected")).length;
-  const sentToPipeline = applications.filter((application) =>
-    [
-      "hr_invite_sent",
-      "hr_interview_scheduled",
-      "hr_in_progress",
-      "hr_passed",
-      "hr_rejected",
-    ].includes(application.stage) || technicalAndBeyondStages.has(application.stage),
-  ).length;
-  const inviteQueue = applications.filter((application) =>
-    ["hr_invite_selected", "hr_invite_sent", "hr_interview_scheduled", "hr_in_progress"].includes(application.stage),
-  ).length;
+  const shortlisted = hasTalentPoolOnly
+    ? candidates.filter((candidate) => Number(candidate.parsed_data?.fit_score ?? candidate.match_score ?? 0) >= 70).length
+    : applications.filter((application) => ["primary", "reserve"].includes(application.shortlist_bucket)).length;
+  const rejected = hasTalentPoolOnly
+    ? candidates.filter((candidate) => {
+        const fitScore = Number(candidate.parsed_data?.fit_score ?? candidate.match_score ?? 0);
+        return Number.isFinite(fitScore) && fitScore > 0 && fitScore < 50;
+      }).length
+    : applications.filter((application) => application.stage.endsWith("_rejected")).length;
+  const sentToPipeline = hasTalentPoolOnly
+    ? candidates.filter((candidate) => {
+        const fitScore = Number(candidate.parsed_data?.fit_score ?? candidate.match_score ?? 0);
+        return Number.isFinite(fitScore) && fitScore >= 80;
+      }).length
+    : applications.filter((application) =>
+        [
+          "hr_invite_sent",
+          "hr_interview_scheduled",
+          "hr_in_progress",
+          "hr_passed",
+          "hr_rejected",
+        ].includes(application.stage) || technicalAndBeyondStages.has(application.stage),
+      ).length;
+  const inviteQueue = hasTalentPoolOnly
+    ? candidates.filter((candidate) => Boolean(candidate.parsed_data?.selected_vacancy_id)).length
+    : applications.filter((application) =>
+        ["hr_invite_selected", "hr_invite_sent", "hr_interview_scheduled", "hr_in_progress"].includes(application.stage),
+      ).length;
 
-  const chartSeries = buildChartSeries(applications);
-  const topVacancies = buildTopVacancyRows(applications, vacancies);
-  const recentApplicants = buildRecentApplicants(applications, candidates, vacancies);
+  const chartSeries = hasTalentPoolOnly ? buildTalentPoolChartSeries(candidates) : buildChartSeries(applications);
+  const topVacancies = hasTalentPoolOnly ? buildTalentPoolVacancyRows(candidates) : buildTopVacancyRows(applications, vacancies);
+  const recentApplicants = hasTalentPoolOnly
+    ? buildRecentTalentPoolCandidates(candidates)
+    : buildRecentApplicants(applications, candidates, vacancies);
   const reminders = buildReminders(applications, vacancies);
   const activityFeed = hrActivity.length > 0 ? hrActivity : data.recentActivity;
   const chartBreakdown = [
@@ -302,32 +409,39 @@ export function HRReferenceDashboard({
   const kpis = [
     {
       label: "Applications",
-      value: String(totalApplications),
-      helper: data.kpis.find((item) => item.label === "Top Ranked")?.delta ?? "Current applicant volume",
-      percent: toPercent(totalApplications, Math.max(totalApplications, 1)),
+      value: String(hasTalentPoolOnly ? candidates.length : totalApplications),
+      helper: hasTalentPoolOnly
+        ? "Candidates currently stored in the talent pool"
+        : data.kpis.find((item) => item.label === "Top Ranked")?.delta ?? "Current applicant volume",
+      percent: toPercent(hasTalentPoolOnly ? candidates.length : totalApplications, Math.max(hasTalentPoolOnly ? candidates.length : totalApplications, 1)),
       theme: kpiThemes[0],
     },
     {
       label: "Shortlisted",
       value: String(shortlisted),
-      helper: data.kpis.find((item) => item.label === "Shortlisted")?.delta ?? "Ready for recruiter action",
-      percent: toPercent(shortlisted, totalApplications),
+      helper: hasTalentPoolOnly
+        ? "Strong talent-pool fits across current open vacancies"
+        : data.kpis.find((item) => item.label === "Shortlisted")?.delta ?? "Ready for recruiter action",
+      percent: toPercent(shortlisted, hasTalentPoolOnly ? candidates.length : totalApplications),
       theme: kpiThemes[1],
     },
       {
         label: "Approved",
         value: String(sentToPipeline),
         helper:
-          data.kpis.find((item) => item.label === "Candidates Sent To Pipeline")?.delta ??
-          "Moved into the pipeline",
-        percent: toPercent(sentToPipeline, totalApplications),
+          hasTalentPoolOnly
+            ? "High-confidence talent-pool candidates"
+            : data.kpis.find((item) => item.label === "Candidates Sent To Pipeline")?.delta ?? "Moved into the pipeline",
+        percent: toPercent(sentToPipeline, hasTalentPoolOnly ? candidates.length : totalApplications),
         theme: kpiThemes[2],
       },
     {
       label: "Review Queue",
       value: String(inviteQueue || openVacancies),
-      helper: `${openVacancies} active vacancies currently recruiting`,
-      percent: toPercent(inviteQueue, totalApplications || openVacancies || 1),
+      helper: hasTalentPoolOnly
+        ? `${openVacancies} open vacancies available for talent-pool matching`
+        : `${openVacancies} active vacancies currently recruiting`,
+      percent: toPercent(inviteQueue, (hasTalentPoolOnly ? candidates.length : totalApplications) || openVacancies || 1),
       theme: kpiThemes[3],
     },
   ];
