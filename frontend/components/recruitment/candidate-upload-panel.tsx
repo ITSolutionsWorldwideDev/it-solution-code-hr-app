@@ -41,6 +41,7 @@ const BULK_PARSE_SELECTED_CANDIDATE_STORAGE_KEY = "itsw-bulk-parse-selected-cand
 const MAX_UPLOAD_BATCH_FILES = 5;
 const MAX_UPLOAD_BATCH_BYTES = 4 * 1024 * 1024;
 const MAX_SINGLE_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_PARALLEL_UPLOAD_BATCHES = 2;
 
 type UploadProgressState = {
   processedFiles: number;
@@ -269,6 +270,27 @@ function splitFilesIntoUploadBatches(files: File[]) {
   }
 
   return batches;
+}
+
+async function mapWithConcurrency<TInput, TOutput>(
+  items: TInput[],
+  concurrency: number,
+  worker: (item: TInput, index: number) => Promise<TOutput>
+) {
+  const results: TOutput[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
 }
 
 function getCandidateTimestamp(
@@ -788,36 +810,45 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
         totalBatches: uploadBatches.length,
       });
 
-      for (const [index, batch] of uploadBatches.entries()) {
-        setUploadProgress({
-          processedFiles,
-          totalFiles: files.length,
-          currentBatch: index + 1,
-          totalBatches: uploadBatches.length,
-        });
+      const batchResponses = await mapWithConcurrency(
+        uploadBatches,
+        MAX_PARALLEL_UPLOAD_BATCHES,
+        async (batch, index) => {
+          setUploadProgress({
+            processedFiles,
+            totalFiles: files.length,
+            currentBatch: index + 1,
+            totalBatches: uploadBatches.length,
+          });
 
-        const formData = new FormData();
-        if (vacancyId) {
-          formData.append("vacancy_id", vacancyId);
+          const formData = new FormData();
+          if (vacancyId) {
+            formData.append("vacancy_id", vacancyId);
+          }
+          for (const file of batch) {
+            formData.append("files", file);
+          }
+
+          const response = await apiRequest<CandidateManualImportResponse>({
+            path: "/candidates/manual-import",
+            method: "POST",
+            body: formData,
+          });
+
+          processedFiles += batch.length;
+          setUploadProgress({
+            processedFiles,
+            totalFiles: files.length,
+            currentBatch: Math.min(index + 1, uploadBatches.length),
+            totalBatches: uploadBatches.length,
+          });
+
+          return response;
         }
-        for (const file of batch) {
-          formData.append("files", file);
-        }
+      );
 
-        const response = await apiRequest<CandidateManualImportResponse>({
-          path: "/candidates/manual-import",
-          method: "POST",
-          body: formData,
-        });
-
+      for (const response of batchResponses) {
         aggregatedResults.push(...response.results);
-        processedFiles += batch.length;
-        setUploadProgress({
-          processedFiles,
-          totalFiles: files.length,
-          currentBatch: Math.min(index + 1, uploadBatches.length),
-          totalBatches: uploadBatches.length,
-        });
       }
 
       const failures = aggregatedResults
@@ -927,7 +958,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               <div className="flex items-start gap-2 text-[#bdc8cd]">
                 <Info className="mt-0.5 h-4 w-4 shrink-0" />
                 <p className="text-[1rem]">
-                  Direct parsing on Vercel works best in small batches. The uploader now sends up to 5 files per request and keeps each request under roughly 4 MB automatically.
+                  Direct parsing on Vercel works best in small batches. The uploader now sends up to 5 files per request, keeps each request under roughly 4 MB, and runs up to 2 batches in parallel.
                 </p>
               </div>
               <p className="mt-3 text-sm text-[#889297]">
