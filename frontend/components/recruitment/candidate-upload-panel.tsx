@@ -50,6 +50,33 @@ type UploadProgressState = {
   totalBatches: number;
 };
 
+function asString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function asNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function asStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as string[];
+  }
+
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
 function parseApiDate(value: string) {
   const normalizedValue =
     /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`;
@@ -297,10 +324,7 @@ function getCandidateTimestamp(
   candidate: CandidateApiRecord,
   match?: CandidateMatchLookup
 ) {
-  const parsedAt = candidate.parsed_data?.resume_path
-    ? match?.created_at
-    : undefined;
-
+  const parsedAt = asString(candidate.parsed_data?.parsed_at);
   return parsedAt ?? match?.created_at ?? new Date().toISOString();
 }
 
@@ -349,6 +373,7 @@ function buildStoredCandidates(
 
   return visibleCandidates
     .map((candidate) => {
+      const parsedData = candidate.parsed_data ?? {};
       const candidateApplications = [...(applicationsByCandidate.get(candidate.id) ?? [])].sort((left, right) => {
         const leftTime = parseApiDate(left.created_at)?.getTime() ?? 0;
         const rightTime = parseApiDate(right.created_at)?.getTime() ?? 0;
@@ -359,33 +384,45 @@ function buildStoredCandidates(
       const linkedVacancy = latestApplication
         ? vacancies.find((vacancy) => vacancy.id === latestApplication.vacancy_id)
         : null;
-      const matching = candidate.parsed_data?.matching as
+      const matching = parsedData.matching as
         | {
             applied_match?: { vacancy_id?: string; role_name?: string; score?: number };
           }
         | undefined;
-      const fallbackVacancyId = matching?.applied_match?.vacancy_id ?? null;
-      const fallbackVacancyTitle = matching?.applied_match?.role_name ?? "Best open vacancy match";
+      const selectedVacancyId =
+        asString(parsedData.selected_vacancy_id) ??
+        matching?.applied_match?.vacancy_id ??
+        null;
+      const selectedVacancyTitle =
+        asString(parsedData.selected_vacancy_title) ??
+        matching?.applied_match?.role_name ??
+        "Best open vacancy match";
       const fallbackFitExplanation =
-        typeof candidate.parsed_data?.fit_explanation === "string"
-          ? candidate.parsed_data.fit_explanation
-          : "No vacancy fit explanation stored yet.";
+        asString(parsedData.fit_explanation) ??
+        "No vacancy fit explanation stored yet.";
+      const candidateFitScore = asNumber(parsedData.fit_score) ?? candidate.match_score ?? null;
+      const candidateMatchedSkills = asStringArray(parsedData.matched_skills);
+      const candidateParsedAt = asString(parsedData.parsed_at);
       const matchScore =
         vacancyScope
           ? latestApplication?.ranking_score ??
             latestApplication?.match_score ??
             linkedMatch?.match_score ??
             matching?.applied_match?.score ??
-            candidate.match_score ??
+            candidateFitScore ??
             null
-          : linkedMatch?.match_score ??
+          : candidateFitScore ??
+            linkedMatch?.match_score ??
             matching?.applied_match?.score ??
-            candidate.match_score ??
             null;
       const linkedVacancyTitle = vacancyScope
-        ? linkedVacancy?.title ?? scopedVacancy?.title ?? fallbackVacancyTitle
-        : linkedMatch?.vacancy_title ?? fallbackVacancyTitle;
-      const vacancyLabel = vacancyScope ? "Applied to" : "Best vacancy match";
+        ? linkedVacancy?.title ?? scopedVacancy?.title ?? selectedVacancyTitle
+        : selectedVacancyTitle ?? linkedMatch?.vacancy_title ?? "Best open vacancy match";
+      const vacancyLabel = vacancyScope
+        ? "Applied to"
+        : selectedVacancyId
+          ? "Latest best match"
+          : "Best vacancy match";
 
       return {
         rowKey: `${candidate.id}-${latestApplication?.id ?? "candidate"}-${latestApplication?.created_at ?? linkedMatch?.created_at ?? getCandidateTimestamp(candidate, linkedMatch)}`,
@@ -396,18 +433,22 @@ function buildStoredCandidates(
         skills: candidate.skills,
         experience: candidate.experience ?? "Not extracted yet.",
         education: candidate.education ?? "Not extracted yet.",
-        linkedVacancyId: latestApplication?.vacancy_id ? String(latestApplication.vacancy_id) : fallbackVacancyId,
+        linkedVacancyId: vacancyScope
+          ? latestApplication?.vacancy_id
+            ? String(latestApplication.vacancy_id)
+            : selectedVacancyId
+          : selectedVacancyId,
         linkedVacancyTitle,
         vacancyLabel,
         matchScore,
         fitExplanation:
-          linkedMatch?.fit_explanation ??
           fallbackFitExplanation ??
+          linkedMatch?.fit_explanation ??
           latestApplication?.ai_summary ??
           "No vacancy fit explanation stored yet.",
-        matchedSkills: linkedMatch?.matched_skills ?? candidate.skills,
-        uploadedAt: latestApplication?.created_at ?? getCandidateTimestamp(candidate, linkedMatch),
-        parsedData: latestApplication?.parsed_data ?? candidate.parsed_data,
+        matchedSkills: candidateMatchedSkills.length > 0 ? candidateMatchedSkills : linkedMatch?.matched_skills ?? candidate.skills,
+        uploadedAt: candidateParsedAt ?? latestApplication?.created_at ?? getCandidateTimestamp(candidate, linkedMatch),
+        parsedData,
       };
     })
     .filter((candidate) => {
@@ -452,12 +493,19 @@ function buildImmediateStoredCandidatesFromImport(
             applied_match?: { vacancy_id?: string; role_name?: string; score?: number };
           }
         | undefined;
-      const fallbackVacancyTitle = matching?.applied_match?.role_name ?? "Best open vacancy match";
-      const linkedVacancyTitle = scopedVacancy?.title ?? fallbackVacancyTitle;
+      const selectedVacancyId =
+        asString(parsedData.selected_vacancy_id) ??
+        matching?.applied_match?.vacancy_id ??
+        null;
+      const selectedVacancyTitle =
+        asString(parsedData.selected_vacancy_title) ??
+        matching?.applied_match?.role_name ??
+        "Best open vacancy match";
+      const linkedVacancyTitle = scopedVacancy?.title ?? selectedVacancyTitle;
       const fitExplanation =
-        typeof parsedData.fit_explanation === "string"
-          ? parsedData.fit_explanation
-          : "No vacancy fit explanation stored yet.";
+        asString(parsedData.fit_explanation) ??
+        "No vacancy fit explanation stored yet.";
+      const matchedSkills = asStringArray(parsedData.matched_skills);
 
       return {
         rowKey: `session-${item.candidate_id}-${item.filename}`,
@@ -468,13 +516,13 @@ function buildImmediateStoredCandidatesFromImport(
         skills: item.skills ?? [],
         experience: item.experience ?? "Not extracted yet.",
         education: item.education ?? "Not extracted yet.",
-        linkedVacancyId: vacancyScope || matching?.applied_match?.vacancy_id || null,
+        linkedVacancyId: vacancyScope || selectedVacancyId || null,
         linkedVacancyTitle,
-        vacancyLabel: vacancyScope ? "Applied to" : "Best vacancy match",
-        matchScore: item.score ?? matching?.applied_match?.score ?? null,
+        vacancyLabel: vacancyScope ? "Applied to" : selectedVacancyId ? "Latest best match" : "Best vacancy match",
+        matchScore: item.score ?? asNumber(parsedData.fit_score) ?? matching?.applied_match?.score ?? null,
         fitExplanation,
-        matchedSkills: item.skills ?? [],
-        uploadedAt: new Date().toISOString(),
+        matchedSkills: matchedSkills.length > 0 ? matchedSkills : item.skills ?? [],
+        uploadedAt: asString(parsedData.parsed_at) ?? new Date().toISOString(),
         parsedData,
       };
     });
@@ -718,13 +766,17 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
   }, [sessionCandidateIds, storedCandidates]);
 
   const renderedCandidates = useMemo(() => {
+    if (visibleCandidates.length > 0) {
+      return visibleCandidates;
+    }
+
     if (recentParsedCandidates.length > 0) {
       return [...recentParsedCandidates].sort(
         (left, right) => parseApiDate(right.uploadedAt).getTime() - parseApiDate(left.uploadedAt).getTime()
       );
     }
 
-    return visibleCandidates;
+    return [];
   }, [recentParsedCandidates, visibleCandidates]);
 
   const selectedCandidate = useMemo(

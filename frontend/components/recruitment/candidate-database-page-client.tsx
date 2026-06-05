@@ -142,6 +142,23 @@ function extractExperienceYears(candidate: CandidateApiRecord) {
   return null;
 }
 
+function asString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function asNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  return null;
+}
+
 function getCandidateInitials(name: string) {
   const words = name
     .split(/\s+/)
@@ -251,6 +268,7 @@ function buildDatabaseRecords(
 
   const records = candidates
     .map<CandidateDatabaseRecord>((candidate) => {
+      const parsedData = candidate.parsed_data ?? {};
       const linkedApplications = [...(applicationsByCandidate.get(candidate.id) ?? [])].sort((left, right) => {
         const leftTime = parseApiDate(left.created_at)?.getTime() ?? 0;
         const rightTime = parseApiDate(right.created_at)?.getTime() ?? 0;
@@ -261,28 +279,47 @@ function buildDatabaseRecords(
         ? vacancyById.get(latestApplication.vacancy_id)
         : null;
       const matching = getCandidateMatching(candidate);
+      const selectedVacancyId = asNumber(parsedData.selected_vacancy_id);
+      const selectedVacancyTitle = asString(parsedData.selected_vacancy_title);
+      const selectedVacancy = selectedVacancyId ? vacancyById.get(selectedVacancyId) : null;
       const matchedVacancyTitle =
         matching?.applied_match?.role_name ??
         matching?.potential_match?.role_name ??
-        (typeof candidate.parsed_data?.role_title === "string" ? candidate.parsed_data.role_title : null) ??
-        (typeof candidate.parsed_data?.job_title === "string" ? candidate.parsed_data.job_title : null);
-      const roleTitle = linkedVacancy?.title ?? matchedVacancyTitle ?? "No linked vacancy";
-      const vacancyTitle = linkedVacancy?.title ?? matchedVacancyTitle ?? "No linked vacancy";
-      const vacancyLabel = linkedVacancy ? "Applied vacancy" : "Best vacancy match";
-      const potentialRole = matching?.potential_match?.role_name ?? null;
+        (typeof parsedData.role_title === "string" ? parsedData.role_title : null) ??
+        (typeof parsedData.job_title === "string" ? parsedData.job_title : null);
+      const roleTitle =
+        selectedVacancy?.title ??
+        selectedVacancyTitle ??
+        linkedVacancy?.title ??
+        matchedVacancyTitle ??
+        "No linked vacancy";
+      const vacancyTitle = roleTitle;
+      const vacancyLabel = selectedVacancyId || selectedVacancyTitle
+        ? "Latest best match"
+        : linkedVacancy
+          ? "Applied vacancy"
+          : "Best vacancy match";
+      const potentialRole =
+        selectedVacancyTitle ??
+        matching?.potential_match?.role_name ??
+        null;
       const stage = latestApplication?.stage ?? "parsed";
-      const addedAt = latestApplication?.created_at ?? null;
+      const addedAt = asString(parsedData.parsed_at) ?? latestApplication?.created_at ?? null;
       const experienceYears = extractExperienceYears(candidate);
       const appliedMatchScore =
+        asNumber(parsedData.fit_score) ??
+        candidate.match_score ??
         matching?.applied_match?.score ??
         latestApplication?.ranking_score ??
         latestApplication?.match_score ??
-        candidate.match_score ??
         null;
-      const overallTalentScore = matching?.talent_insights?.overall_score ?? null;
+      const overallTalentScore =
+        asNumber(parsedData.fit_score) ??
+        matching?.talent_insights?.overall_score ??
+        appliedMatchScore;
       const parseStatus =
-        typeof candidate.parsed_data?.parse_status === "string"
-          ? candidate.parsed_data.parse_status
+        typeof parsedData.parse_status === "string"
+          ? parsedData.parse_status
           : null;
       const searchBlob = [
         candidate.name,
@@ -292,6 +329,7 @@ function buildDatabaseRecords(
         potentialRole ?? "",
         candidate.skills.join(" "),
         candidate.ai_summary ?? "",
+        asString(parsedData.executive_summary) ?? "",
       ]
         .join(" ")
         .toLowerCase();
@@ -303,8 +341,11 @@ function buildDatabaseRecords(
         email: candidate.email,
         rawAddedAt: addedAt,
         addedAt: formatAddedDate(addedAt),
-        vacancyId: latestApplication?.vacancy_id ?? null,
-        vacancyIds: linkedApplications.map((application) => application.vacancy_id),
+        vacancyId: selectedVacancyId ?? latestApplication?.vacancy_id ?? null,
+        vacancyIds: Array.from(new Set([
+          ...linkedApplications.map((application) => application.vacancy_id),
+          ...(selectedVacancyId ? [selectedVacancyId] : []),
+        ])),
         roleTitle,
         vacancyTitle,
         vacancyLabel,

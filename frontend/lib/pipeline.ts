@@ -187,15 +187,23 @@ function resolveParsedData(
   application: ApplicationApiRecord,
   candidate: CandidateApiRecord | null,
 ): Record<string, unknown> {
-  if (application.parsed_data && typeof application.parsed_data === "object") {
-    return application.parsed_data;
+  const applicationParsedData =
+    application.parsed_data && typeof application.parsed_data === "object"
+      ? application.parsed_data
+      : {};
+  const candidateParsedData =
+    candidate?.parsed_data && typeof candidate.parsed_data === "object"
+      ? candidate.parsed_data
+      : {};
+
+  if (Object.keys(candidateParsedData).length > 0) {
+    return {
+      ...applicationParsedData,
+      ...candidateParsedData,
+    };
   }
 
-  if (candidate?.parsed_data && typeof candidate.parsed_data === "object") {
-    return candidate.parsed_data;
-  }
-
-  return {};
+  return applicationParsedData;
 }
 
 function asString(value: unknown): string | null {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from zlib import adler32
 
@@ -482,6 +483,7 @@ def _upsert_candidate_matches(
     match.ai_summary = selected_match.ai_summary
     match.fit_explanation = selected_match.fit_explanation
     match.matched_skills = selected_match.matched_skills
+    match.created_at = datetime.utcnow()
 
     session.add(match)
     session.commit()
@@ -546,6 +548,7 @@ def _upsert_fast_candidate_match(
     match.ai_summary = ai_summary
     match.fit_explanation = fit_explanation
     match.matched_skills = matched_skills
+    match.created_at = datetime.utcnow()
 
     session.add(match)
     session.commit()
