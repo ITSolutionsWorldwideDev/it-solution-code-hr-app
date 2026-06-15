@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
+from pypdf import PdfReader
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -24,6 +25,9 @@ _HEADING_ALIASES: dict[str, tuple[str, ...]] = {
     "preferred_experience": ("Preferred Experience", "Nice to Have"),
     "what_we_offer": ("What We Offer", "Working Arrangements and Benefits", "Benefits"),
 }
+_PDF_AUTHOR = "IT Solutions Worldwide"
+_PDF_CREATOR = "IT Solutions Worldwide Recruitment Platform"
+_PDF_KEYWORDS = "IT Solutions Worldwide, vacancy, recruitment, job description"
 
 
 def build_website_pdf_for_vacancy(vacancy: Vacancy) -> tuple[Path, str]:
@@ -151,7 +155,7 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
         leftMargin=26 * mm,
         rightMargin=26 * mm,
         topMargin=56 * mm,
-        bottomMargin=20 * mm,
+        bottomMargin=42 * mm,
     )
 
     story: list[Any] = []
@@ -175,29 +179,64 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
                 story.append(Paragraph(_escape(paragraph), styles["WebsiteBody"]))
         story.append(Spacer(1, 4))
 
+    def apply_pdf_metadata(page_canvas: canvas.Canvas, _doc) -> None:
+        page_canvas.setTitle(f"{title} | IT Solutions Worldwide")
+        page_canvas.setAuthor(_PDF_AUTHOR)
+        page_canvas.setCreator(_PDF_CREATOR)
+        page_canvas.setSubject(f"Vacancy PDF for {title}")
+        page_canvas.setKeywords(_PDF_KEYWORDS)
+
     def draw_branding(page_canvas: canvas.Canvas, _doc) -> None:
         page_width, page_height = A4
         teal = colors.HexColor("#78b8b6")
         slate = colors.HexColor("#5f8492")
         dark = colors.HexColor("#425766")
+        header_asset_path, footer_asset_path = _ensure_template_branding_assets()
 
         page_canvas.saveState()
-        page_canvas.setFillColor(teal)
-        page_canvas.rect(125 * mm, page_height - 36 * mm, 82 * mm, 24 * mm, fill=1, stroke=0)
-        page_canvas.setFillColor(dark)
-        page_canvas.rect(172 * mm, page_height - 36 * mm, 38 * mm, 24 * mm, fill=1, stroke=0)
-        page_canvas.setFillColor(slate)
-        page_canvas.rect(26 * mm, page_height - 48 * mm, 184 * mm, 5 * mm, fill=1, stroke=0)
+        apply_pdf_metadata(page_canvas, _doc)
+        if header_asset_path is not None and header_asset_path.exists():
+            header_width = 184 * mm
+            header_height = (111 / 522) * header_width
+            page_canvas.drawImage(
+                str(header_asset_path),
+                26 * mm,
+                page_height - header_height - 10 * mm,
+                width=header_width,
+                height=header_height,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+        else:
+            page_canvas.setFillColor(teal)
+            page_canvas.rect(125 * mm, page_height - 36 * mm, 82 * mm, 24 * mm, fill=1, stroke=0)
+            page_canvas.setFillColor(dark)
+            page_canvas.rect(172 * mm, page_height - 36 * mm, 38 * mm, 24 * mm, fill=1, stroke=0)
+            page_canvas.setFillColor(slate)
+            page_canvas.rect(26 * mm, page_height - 48 * mm, 184 * mm, 5 * mm, fill=1, stroke=0)
 
-        logo_path = _resolve_logo_path()
-        if logo_path is not None and logo_path.exists():
-            logo = Image(str(logo_path), width=34 * mm, height=34 * mm)
-            logo.drawOn(page_canvas, 32 * mm, page_height - 42 * mm)
+            logo_path = _resolve_logo_path()
+            if logo_path is not None and logo_path.exists():
+                logo = Image(str(logo_path), width=34 * mm, height=34 * mm)
+                logo.drawOn(page_canvas, 32 * mm, page_height - 42 * mm)
 
-        page_canvas.setFont("Helvetica-Bold", 18)
-        page_canvas.setFillColor(colors.HexColor("#111111"))
-        page_canvas.drawString(65 * mm, page_height - 24 * mm, "IT Solutions")
-        page_canvas.drawString(65 * mm, page_height - 33 * mm, "Worldwide")
+            page_canvas.setFont("Helvetica-Bold", 18)
+            page_canvas.setFillColor(colors.HexColor("#111111"))
+            page_canvas.drawString(65 * mm, page_height - 24 * mm, "IT Solutions")
+            page_canvas.drawString(65 * mm, page_height - 33 * mm, "Worldwide")
+
+        if footer_asset_path is not None and footer_asset_path.exists():
+            footer_width = page_width
+            footer_height = (221 / 1247) * footer_width
+            page_canvas.drawImage(
+                str(footer_asset_path),
+                0,
+                0,
+                width=footer_width,
+                height=footer_height,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
         page_canvas.restoreState()
 
     document.build(story, onFirstPage=draw_branding, onLaterPages=draw_branding)
@@ -213,6 +252,37 @@ def _resolve_logo_path() -> Path | None:
         if path.exists():
             return path
     return None
+
+
+def _resolve_template_pdf_path() -> Path | None:
+    path = BASE_DIR / "ITSW TEMPLATE Posting.pdf"
+    return path if path.exists() else None
+
+
+def _ensure_template_branding_assets() -> tuple[Path | None, Path | None]:
+    header_path = settings.website_pdf_output_dir / "itsw-template-header.jpg"
+    footer_path = settings.website_pdf_output_dir / "itsw-template-footer.jpg"
+    if header_path.exists() and footer_path.exists():
+        return header_path, footer_path
+
+    template_pdf_path = _resolve_template_pdf_path()
+    if template_pdf_path is None:
+        return None, None
+
+    try:
+        reader = PdfReader(str(template_pdf_path))
+        if not reader.pages:
+            return None, None
+
+        images = list(reader.pages[0].images)
+        if len(images) >= 3:
+            header_path.write_bytes(images[0].data)
+            footer_path.write_bytes(images[2].data)
+            return header_path, footer_path
+    except Exception:
+        return None, None
+
+    return None, None
 
 
 def _normalize_description(description: str) -> str:

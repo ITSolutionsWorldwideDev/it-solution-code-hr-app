@@ -7,6 +7,7 @@ from app.schemas.website_publish import WebsitePublishRead, WebsitePublishReques
 from app.services.crud import get_or_404
 from app.services.website_publish_service import (
     build_website_publish_preview,
+    delete_vacancy_from_website,
     generate_website_pdf_preview,
     publish_vacancy_to_website,
 )
@@ -55,6 +56,24 @@ def publish_website_vacancy(
 ):
     vacancy = get_or_404(session, Vacancy, payload.vacancy_id)
     return publish_vacancy_to_website(
+        session=session,
+        vacancy=vacancy,
+        public_base_url=str(request.base_url).rstrip("/"),
+    )
+
+
+@router.post(
+    "/delete",
+    response_model=WebsitePublishRead,
+    summary="Remove vacancy from website jobs table",
+)
+def delete_website_vacancy(
+    payload: WebsitePublishRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    vacancy = get_or_404(session, Vacancy, payload.vacancy_id)
+    return delete_vacancy_from_website(
         session=session,
         vacancy=vacancy,
         public_base_url=str(request.base_url).rstrip("/"),

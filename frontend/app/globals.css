@@ -4,31 +4,25 @@
 
 :root {
   color-scheme: dark;
-  --app-bg: #090c10;
-  --app-surface: #141a20;
-  --app-surface-strong: #0d1116;
+  --app-bg: #0b141e;
+  --app-surface: #17202b;
+  --app-surface-strong: #131c27;
   --app-line: rgba(255, 255, 255, 0.08);
-  --app-text: #f5f9ff;
+  --app-text: #dae3f2;
   --app-muted: #8fa2b5;
-  --app-accent: #63e7ff;
-  --app-accent-strong: #93efff;
+  --app-accent: #66fcf1;
+  --app-accent-strong: #62f9ee;
 }
 
 html {
   scroll-behavior: smooth;
-  background:
-    radial-gradient(circle at 8% 0%, rgba(99, 231, 255, 0.12), transparent 26%),
-    radial-gradient(circle at 100% 0%, rgba(154, 234, 255, 0.08), transparent 24%),
-    linear-gradient(180deg, #06090d 0%, #10161c 100%);
+  background-color: #0b141e;
 }
 
 body {
   @apply font-sans antialiased;
   color: var(--app-text);
-  background-image:
-    radial-gradient(circle at 8% 0%, rgba(99, 231, 255, 0.12), transparent 26%),
-    radial-gradient(circle at 100% 0%, rgba(154, 234, 255, 0.08), transparent 24%),
-    linear-gradient(180deg, #06090d 0%, #10161c 100%);
+  background-color: #0b141e;
 }
 
 * {
@@ -79,25 +73,25 @@ body {
 select,
 option,
 optgroup {
-  color: #edf4fa;
-  background-color: #10161c;
+  color: #dae3f2;
+  background-color: #17202b;
 }
 
 select:focus,
 select:focus-visible {
-  color: #edf4fa;
-  background-color: #10161c;
+  color: #dae3f2;
+  background-color: #17202b;
 }
 
 option:checked,
 option:hover,
 option:focus {
-  color: #edf4fa;
-  background-color: #17212b;
+  color: #dae3f2;
+  background-color: #222b36;
 }
 
 ::selection {
-  background: rgba(99, 231, 255, 0.28);
+  background: rgba(102, 252, 241, 0.28);
 }
 
 .organogram-canvas {

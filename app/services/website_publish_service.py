@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 
@@ -13,6 +14,7 @@ from app.config import settings
 from app.models.vacancy import Vacancy
 from app.models.website_publication import WebsitePublication
 from app.schemas.website_publish import WebsitePublishRead
+from app.services.uploadthing_service import upload_pdf_file_to_uploadthing
 from app.services.website_pdf_service import (
     build_website_pdf_filename,
     build_website_pdf_for_vacancy,
@@ -22,6 +24,7 @@ from app.services.website_pdf_service import (
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _website_engine: Engine | None = None
+logger = logging.getLogger(__name__)
 
 
 def build_website_publish_preview(vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
@@ -59,8 +62,13 @@ def generate_website_pdf_preview(vacancy: Vacancy, *, public_base_url: str) -> W
 
 
 def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
-    _pdf_path, filename = build_website_pdf_for_vacancy(vacancy)
-    mapped_fields = _build_mapped_fields(vacancy, public_base_url=public_base_url)
+    pdf_path, filename = build_website_pdf_for_vacancy(vacancy)
+    uploaded_pdf = upload_pdf_file_to_uploadthing(pdf_path)
+    mapped_fields = _build_mapped_fields(
+        vacancy,
+        public_base_url=public_base_url,
+        pdf_url=uploaded_pdf.ufs_url,
+    )
     schema_name, table_name = _parse_table_name(settings.website_jobs_table)
     qualified_table_name = _qualify_table_name(schema_name, table_name)
 
@@ -138,7 +146,95 @@ def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_bas
     )
 
 
-def _build_mapped_fields(vacancy: Vacancy, *, public_base_url: str) -> dict[str, object]:
+def delete_vacancy_from_website(session: Session, vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
+    mapped_fields = _build_mapped_fields(vacancy, public_base_url=public_base_url)
+    schema_name, table_name = _parse_table_name(settings.website_jobs_table)
+    qualified_table_name = _qualify_table_name(schema_name, table_name)
+
+    try:
+        with _get_website_engine().begin() as connection:
+            columns = _load_table_columns(connection, schema_name, table_name)
+            if not columns:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=(
+                        f"Website jobs table '{settings.website_jobs_table}' was not found. "
+                        "Set WEBSITE_DATABASE_URL and WEBSITE_JOBS_TABLE to the website database."
+                    ),
+                )
+
+            job_info_id_column = _resolve_job_info_id_column(columns)
+            lookup_id = _resolve_existing_job_info_id(
+                session=session,
+                connection=connection,
+                qualified_table_name=qualified_table_name,
+                job_info_id_column=job_info_id_column,
+                columns=columns,
+                vacancy=vacancy,
+            )
+
+            if lookup_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="This vacancy is not currently published to the website.",
+                )
+
+            connection.execute(
+                text(
+                    f"DELETE FROM {qualified_table_name} "
+                    f"WHERE {_quote_identifier(job_info_id_column)} = :job_info_id"
+                ),
+                {"job_info_id": lookup_id},
+            )
+    except HTTPException:
+        raise
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Website delete database request failed: {exc.__class__.__name__}.",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Website delete failed: {exc}",
+        ) from exc
+
+    _delete_publication_mapping(session=session, vacancy_id=vacancy.id)
+
+    return WebsitePublishRead(
+        success=True,
+        dry_run=False,
+        message="Vacancy removed from website.",
+        published=False,
+        action="deleted",
+        job_info_id=lookup_id,
+        pdf_generated=False,
+        pdf_filename=str(mapped_fields.get("pdf_filename") or ""),
+        pdf_url=str(mapped_fields.get("pdf_url") or ""),
+        mapped_fields=mapped_fields,
+    )
+
+
+def auto_publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead | None:
+    try:
+        return publish_vacancy_to_website(session, vacancy, public_base_url=public_base_url)
+    except HTTPException as exc:
+        logger.warning(
+            "Automatic website publish failed for vacancy %s: %s",
+            vacancy.id,
+            exc.detail,
+        )
+    except Exception:
+        logger.exception("Automatic website publish crashed for vacancy %s", vacancy.id)
+    return None
+
+
+def _build_mapped_fields(
+    vacancy: Vacancy,
+    *,
+    public_base_url: str,
+    pdf_url: str | None = None,
+) -> dict[str, object]:
     title = str(vacancy.title or "").strip()
 
     if not title:
@@ -151,7 +247,7 @@ def _build_mapped_fields(vacancy: Vacancy, *, public_base_url: str) -> dict[str,
     location = str(parsed_data.get("location") or "").strip() or "Location not set"
     employment_type = str(parsed_data.get("employment_type") or "").strip() or "Full-time"
     pdf_filename = build_website_pdf_filename(vacancy)
-    pdf_url = build_website_pdf_url(filename=pdf_filename, public_base_url=public_base_url)
+    resolved_pdf_url = pdf_url or build_website_pdf_url(filename=pdf_filename, public_base_url=public_base_url)
 
     created_by = settings.website_publisher_user_id
     if created_by is None:
@@ -165,7 +261,7 @@ def _build_mapped_fields(vacancy: Vacancy, *, public_base_url: str) -> dict[str,
         "location": location,
         "type": employment_type,
         "pdf_filename": pdf_filename,
-        "pdf_url": pdf_url,
+        "pdf_url": resolved_pdf_url,
         "published": 1,
         "created_by": created_by,
     }
@@ -370,4 +466,15 @@ def _upsert_publication_mapping(*, session: Session, vacancy_id: int, job_info_i
         mapping.updated_at = datetime.utcnow()
 
     session.add(mapping)
+    session.commit()
+
+
+def _delete_publication_mapping(*, session: Session, vacancy_id: int) -> None:
+    mapping = session.exec(
+        select(WebsitePublication).where(WebsitePublication.vacancy_id == vacancy_id)
+    ).first()
+    if mapping is None:
+        return
+
+    session.delete(mapping)
     session.commit()

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlmodel import select
 from sqlmodel import Session
 
@@ -89,8 +89,18 @@ def update_hiring_request(request_id: int, payload: HiringRequestUpdate, session
 
 
 @router.post("/{request_id}/approve", response_model=HiringRequestRead, summary="Approve hiring request", description="Approve a pending hiring request and automatically create a vacancy.")
-def approve_request(request_id: int, payload: HiringRequestDecision, session: Session = Depends(get_session)):
-    return approve_hiring_request(session, request_id, payload)
+def approve_request(
+    request_id: int,
+    payload: HiringRequestDecision,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    return approve_hiring_request(
+        session,
+        request_id,
+        payload,
+        public_base_url=str(request.base_url).rstrip("/"),
+    )
 
 
 @router.post("/{request_id}/reject", response_model=HiringRequestRead, summary="Reject hiring request", description="Reject a pending hiring request.")

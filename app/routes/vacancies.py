@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.db import get_session
+from app.models.enums import VacancyStatus
 from app.models.vacancy import Vacancy
 from app.schemas.application import ApplicationRead, ApplicationTalentPoolShortlistCreate
 from app.schemas.candidate_match import CandidateMatchRead
@@ -19,6 +20,7 @@ from app.services.application_workflow_service import (
 from app.services.candidate_service import get_vacancy_matches
 from app.services.talent_discovery_service import suggest_talent_for_vacancy, trigger_talent_discovery_for_vacancy
 from app.services.vacancy_service import clear_all_vacancies, delete_vacancy_with_dependencies
+from app.services.website_publish_service import auto_publish_vacancy_to_website
 
 
 router = APIRouter(prefix="/vacancies", tags=["Vacancies"])
@@ -135,9 +137,24 @@ def create_vacancy(payload: VacancyCreate, session: Session = Depends(get_sessio
 
 
 @router.put("/{vacancy_id}", response_model=VacancyRead, summary="Update vacancy", description="Update an existing vacancy.")
-def update_vacancy(vacancy_id: int, payload: VacancyUpdate, session: Session = Depends(get_session)):
+def update_vacancy(
+    vacancy_id: int,
+    payload: VacancyUpdate,
+    request: Request,
+    session: Session = Depends(get_session),
+):
     vacancy = crud.get_or_404(session, Vacancy, vacancy_id)
-    return crud.update(session, vacancy, payload.model_dump(exclude_unset=True))
+    previous_status = vacancy.status
+    updated_vacancy = crud.update(session, vacancy, payload.model_dump(exclude_unset=True))
+
+    if previous_status != updated_vacancy.status and updated_vacancy.status == VacancyStatus.OPEN:
+        auto_publish_vacancy_to_website(
+            session,
+            updated_vacancy,
+            public_base_url=str(request.base_url).rstrip("/"),
+        )
+
+    return updated_vacancy
 
 
 @router.delete("/{vacancy_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete vacancy", description="Delete a vacancy by ID.")

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Grid2x2, Plus, Search } from "lucide-react";
+import { Bell, Clock3, HelpCircle, Search } from "lucide-react";
 
 import { useRole } from "@/components/providers/role-provider";
 import { roleProfiles } from "@/lib/session";
@@ -10,33 +10,38 @@ export function TopBar() {
   const profile = roleProfiles[role];
 
   return (
-    <div className="border-b border-white/5 bg-[rgba(11,20,28,0.8)] px-5 backdrop-blur-md lg:px-8 xl:px-10">
+    <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0b141e] px-6 lg:px-8 xl:px-10">
       <div className="flex min-h-16 flex-col gap-4 py-4 xl:flex-row xl:items-center xl:justify-between xl:py-0">
         <div className="flex min-w-0 flex-1 items-center">
-          <div className="flex h-12 w-full max-w-[700px] items-center rounded-full border border-white/5 bg-[#060f16] px-5 text-[#dae3ee]">
-            <Search className="mr-3 h-5 w-5 text-[#889297]" />
-            <span className="text-[0.98rem] text-[#889297]">Search candidates, skills, or roles...</span>
-            <span className="ml-auto rounded-md border border-white/10 bg-[#2d363e] px-2 py-1 text-[0.7rem] uppercase tracking-[0.14em] text-[#dae3ee]">
-              ⌘ K
-            </span>
+          <div className="flex h-11 w-full max-w-[580px] items-center rounded-full bg-[#222b36] px-5 text-[#dae3f2]">
+            <Search className="mr-3 h-5 w-5 text-[#bacac7]" />
+            <span className="text-[0.98rem] text-[#859491]">Search across TalentEngine...</span>
           </div>
         </div>
 
-        <div className="ml-6 flex flex-wrap items-center gap-6">
+        <div className="ml-6 flex flex-wrap items-center gap-5">
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="p-2 text-[#bdc8cd] transition hover:text-[#a9e9ff]"
-              aria-label="Notifications"
+              className="rounded-full p-2 text-[#bacac7] transition hover:bg-[#17202b] hover:text-white"
+              aria-label="History"
             >
-              <Bell className="h-5 w-5" />
+              <Clock3 className="h-5 w-5" />
             </button>
             <button
               type="button"
-              className="p-2 text-[#bdc8cd] transition hover:text-[#a9e9ff]"
-              aria-label="Apps"
+              className="relative rounded-full p-2 text-[#bacac7] transition hover:bg-[#17202b] hover:text-white"
+              aria-label="Notifications"
             >
-              <Grid2x2 className="h-5 w-5" />
+              <Bell className="h-5 w-5" />
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full border border-[#0b141e] bg-[#66fcf1]" />
+            </button>
+            <button
+              type="button"
+              className="rounded-full p-2 text-[#bacac7] transition hover:bg-[#17202b] hover:text-white"
+              aria-label="Help"
+            >
+              <HelpCircle className="h-5 w-5" />
             </button>
           </div>
 
@@ -44,19 +49,24 @@ export function TopBar() {
 
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-xl bg-[#72d0ed] px-6 py-2 text-[1rem] font-bold text-[#003642] transition hover:opacity-90 active:scale-95"
+            className="inline-flex items-center rounded-xl bg-[#222b36] px-6 py-2.5 text-[0.98rem] font-bold text-[#dae3f2] transition hover:brightness-110"
           >
-            <Plus className="h-4 w-4" />
-            Add Candidate
+            Bulk Import
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center rounded-xl bg-white px-6 py-2.5 text-[0.98rem] font-bold text-[#0b141e] transition hover:brightness-95"
+          >
+            Create Request
           </button>
 
           <div className="flex items-center gap-3 pl-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#a9e9ff]/20 bg-[#182028] text-sm font-semibold text-[#dae3ee]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-[#17202b] text-sm font-semibold text-[#dae3f2]">
               {profile.initials}
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </header>
   );
 }

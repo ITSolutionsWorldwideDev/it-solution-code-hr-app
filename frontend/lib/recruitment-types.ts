@@ -433,7 +433,7 @@ export type WebsitePublishApiRecord = {
   dry_run: boolean;
   message: string;
   published: boolean;
-  action: "preview" | "created" | "updated" | string;
+  action: "preview" | "created" | "updated" | "deleted" | string;
   job_info_id?: number | null;
   pdf_generated: boolean;
   pdf_filename?: string | null;

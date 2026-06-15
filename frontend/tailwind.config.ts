@@ -35,8 +35,8 @@ const config: Config = {
         xl2: "1.5rem"
       },
       fontFamily: {
-        sans: ["var(--font-manrope)"],
-        mono: ["var(--font-ibm-plex-mono)"]
+        sans: ["var(--font-inter)"],
+        mono: ["var(--font-jetbrains-mono)"]
       },
       backgroundImage: {
         "grid-fade":

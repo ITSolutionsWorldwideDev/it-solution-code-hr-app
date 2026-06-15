@@ -27,6 +27,17 @@ def resolve_path(value: str) -> Path:
     return BASE_DIR / path
 
 
+def normalize_database_url(value: str) -> str:
+    cleaned = value.strip()
+    if cleaned.startswith("postgresql+psycopg://"):
+        return cleaned
+    if cleaned.startswith("postgresql://"):
+        return "postgresql+psycopg://" + cleaned[len("postgresql://") :]
+    if cleaned.startswith("postgres://"):
+        return "postgresql+psycopg://" + cleaned[len("postgres://") :]
+    return cleaned
+
+
 def build_website_pdf_output_dir() -> Path:
     configured = os.getenv("WEBSITE_PDF_OUTPUT_DIR")
     if configured:
@@ -54,7 +65,7 @@ def build_resume_upload_dir() -> Path:
 def build_database_url() -> str:
     database_url = os.getenv("DATABASE_URL")
     if database_url:
-        return database_url
+        return normalize_database_url(database_url)
 
     db_host = os.getenv("DB_HOST", "localhost")
     db_name = os.getenv("DB_NAME", "ai_recruitment")
@@ -95,13 +106,20 @@ def build_vertex_model_candidates() -> list[str]:
 class Settings(BaseModel):
     app_name: str = "AI Recruitment Backend"
     database_url: str = build_database_url()
-    website_database_url: str | None = os.getenv("WEBSITE_DATABASE_URL")
+    website_database_url: str | None = (
+        normalize_database_url(os.getenv("WEBSITE_DATABASE_URL"))
+        if os.getenv("WEBSITE_DATABASE_URL")
+        else None
+    )
     website_jobs_table: str = os.getenv("WEBSITE_JOBS_TABLE", "jobs_infos")
     website_publisher_user_id: int | None = (
         int(os.getenv("WEBSITE_PUBLISHER_USER_ID"))
         if os.getenv("WEBSITE_PUBLISHER_USER_ID")
         else None
     )
+    uploadthing_app_id: str | None = os.getenv("UPLOADTHING_APP_ID")
+    uploadthing_secret: str | None = os.getenv("UPLOADTHING_SECRET")
+    uploadthing_token: str | None = os.getenv("UPLOADTHING_TOKEN")
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY")
     vertex_project_id: str | None = os.getenv("VERTEX_PROJECT_ID")
     vertex_location: str = os.getenv("VERTEX_LOCATION", "europe-west1")

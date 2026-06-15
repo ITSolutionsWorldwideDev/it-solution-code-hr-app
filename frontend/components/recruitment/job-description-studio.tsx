@@ -2,12 +2,27 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Eraser, LoaderCircle, Sparkles } from "lucide-react";
+import {
+  Bold,
+  BriefcaseBusiness,
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Eraser,
+  FileText,
+  Italic,
+  Link2,
+  List,
+  LoaderCircle,
+  MapPin,
+  Sparkles,
+  WandSparkles,
+} from "lucide-react";
 
 import { apiRequest } from "@/lib/api/client";
 import type { DepartmentOption, JobDescriptionGenerateResponse } from "@/lib/recruitment-types";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,6 +50,24 @@ const fallbackDepartments: DepartmentOption[] = [
 
 const defaultPerksPrompt =
   "Holiday allowance, pension plan, paid time off, travel reimbursement, learning budget, home office support, and performance bonus where relevant.";
+
+type StudioFieldProps = {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+};
+
+function StudioField({ label, hint, children }: StudioFieldProps) {
+  return (
+    <label className="block space-y-3">
+      <span className="block text-[0.8rem] font-semibold uppercase tracking-[0.28em] text-[#9bb0bf]">
+        {label}
+      </span>
+      {children}
+      {hint ? <span className="block text-sm leading-6 text-[#728696]">{hint}</span> : null}
+    </label>
+  );
+}
 
 export function JobDescriptionStudio() {
   const [jobTitle, setJobTitle] = useState("");
@@ -185,6 +218,13 @@ export function JobDescriptionStudio() {
     [departmentId, departments]
   );
 
+  const outputWordCount = useMemo(() => {
+    return generatedDescription
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
+  }, [generatedDescription]);
+
   const handleGenerate = async () => {
     setGenerateState("generating");
     setApprovalState("idle");
@@ -290,7 +330,7 @@ export function JobDescriptionStudio() {
     setWorkHours("");
     setWorkModel("Hybrid");
     setCity("");
-      setCountry("");
+    setCountry("");
     setYearsExperience("");
     setPerks(defaultPerksPrompt);
     setRequirements("");
@@ -306,29 +346,97 @@ export function JobDescriptionStudio() {
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
-      <section className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03)_0%,rgba(255,255,255,0.015)_100%)] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-[1.4rem] font-semibold text-white">
-            AI Job Description Input
-          </h2>
-          <p className="text-sm text-[#95a8b8]">
-            Describe as much or as little as you want. AI can still generate a draft, and if salary is empty it will suggest one based on the selected country.
-          </p>
+    <div className="grid gap-6 xl:grid-cols-[1.02fr_1fr]">
+      <section className="overflow-hidden rounded-[26px] border border-[#1e2d35] bg-[#0d1012] shadow-[0_28px_60px_rgba(0,0,0,0.34)]">
+        <div className="border-b border-[#18252c] bg-[linear-gradient(180deg,rgba(16,23,27,0.95)_0%,rgba(13,16,18,0.96)_100%)] px-6 py-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#124854] bg-[rgba(18,212,233,0.1)] shadow-[0_0_24px_rgba(18,212,233,0.14)]">
+                  <WandSparkles className="h-5 w-5 text-[#19def0]" />
+                </div>
+                <div>
+                  <h2 className="text-[1.15rem] font-semibold text-white sm:text-[1.35rem]">
+                    AI Job Description Input
+                  </h2>
+                  <p className="text-sm text-[#87a0b1]">Turn a short role brief into an HR-ready vacancy draft.</p>
+                </div>
+              </div>
+              <p className="max-w-xl text-sm leading-7 text-[#98afbf]">
+                Describe as much or as little as you want. AI can still generate a draft, and if salary is empty it will suggest one based on the selected country.
+              </p>
+            </div>
+
+            <div className="inline-flex items-center rounded-[8px] border border-[#1b808e] bg-[rgba(8,39,44,0.9)] px-4 py-2 text-[0.83rem] font-semibold uppercase tracking-[0.24em] text-[#1dd8ea]">
+              Step 01
+            </div>
+          </div>
         </div>
 
-        <div className="mt-6 space-y-5">
-          <FormField label="Job title">
+        <div className="space-y-6 px-6 py-6">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-[18px] border border-[#17252c] bg-[#101416] px-4 py-3">
+              <div className="flex items-center gap-2 text-[#19def0]">
+                <BriefcaseBusiness className="h-4 w-4" />
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-[#8ca2b2]">
+                  Role
+                </span>
+              </div>
+              <p className="mt-3 truncate text-sm font-medium text-white">
+                {jobTitle || "Not set yet"}
+              </p>
+            </div>
+            <div className="rounded-[18px] border border-[#17252c] bg-[#101416] px-4 py-3">
+              <div className="flex items-center gap-2 text-[#19def0]">
+                <Building2 className="h-4 w-4" />
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-[#8ca2b2]">
+                  Department
+                </span>
+              </div>
+              <p className="mt-3 truncate text-sm font-medium text-white">
+                {selectedDepartment?.name || "Select department"}
+              </p>
+            </div>
+            <div className="rounded-[18px] border border-[#17252c] bg-[#101416] px-4 py-3">
+              <div className="flex items-center gap-2 text-[#19def0]">
+                <MapPin className="h-4 w-4" />
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-[#8ca2b2]">
+                  Location
+                </span>
+              </div>
+              <p className="mt-3 truncate text-sm font-medium text-white">
+                {[city, country].filter(Boolean).join(", ") || "Location not set"}
+              </p>
+            </div>
+            <div className="rounded-[18px] border border-[#17252c] bg-[#101416] px-4 py-3">
+              <div className="flex items-center gap-2 text-[#19def0]">
+                <Clock3 className="h-4 w-4" />
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-[#8ca2b2]">
+                  Setup
+                </span>
+              </div>
+              <p className="mt-3 truncate text-sm font-medium text-white">
+                {workModel || "Hybrid"}
+              </p>
+            </div>
+          </div>
+
+          <StudioField label="Job title">
             <Input
               value={jobTitle}
               onChange={(event) => setJobTitle(event.target.value)}
               placeholder="Data Analyst"
+              className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] text-[1.05rem] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
             />
-          </FormField>
+          </StudioField>
 
           <div className="grid gap-5 md:grid-cols-2">
-            <FormField label="Department">
-              <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
+            <StudioField label="Department">
+              <Select
+                value={departmentId}
+                onChange={(event) => setDepartmentId(event.target.value)}
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
+              >
                 <option value="" disabled>
                   Select department
                 </option>
@@ -338,80 +446,94 @@ export function JobDescriptionStudio() {
                   </option>
                 ))}
               </Select>
-            </FormField>
+            </StudioField>
 
-            <FormField label="Max budget">
+            <StudioField label="Max budget">
               <Input
                 value={maxBudget}
                 onChange={(event) => setMaxBudget(event.target.value)}
                 placeholder="EUR 55,000"
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
               />
-            </FormField>
+            </StudioField>
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
-            <FormField label="Start date">
+            <StudioField label="Start date">
               <Input
                 type="date"
                 value={startDate}
                 onChange={(event) => setStartDate(event.target.value)}
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
               />
-            </FormField>
+            </StudioField>
 
-            <FormField label="Years of experience">
+            <StudioField label="Years of experience">
               <Input
                 value={yearsExperience}
                 onChange={(event) => setYearsExperience(event.target.value)}
                 placeholder="3+ years"
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
               />
-            </FormField>
+            </StudioField>
           </div>
 
           <div className="grid gap-5 md:grid-cols-3">
-            <FormField label="Employment type">
-              <Select value={employmentType} onChange={(event) => setEmploymentType(event.target.value)}>
+            <StudioField label="Employment type">
+              <Select
+                value={employmentType}
+                onChange={(event) => setEmploymentType(event.target.value)}
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
+              >
                 <option value="Full-time">Full-time</option>
                 <option value="Part-time">Part-time</option>
                 <option value="Contract">Contract</option>
               </Select>
-            </FormField>
+            </StudioField>
 
-            <FormField label="Work hours">
+            <StudioField label="Work hours">
               <Input
                 value={workHours}
                 onChange={(event) => setWorkHours(event.target.value)}
                 placeholder="40 hours per week"
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
               />
-            </FormField>
+            </StudioField>
 
-            <FormField label="Work setup">
-              <Select value={workModel} onChange={(event) => setWorkModel(event.target.value)}>
+            <StudioField label="Work setup">
+              <Select
+                value={workModel}
+                onChange={(event) => setWorkModel(event.target.value)}
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
+              >
                 <option value="On-site">On-site</option>
                 <option value="Hybrid">Hybrid</option>
                 <option value="Remote">Remote</option>
               </Select>
-            </FormField>
+            </StudioField>
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
-            <FormField label="City">
+            <StudioField label="City">
               <Input
                 value={city}
                 onChange={(event) => setCity(event.target.value)}
                 placeholder="Amsterdam"
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
               />
-            </FormField>
+            </StudioField>
 
-            <FormField label="Country">
+            <StudioField label="Country">
               <Input
                 value={country}
                 onChange={(event) => setCountry(event.target.value)}
                 placeholder="Netherlands"
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
               />
-            </FormField>
+            </StudioField>
           </div>
 
-          <FormField
+          <StudioField
             label="What are you looking for?"
             hint="List the responsibilities, experience, tools, skills, and expectations for the role."
           >
@@ -419,11 +541,11 @@ export function JobDescriptionStudio() {
               value={requirements}
               onChange={(event) => setRequirements(event.target.value)}
               placeholder="Power BI skills, Excel skills, data storytelling, reporting, dashboards, stakeholder communication."
-              className="min-h-[240px]"
+              className="min-h-[150px] rounded-[14px] border-[#1c262c] bg-[#101214] leading-8 focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
             />
-          </FormField>
+          </StudioField>
 
-          <FormField
+          <StudioField
             label="Perks and benefits prompts"
             hint="These default benefits are sent to AI and can be adjusted per vacancy."
           >
@@ -431,20 +553,20 @@ export function JobDescriptionStudio() {
               value={perks}
               onChange={(event) => setPerks(event.target.value)}
               placeholder={defaultPerksPrompt}
-              className="min-h-[120px]"
+              className="min-h-[120px] rounded-[14px] border-[#1c262c] bg-[#101214] leading-8 focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
             />
-          </FormField>
+          </StudioField>
 
           {generateErrorMessage ? (
-            <div className="rounded-[18px] border border-[#b85b68]/35 bg-[rgba(184,91,104,0.12)] px-4 py-3 text-sm text-[#f0b6bf]">
+            <div className="rounded-[16px] border border-[#6d2f37] bg-[rgba(109,47,55,0.24)] px-4 py-3 text-sm text-[#f4b2bd]">
               {generateErrorMessage}
             </div>
           ) : null}
 
           {generateState === "generating" ? (
-            <div className="rounded-[18px] border border-[#6f86a3]/25 bg-[rgba(111,134,163,0.09)] px-4 py-3">
+            <div className="rounded-[16px] border border-[#154b55] bg-[rgba(12,43,48,0.55)] px-4 py-3">
               <div className="flex items-center gap-3 text-sm text-[#d6e3ee]">
-                <LoaderCircle className="h-4 w-4 animate-spin text-[#a8c2d9]" />
+                <LoaderCircle className="h-4 w-4 animate-spin text-[#19def0]" />
                 <span>AI is creating a job description, please wait.</span>
               </div>
             </div>
@@ -453,11 +575,10 @@ export function JobDescriptionStudio() {
           <div className="pt-2">
             <Button
               type="button"
-              variant="secondary"
               icon={generateState === "generating" ? LoaderCircle : Sparkles}
               onClick={handleGenerate}
               disabled={generateState === "generating"}
-              className={generateState === "generating" ? "opacity-80" : ""}
+              className={`h-16 w-full justify-center rounded-[14px] border border-[#1fb9c9] bg-[#18d8ea] text-[1.04rem] font-semibold text-[#041317] shadow-[0_18px_34px_rgba(24,216,234,0.18)] hover:brightness-105 ${generateState === "generating" ? "opacity-80" : ""}`}
             >
               {generateState === "generating" ? "Generating..." : "Generate Job Description (AI)"}
             </Button>
@@ -465,22 +586,55 @@ export function JobDescriptionStudio() {
         </div>
       </section>
 
-      <section className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03)_0%,rgba(255,255,255,0.015)_100%)] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-[1.4rem] font-semibold text-white">
-            AI Job Description Output
-          </h2>
-          <p className="text-sm text-[#95a8b8]">
-            Edit the generated vacancy directly in the text box below.
-          </p>
+      <section className="overflow-hidden rounded-[26px] border border-[#1e2d35] bg-[#0d1012] shadow-[0_28px_60px_rgba(0,0,0,0.34)]">
+        <div className="border-b border-[#18252c] bg-[linear-gradient(180deg,rgba(16,23,27,0.95)_0%,rgba(13,16,18,0.96)_100%)] px-6 py-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#124854] bg-[rgba(18,212,233,0.1)] shadow-[0_0_24px_rgba(18,212,233,0.14)]">
+                  <FileText className="h-5 w-5 text-[#19def0]" />
+                </div>
+                <div>
+                  <h2 className="text-[1.15rem] font-semibold text-white sm:text-[1.35rem]">
+                    AI Job Description Output
+                  </h2>
+                  <p className="text-sm text-[#87a0b1]">Edit the generated vacancy directly in the text box below.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-[#a4b7c5]">
+              <div className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#1b252b] bg-[#111517]">
+                <Bold className="h-4 w-4" />
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#1b252b] bg-[#111517]">
+                <Italic className="h-4 w-4" />
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#1b252b] bg-[#111517]">
+                <List className="h-4 w-4" />
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#1b252b] bg-[#111517]">
+                <Link2 className="h-4 w-4" />
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="mt-6 rounded-[28px] border border-white/8 bg-white/[0.03] p-6">
+        <div className="px-6 py-6">
+          <div className="rounded-[22px] border border-[#18252c] bg-[#111517] p-4">
+            <div className="flex flex-wrap items-center gap-3 border-b border-[#1a242a] px-2 pb-4 text-[#a9bac6]">
+              <Bold className="h-4 w-4" />
+              <Italic className="h-4 w-4" />
+              <List className="h-4 w-4" />
+              <span className="h-5 w-px bg-[#223038]" />
+              <Link2 className="h-4 w-4" />
+            </div>
+
           {generateState === "generating" ? (
-            <div className="rounded-[18px] border border-white/10 bg-[#171c24] p-6">
-              <div className="flex min-h-[520px] flex-col items-center justify-center gap-5 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
-                  <LoaderCircle className="h-8 w-8 animate-spin text-[#dce9f3]" />
+            <div className="rounded-[18px] p-6">
+              <div className="flex min-h-[620px] flex-col items-center justify-center gap-5 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[#154b55] bg-[rgba(12,43,48,0.55)]">
+                  <LoaderCircle className="h-8 w-8 animate-spin text-[#19def0]" />
                 </div>
                 <div className="space-y-2">
                   <p className="text-base font-semibold text-white">
@@ -495,7 +649,7 @@ export function JobDescriptionStudio() {
           ) : generatedDescription ? (
             <div className="space-y-6">
               {summary ? (
-                <div className="rounded-[18px] border border-white/8 bg-white/[0.04] px-4 py-4">
+                <div className="rounded-[16px] border border-[#1a252c] bg-[#0d1113] px-4 py-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8ea2b3]">
                     Summary
                   </p>
@@ -508,12 +662,12 @@ export function JobDescriptionStudio() {
                   value={generatedDescription}
                   onChange={(event) => setGeneratedDescription(event.target.value)}
                   placeholder="Your generated job description will appear here and can be edited before approval."
-                  className="min-h-[520px] border-white/10 bg-[#171c24] text-[1rem] leading-8 text-white"
+                  className="min-h-[540px] rounded-[16px] border-[#1a252c] bg-[#07090a] px-5 py-5 text-[1rem] leading-8 text-white focus:border-[#18d8ea]/35 focus:bg-[#090c0d]"
                 />
               </div>
 
               {generatedSkills.length > 0 ? (
-                <div className="rounded-[18px] border border-white/8 bg-white/[0.04] px-5 py-5">
+                <div className="rounded-[16px] border border-[#1a252c] bg-[#0d1113] px-5 py-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8ea2b3]">
                     AI-extracted skills
                   </p>
@@ -521,7 +675,7 @@ export function JobDescriptionStudio() {
                     {generatedSkills.map((skill) => (
                       <span
                         key={skill}
-                        className="rounded-full border border-white/8 bg-white/[0.05] px-3 py-1.5 text-sm font-medium text-[#9fc6e0]"
+                        className="rounded-full border border-[#18424a] bg-[rgba(18,212,233,0.08)] px-3 py-1.5 text-sm font-medium text-[#9fefff]"
                       >
                         {skill}
                       </span>
@@ -531,7 +685,7 @@ export function JobDescriptionStudio() {
               ) : null}
 
               {successMessage ? (
-                <div className="rounded-[22px] border border-[#325143]/70 bg-[rgba(50,81,67,0.22)] px-5 py-4">
+                <div className="rounded-[18px] border border-[#1f5c48] bg-[rgba(24,74,57,0.26)] px-5 py-4">
                   <div className="flex items-start gap-3">
                     <CheckCircle2 className="mt-0.5 h-5 w-5 text-[#b8e2c5]" />
                     <div className="space-y-2">
@@ -548,7 +702,7 @@ export function JobDescriptionStudio() {
               ) : null}
 
               {approvalErrorMessage ? (
-                <div className="rounded-[22px] border border-[#b85b68]/35 bg-[rgba(184,91,104,0.12)] px-5 py-4 text-sm text-[#f0b6bf]">
+                <div className="rounded-[18px] border border-[#6d2f37] bg-[rgba(109,47,55,0.24)] px-5 py-4 text-sm text-[#f0b6bf]">
                   {approvalErrorMessage}
                 </div>
               ) : null}
@@ -577,22 +731,42 @@ export function JobDescriptionStudio() {
                   variant="secondary"
                   icon={Eraser}
                   onClick={handleClearDraft}
+                  className="rounded-[14px] border-[#28343a] bg-[#101416] px-6 py-4"
                 >
                   Clear Draft
                 </Button>
               </div>
             </div>
           ) : (
-            <div className="rounded-[18px] border border-white/10 bg-[#171c24] p-4">
-              <Textarea
-                value=""
-                onChange={() => undefined}
-                readOnly
-                placeholder="The generated job description will appear here as one editable vacancy text."
-                className="min-h-[520px] border-0 bg-transparent text-[1rem] leading-8 text-white placeholder:text-[#73879a]"
-              />
+            <div className="flex min-h-[620px] items-center justify-center rounded-[18px] bg-[#07090a] px-8 text-center">
+              <div className="max-w-sm space-y-5">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-[#15343c] bg-[rgba(18,212,233,0.08)]">
+                  <FileText className="h-7 w-7 text-[#19def0]" />
+                </div>
+                <p className="text-[1.05rem] leading-8 text-[#6e808d]">
+                  The generated job description will appear here as one editable vacancy text.
+                </p>
+              </div>
             </div>
           )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4 px-1 text-sm text-[#6f8492]">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="inline-flex items-center gap-2">
+                <CalendarDays className="h-4 w-4" />
+                <span>Draft ready</span>
+              </div>
+              <div className="inline-flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                <span>{outputWordCount} words</span>
+              </div>
+            </div>
+            <div className="inline-flex items-center gap-2 text-[#84e8a5]">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#1dd75f]" />
+              <span>Local draft saved</span>
+            </div>
+          </div>
         </div>
       </section>
     </div>
