@@ -163,7 +163,7 @@ export function PipelineBoard({
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="overflow-x-auto pb-3">
         <div
-          className="mx-auto grid min-w-[1120px] max-w-[1560px] items-start gap-6"
+          className="grid min-w-[1120px] w-full items-start gap-6"
           style={{ gridTemplateColumns: `repeat(${groupedCandidates.length}, minmax(0, 1fr))` }}
         >
           {groupedCandidates.map((column) => (

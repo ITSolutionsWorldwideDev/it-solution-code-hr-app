@@ -8,7 +8,7 @@ type AppScaleContextValue = {
   scale: AppScale;
 };
 
-const defaultScale: AppScale = "85";
+const defaultScale: AppScale = "100";
 
 const AppScaleContext = createContext<AppScaleContextValue | null>(null);
 
