@@ -14,6 +14,8 @@ import { roleProfiles, type AppRole, type SessionUser } from "@/lib/session";
 type RoleContextValue = {
   role: AppRole;
   name: string;
+  isAuthenticated: boolean;
+  isHydrated: boolean;
   setRole: (role: AppRole) => void;
   setSession: (session: SessionUser) => void;
   clearSession: () => void;
@@ -23,15 +25,18 @@ const RoleContext = createContext<RoleContextValue | null>(null);
 const storageKey = "ai-recruitment-session";
 
 export function RoleProvider({ children }: { children: ReactNode }) {
+  const [isHydrated, setIsHydrated] = useState(false);
   const [session, setSessionState] = useState<SessionUser>({
     role: "HR",
     name: roleProfiles.HR.name,
   });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
     const storedSession = window.localStorage.getItem(storageKey);
 
     if (!storedSession) {
+      setIsHydrated(true);
       return;
     }
 
@@ -48,9 +53,12 @@ export function RoleProvider({ children }: { children: ReactNode }) {
           role: parsed.role,
           name: parsed.name,
         });
+        setIsAuthenticated(true);
       }
     } catch {
       window.localStorage.removeItem(storageKey);
+    } finally {
+      setIsHydrated(true);
     }
   }, []);
 
@@ -61,11 +69,13 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     };
 
     setSessionState(nextSession);
+    setIsAuthenticated(true);
     window.localStorage.setItem(storageKey, JSON.stringify(nextSession));
   };
 
   const setSession = (nextSession: SessionUser) => {
     setSessionState(nextSession);
+    setIsAuthenticated(true);
     window.localStorage.setItem(storageKey, JSON.stringify(nextSession));
   };
 
@@ -76,6 +86,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     };
 
     setSessionState(fallbackSession);
+    setIsAuthenticated(false);
     window.localStorage.removeItem(storageKey);
   };
 
@@ -83,11 +94,13 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     () => ({
       role: session.role,
       name: session.name,
+      isAuthenticated,
+      isHydrated,
       setRole,
       setSession,
       clearSession,
     }),
-    [session]
+    [isAuthenticated, isHydrated, session]
   );
 
   return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;

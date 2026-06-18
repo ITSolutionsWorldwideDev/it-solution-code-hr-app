@@ -13,6 +13,7 @@ from app.models.parse_job import ParseJob
 from app.models.vacancy import Vacancy
 from app.schemas.candidate_role_suggestion import CandidateRoleSuggestionRead
 from app.schemas.candidate import (
+    CandidateDatabaseResponseRead,
     CandidateCVBatchParseFailure,
     CandidateCVQueueBatchResponse,
     CandidateCVQueueJobRead,
@@ -26,6 +27,7 @@ from app.schemas.candidate import (
     CandidateUpdate,
     ParsedCandidateData,
 )
+from app.services.candidate_database_service import get_candidate_database_payload
 from app.services.ai_service import extract_pdf_content_from_bytes, extract_pdf_content_from_upload, store_pdf_upload
 from app.services.candidate_service import (
     backfill_candidate_hidden_potentials,
@@ -194,6 +196,16 @@ def _get_or_create_parse_job(
 @router.get("/", response_model=list[CandidateRead], summary="List candidates", description="Return all candidates.")
 def list_candidates(session: Session = Depends(get_session)):
     return crud.get_all(session, Candidate)
+
+
+@router.get(
+    "/database",
+    response_model=CandidateDatabaseResponseRead,
+    summary="Get candidate database payload",
+    description="Return a prebuilt, lightweight candidate database payload for the frontend table view.",
+)
+def get_candidate_database(session: Session = Depends(get_session)):
+    return get_candidate_database_payload(session)
 
 
 @router.post(

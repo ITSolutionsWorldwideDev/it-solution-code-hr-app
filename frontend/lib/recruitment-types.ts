@@ -167,6 +167,46 @@ export type CandidateApiRecord = {
   parsed_data: Record<string, unknown>;
 };
 
+export type CandidateDatabaseRecordApi = {
+  id: number;
+  initials: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  raw_added_at?: string | null;
+  added_at: string;
+  vacancy_ids: number[];
+  role_title: string;
+  vacancy_title: string;
+  vacancy_label: string;
+  potential_role?: string | null;
+  experience_years?: number | null;
+  applied_match_score?: number | null;
+  overall_talent_score?: number | null;
+  stage: string;
+  parse_status?: string | null;
+  search_blob: string;
+  ai_summary: string;
+  skills: string[];
+  experience: string;
+  education: string;
+  parsed_data: Record<string, unknown>;
+  readiness_status: "strong_match" | "potential_fit" | "needs_review" | "low_fit";
+};
+
+export type CandidateDatabaseVacancyOptionApi = {
+  id: number;
+  title: string;
+  status: VacancyStatus;
+};
+
+export type CandidateDatabaseResponseApi = {
+  records: CandidateDatabaseRecordApi[];
+  vacancy_options: CandidateDatabaseVacancyOptionApi[];
+  open_vacancy_count: number;
+  total_candidate_count: number;
+};
+
 export type AppliedMatchInsightsApiRecord = {
   vacancy_id: string;
   role_name: string;

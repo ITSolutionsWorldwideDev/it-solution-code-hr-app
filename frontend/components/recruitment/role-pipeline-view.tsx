@@ -305,12 +305,16 @@ export function RolePipelineView() {
   };
 
   useEffect(() => {
+    setCurrentUser(null);
+  }, [role, name]);
+
+  useEffect(() => {
     const load = async () => {
       setLoading(true);
       setErrorMessage(null);
 
       try {
-        await Promise.all([loadPipeline(), ensureCurrentUser()]);
+        await loadPipeline();
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Failed to load the pipeline.");
       } finally {
@@ -319,7 +323,13 @@ export function RolePipelineView() {
     };
 
     void load();
-  }, []);
+  }, [role]);
+
+  useEffect(() => {
+    void ensureCurrentUser().catch(() => {
+      // Keep the pipeline usable even if the demo-user bootstrap is temporarily unavailable.
+    });
+  }, [role, name]);
 
   const pipelineCandidates = useMemo<PipelineCandidateRecord[]>(() => {
     return applications

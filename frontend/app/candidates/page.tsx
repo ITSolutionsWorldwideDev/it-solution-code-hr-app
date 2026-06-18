@@ -3,7 +3,7 @@ import { CandidateDatabasePageClient } from "@/components/recruitment/candidate-
 
 export default function CandidatesPage() {
   return (
-    <DashboardShell>
+    <DashboardShell showTopBar={false}>
       <CandidateDatabasePageClient />
     </DashboardShell>
   );

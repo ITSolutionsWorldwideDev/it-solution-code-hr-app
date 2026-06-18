@@ -1,21 +1,59 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Bell, Clock3, HelpCircle, Search } from "lucide-react";
 
 import { useRole } from "@/components/providers/role-provider";
-import { roleProfiles } from "@/lib/session";
+import { getInitialsFromName, roleProfiles } from "@/lib/session";
 
 export function TopBar() {
-  const { role } = useRole();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { role, name } = useRole();
   const profile = roleProfiles[role];
+  const [searchValue, setSearchValue] = useState("");
+
+  useEffect(() => {
+    if (pathname?.startsWith("/candidates")) {
+      setSearchValue(searchParams.get("q") ?? "");
+      return;
+    }
+
+    setSearchValue("");
+  }, [pathname, searchParams]);
+
+  const handleSearch = () => {
+    const query = searchValue.trim();
+    if (!query) {
+      router.push("/candidates");
+      return;
+    }
+
+    router.push(`/candidates?q=${encodeURIComponent(query)}`);
+  };
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0b141e] px-6 lg:px-8 xl:px-10">
       <div className="flex min-h-16 flex-col gap-4 py-4 xl:flex-row xl:items-center xl:justify-between xl:py-0">
         <div className="flex min-w-0 flex-1 items-center">
           <div className="flex h-11 w-full max-w-[580px] items-center rounded-full bg-[#222b36] px-5 text-[#dae3f2]">
-            <Search className="mr-3 h-5 w-5 text-[#bacac7]" />
-            <span className="text-[0.98rem] text-[#859491]">Search across TalentEngine...</span>
+            <Search className="mr-3 h-5 w-5 shrink-0 text-[#bacac7]" />
+            <input
+              type="search"
+              value={searchValue}
+              onChange={(event) => setSearchValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  handleSearch();
+                }
+              }}
+              placeholder="Search candidates, skills, or roles..."
+              className="h-full w-full bg-transparent text-[0.98rem] text-[#dae3f2] outline-none placeholder:text-[#859491]"
+              aria-label="Search candidates, skills, or roles"
+            />
           </div>
         </div>
 
@@ -47,22 +85,20 @@ export function TopBar() {
 
           <div className="h-8 w-px bg-white/10" />
 
-          <button
-            type="button"
+          <Link
+            href="/candidates?tab=bulk_parse"
             className="inline-flex items-center rounded-xl bg-[#222b36] px-6 py-2.5 text-[0.98rem] font-bold text-[#dae3f2] transition hover:brightness-110"
           >
             Bulk Import
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center rounded-xl bg-white px-6 py-2.5 text-[0.98rem] font-bold text-[#0b141e] transition hover:brightness-95"
-          >
-            Create Request
-          </button>
+          </Link>
 
           <div className="flex items-center gap-3 pl-2">
             <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-[#17202b] text-sm font-semibold text-[#dae3f2]">
-              {profile.initials}
+              {getInitialsFromName(name)}
+            </div>
+            <div className="hidden min-w-0 lg:block">
+              <p className="truncate text-sm font-semibold text-[#dae3f2]">{name}</p>
+              <p className="truncate text-xs text-[#8ea2b3]">{profile.title}</p>
             </div>
           </div>
         </div>

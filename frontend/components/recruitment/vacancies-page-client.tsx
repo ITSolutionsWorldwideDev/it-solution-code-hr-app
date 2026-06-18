@@ -196,8 +196,9 @@ export function VacanciesPageClient() {
           variant="secondary"
           icon={History}
           onClick={() => setShowHistory((current) => !current)}
+          disabled={hiddenVacancyIds.length === 0}
         >
-          {showHistory ? "Hide History" : "History"}
+          {showHistory ? "Hide Hidden" : "Show Hidden"}
         </Button>
 
         <Button
@@ -206,7 +207,7 @@ export function VacanciesPageClient() {
           icon={hiddenVacancyIds.length > 0 ? Eye : EyeOff}
           onClick={hiddenVacancyIds.length > 0 ? handleRestoreCurrentView : handleClearView}
         >
-          {hiddenVacancyIds.length > 0 ? "Restore View" : "Clear View"}
+          {hiddenVacancyIds.length > 0 ? "Restore List" : "Hide Current List"}
         </Button>
       </div>
 
@@ -257,8 +258,8 @@ export function VacanciesPageClient() {
             : (
               <>
                 Vacancy list hidden from view. New vacancies will appear here automatically.
-                Click <span className="font-semibold text-white">History</span> to see all generated vacancies or{" "}
-                <span className="font-semibold text-white">Restore View</span> to bring the current list back.
+                Click <span className="font-semibold text-white">Show Hidden</span> to review hidden vacancies or{" "}
+                <span className="font-semibold text-white">Restore List</span> to bring the current list back.
               </>
             )}
         </div>

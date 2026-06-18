@@ -1,4 +1,5 @@
 from typing import Optional
+from typing import Literal
 
 from pydantic import Field
 
@@ -64,6 +65,46 @@ class CandidateUpdate(BaseSchema):
 
 class CandidateRead(CandidateBase):
     id: int
+
+
+class CandidateDatabaseVacancyOptionRead(BaseSchema):
+    id: int
+    title: str
+    status: str
+
+
+class CandidateDatabaseRecordRead(BaseSchema):
+    id: int
+    initials: str
+    name: str
+    email: str
+    phone: str | None = None
+    raw_added_at: str | None = None
+    added_at: str
+    vacancy_ids: list[int] = Field(default_factory=list)
+    role_title: str
+    vacancy_title: str
+    vacancy_label: str
+    potential_role: str | None = None
+    experience_years: int | None = None
+    applied_match_score: float | None = None
+    overall_talent_score: float | None = None
+    stage: str
+    parse_status: str | None = None
+    search_blob: str
+    ai_summary: str
+    skills: list[str] = Field(default_factory=list)
+    experience: str
+    education: str
+    parsed_data: dict = Field(default_factory=dict)
+    readiness_status: Literal["strong_match", "potential_fit", "needs_review", "low_fit"]
+
+
+class CandidateDatabaseResponseRead(BaseSchema):
+    records: list[CandidateDatabaseRecordRead] = Field(default_factory=list)
+    vacancy_options: list[CandidateDatabaseVacancyOptionRead] = Field(default_factory=list)
+    open_vacancy_count: int
+    total_candidate_count: int
 
 
 class CandidateUploadUrlRequest(BaseSchema):

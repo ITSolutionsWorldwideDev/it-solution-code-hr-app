@@ -1,19 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Expand, Filter, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Expand, Filter, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 
 import { CandidateUploadPanel } from "@/components/recruitment/candidate-upload-panel";
 import { useRole } from "@/components/providers/role-provider";
 import { apiRequest } from "@/lib/api/client";
 import type {
   ApplicationApiRecord,
+  CandidateDatabaseResponseApi,
+  CandidateDatabaseRecordApi,
+  CandidateDatabaseVacancyOptionApi,
   CandidateApiRecord,
   CandidateMatchingInsightsApiRecord,
   VacancyApiRecord,
 } from "@/lib/recruitment-types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Panel } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
 
@@ -44,14 +47,8 @@ type CandidateDatabaseRecord = {
   experience: string;
   education: string;
   parsedData: Record<string, unknown>;
+  readinessStatus: "strong_match" | "potential_fit" | "needs_review" | "low_fit";
 };
-
-const dateFilterOptions = [
-  { value: "all", label: "All Time" },
-  { value: "30", label: "Last 30 Days" },
-  { value: "90", label: "Last 90 Days" },
-  { value: "365", label: "Last 12 Months" },
-];
 
 const experienceBandOptions = [
   { value: "all", label: "All Levels" },
@@ -60,7 +57,23 @@ const experienceBandOptions = [
   { value: "junior", label: "Junior (0-2 yr)" },
 ];
 
+const readinessFilterOptions = [
+  { value: "all", label: "All Readiness" },
+  { value: "strong_match", label: "Strong Match" },
+  { value: "potential_fit", label: "Potential Fit" },
+  { value: "needs_review", label: "Needs Review" },
+  { value: "low_fit", label: "Low Fit" },
+];
+
+const dateFilterOptions = [
+  { value: "all", label: "All Time" },
+  { value: "30", label: "Last 30 Days" },
+  { value: "90", label: "Last 90 Days" },
+  { value: "365", label: "Last 12 Months" },
+];
+
 const PAGE_SIZE = 25;
+const CANDIDATE_DATABASE_CACHE_KEY = "candidate-database-page-cache-v2";
 
 const stageLabels: Record<string, string> = {
   parsed: "Parsed",
@@ -110,6 +123,72 @@ function formatAddedDate(value?: string | null) {
     day: "2-digit",
     year: "numeric",
   }).format(date);
+}
+
+function mapDatabaseRecord(record: CandidateDatabaseRecordApi): CandidateDatabaseRecord {
+  return {
+    id: record.id,
+    initials: record.initials,
+    name: record.name,
+    email: record.email,
+    phone: record.phone ?? null,
+    rawAddedAt: record.raw_added_at ?? null,
+    addedAt: record.added_at,
+    dedupeKey: "",
+    vacancyId: record.vacancy_ids[0] ?? null,
+    vacancyIds: record.vacancy_ids,
+    roleTitle: record.role_title,
+    vacancyTitle: record.vacancy_title,
+    vacancyLabel: record.vacancy_label,
+    potentialRole: record.potential_role ?? null,
+    experienceYears: record.experience_years ?? null,
+    appliedMatchScore: record.applied_match_score ?? null,
+    overallTalentScore: record.overall_talent_score ?? null,
+    stage: record.stage,
+    parseStatus: record.parse_status ?? null,
+    isPlaceholder: false,
+    searchBlob: record.search_blob,
+    aiSummary: record.ai_summary,
+    skills: record.skills,
+    experience: record.experience,
+    education: record.education,
+    parsedData: record.parsed_data,
+    readinessStatus: record.readiness_status,
+  };
+}
+
+function readCandidateDatabaseCache() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.sessionStorage.getItem(CANDIDATE_DATABASE_CACHE_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as CandidateDatabaseResponseApi;
+  } catch {
+    window.sessionStorage.removeItem(CANDIDATE_DATABASE_CACHE_KEY);
+    return null;
+  }
+}
+
+function writeCandidateDatabaseCache(payload: CandidateDatabaseResponseApi) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(CANDIDATE_DATABASE_CACHE_KEY, JSON.stringify(payload));
+}
+
+function clearCandidateDatabaseCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(CANDIDATE_DATABASE_CACHE_KEY);
 }
 
 function extractExperienceYears(candidate: CandidateApiRecord) {
@@ -247,6 +326,35 @@ function asStringArray(value: unknown) {
   return value
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter(Boolean);
+}
+
+function getCandidateReadinessStatus(candidate: CandidateApiRecord) {
+  const parseStatus =
+    typeof candidate.parsed_data?.parse_status === "string"
+      ? candidate.parsed_data.parse_status.toLowerCase()
+      : null;
+  const hasSummary = typeof candidate.ai_summary === "string" && candidate.ai_summary.trim().length > 0;
+  const rawFitScore = candidate.parsed_data?.fit_score ?? candidate.match_score ?? null;
+  const fitScore =
+    typeof rawFitScore === "number"
+      ? rawFitScore
+      : typeof rawFitScore === "string" && rawFitScore.trim()
+        ? Number(rawFitScore)
+        : null;
+
+  if (parseStatus === "failed" || parseStatus === "pending" || !hasSummary) {
+    return "needs_review" as const;
+  }
+
+  if (fitScore !== null && Number.isFinite(fitScore) && fitScore >= 70) {
+    return "strong_match" as const;
+  }
+
+  if (fitScore !== null && Number.isFinite(fitScore) && fitScore >= 50) {
+    return "potential_fit" as const;
+  }
+
+  return "low_fit" as const;
 }
 
 function getCandidateInitials(name: string) {
@@ -475,6 +583,7 @@ function buildDatabaseRecords(
         experience: candidate.experience ?? "No experience parsed yet.",
         education: candidate.education ?? "No education parsed yet.",
         parsedData,
+        readinessStatus: getCandidateReadinessStatus(candidate),
       };
     })
     .sort((left, right) => {
@@ -561,60 +670,75 @@ function ScoreRing({ value, tone = "primary" }: { value: number | null; tone?: "
 
 export function CandidateDatabasePageClient() {
   const { role } = useRole();
+  const searchParams = useSearchParams();
+  const searchQuery = (searchParams.get("q") ?? "").trim().toLowerCase();
   const [activeTab, setActiveTab] = useState<"database" | "bulk_parse">("database");
-  const [vacancies, setVacancies] = useState<VacancyApiRecord[]>([]);
-  const [applications, setApplications] = useState<ApplicationApiRecord[]>([]);
-  const [candidates, setCandidates] = useState<CandidateApiRecord[]>([]);
+  const [databaseRecords, setDatabaseRecords] = useState<CandidateDatabaseRecord[]>([]);
+  const [vacancyOptions, setVacancyOptions] = useState<CandidateDatabaseVacancyOptionApi[]>([]);
+  const [openVacancyCount, setOpenVacancyCount] = useState(0);
+  const [totalCandidateCount, setTotalCandidateCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchInput, setSearchInput] = useState("");
   const [selectedVacancyId, setSelectedVacancyId] = useState("all");
   const [experienceBand, setExperienceBand] = useState("all");
+  const [readinessFilter, setReadinessFilter] = useState("all");
   const [matchScoreFilter, setMatchScoreFilter] = useState<0 | 60 | 80>(0);
   const [dateFilter, setDateFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
 
-  const load = async () => {
-    setLoading(true);
+  const applyDatabasePayload = (payload: CandidateDatabaseResponseApi) => {
+    setDatabaseRecords(payload.records.map(mapDatabaseRecord));
+    setVacancyOptions(payload.vacancy_options);
+    setOpenVacancyCount(payload.open_vacancy_count);
+    setTotalCandidateCount(payload.total_candidate_count);
+  };
+
+  const load = async ({ background = false }: { background?: boolean } = {}) => {
+    if (!background) {
+      setLoading(true);
+    }
     setErrorMessage(null);
 
     try {
-      const [candidateResponse, applicationResponse, vacancyResponse] = await Promise.all([
-        apiRequest<CandidateApiRecord[]>({ path: "/candidates/" }),
-        apiRequest<ApplicationApiRecord[]>({ path: "/applications/" }),
-        apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" }),
-      ]);
-
-      setCandidates(candidateResponse);
-      setApplications(applicationResponse);
-      setVacancies(vacancyResponse);
+      const payload = await apiRequest<CandidateDatabaseResponseApi>({ path: "/candidates/database" });
+      applyDatabasePayload(payload);
+      writeCandidateDatabaseCache(payload);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load the candidate database.");
     } finally {
-      setLoading(false);
+      if (!background) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    const cachedPayload = readCandidateDatabaseCache();
+    if (cachedPayload) {
+      applyDatabasePayload(cachedPayload);
+      setLoading(false);
+      void load({ background: true });
+      return;
+    }
+
     void load();
   }, []);
 
-  const databaseRecords = useMemo(
-    () => buildDatabaseRecords(candidates, applications, vacancies),
-    [applications, candidates, vacancies]
-  );
-  const openVacancies = useMemo(
-    () => vacancies.filter((vacancy) => vacancy.status === "open"),
-    [vacancies]
-  );
+  useEffect(() => {
+    const requestedTab = searchParams.get("tab");
+    if (requestedTab === "bulk_parse") {
+      setActiveTab("bulk_parse");
+      return;
+    }
+
+    setActiveTab("database");
+  }, [searchParams]);
 
   const filteredRecords = useMemo(() => {
-    const freeTextQuery = searchQuery.trim().toLowerCase();
     const now = Date.now();
     const maxAgeDays = Number(dateFilter);
 
@@ -629,7 +753,7 @@ export function CandidateDatabasePageClient() {
         }
       }
 
-      if (freeTextQuery && !record.searchBlob.includes(freeTextQuery)) {
+      if (searchQuery && !record.searchBlob.includes(searchQuery)) {
         return false;
       }
 
@@ -641,6 +765,10 @@ export function CandidateDatabasePageClient() {
         return false;
       }
       if (experienceBand === "junior" && years > 2) {
+        return false;
+      }
+
+      if (readinessFilter !== "all" && record.readinessStatus !== readinessFilter) {
         return false;
       }
 
@@ -661,7 +789,7 @@ export function CandidateDatabasePageClient() {
 
       return true;
     });
-  }, [databaseRecords, dateFilter, experienceBand, matchScoreFilter, searchQuery, selectedVacancyId]);
+  }, [databaseRecords, dateFilter, experienceBand, matchScoreFilter, readinessFilter, searchQuery, selectedVacancyId]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / PAGE_SIZE));
   const paginatedRecords = filteredRecords.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -676,10 +804,9 @@ export function CandidateDatabasePageClient() {
   const handleResetFilters = () => {
     setSelectedVacancyId("all");
     setExperienceBand("all");
+    setReadinessFilter("all");
     setMatchScoreFilter(0);
     setDateFilter("all");
-    setSearchInput("");
-    setSearchQuery("");
     setCurrentPage(1);
   };
 
@@ -688,7 +815,7 @@ export function CandidateDatabasePageClient() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    try {
+      try {
       const response = await apiRequest<{
         processed_count: number;
         skipped_count: number;
@@ -701,6 +828,7 @@ export function CandidateDatabasePageClient() {
       setSuccessMessage(
         `Hidden potentials refreshed for ${response.processed_count} candidate${response.processed_count === 1 ? "" : "s"}.`
       );
+      clearCandidateDatabaseCache();
       await load();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to recompute hidden potentials.");
@@ -711,7 +839,7 @@ export function CandidateDatabasePageClient() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedVacancyId, experienceBand, matchScoreFilter, dateFilter, searchQuery]);
+  }, [selectedVacancyId, experienceBand, readinessFilter, matchScoreFilter, dateFilter, searchQuery]);
 
   return (
     <div className="space-y-8">
@@ -727,7 +855,7 @@ export function CandidateDatabasePageClient() {
           <button
             type="button"
             onClick={() => void handleBackfill()}
-            disabled={backfillLoading || openVacancies.length === 0}
+            disabled={backfillLoading || openVacancyCount === 0}
             className="inline-flex items-center gap-2 rounded-lg border border-[#72d0ed]/20 bg-[#72d0ed]/10 px-4 py-2 text-[#a9e9ff] transition hover:bg-[#72d0ed]/15 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="text-[1rem]">
@@ -774,12 +902,6 @@ export function CandidateDatabasePageClient() {
             </Panel>
           ) : null}
 
-          {openVacancies.length === 0 ? (
-            <Panel className="border-[#7b5c2e] bg-[rgba(74,54,18,0.45)] text-[#f5dfb1]">
-              No open vacancies are currently available. Talent-pool candidates can only receive a potential role and score after at least one vacancy is marked as <span className="font-semibold">open</span>.
-            </Panel>
-          ) : null}
-
           <div className="rounded-xl border border-white/5 bg-[rgba(24,32,40,0.7)] p-4 backdrop-blur-md">
             <div className="flex items-center gap-6 overflow-x-auto">
               <div className="flex items-center gap-2 shrink-0">
@@ -791,7 +913,7 @@ export function CandidateDatabasePageClient() {
                 >
                   <option value="all">All open vacancies</option>
                   <option value="no_vacancy">No linked vacancy / Talent pool</option>
-                  {vacancies.map((vacancy) => (
+                  {vacancyOptions.map((vacancy) => (
                     <option key={vacancy.id} value={String(vacancy.id)}>
                       {vacancy.title}
                     </option>
@@ -809,6 +931,40 @@ export function CandidateDatabasePageClient() {
                   className="h-9 rounded-md border-none bg-[#060f16] py-1 pr-8 text-[#a9e9ff]"
                 >
                   {experienceBandOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="h-6 w-px shrink-0 bg-white/10" />
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] uppercase tracking-[0.22em] text-[#bdc8cd]">Readiness:</span>
+                <Select
+                  value={readinessFilter}
+                  onChange={(event) => setReadinessFilter(event.target.value)}
+                  className="h-9 rounded-md border-none bg-[#060f16] py-1 pr-8 text-[#a9e9ff]"
+                >
+                  {readinessFilterOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="h-6 w-px shrink-0 bg-white/10" />
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] uppercase tracking-[0.22em] text-[#bdc8cd]">Time:</span>
+                <Select
+                  value={dateFilter}
+                  onChange={(event) => setDateFilter(event.target.value)}
+                  className="h-9 rounded-md border-none bg-[#060f16] py-1 pr-8 text-[#a9e9ff]"
+                >
+                  {dateFilterOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -859,7 +1015,7 @@ export function CandidateDatabasePageClient() {
 
               <div className="ml-auto flex items-center gap-2 shrink-0">
                 <span className="inline-flex rounded bg-[#a9e9ff]/20 px-2 py-1 text-[10px] font-bold uppercase tracking-tight text-[#a9e9ff]">
-                  Active: {filteredRecords.length.toLocaleString("en-US")} Candidates
+                  Database: {totalCandidateCount.toLocaleString("en-US")} Candidates
                 </span>
               </div>
             </div>
@@ -872,40 +1028,6 @@ export function CandidateDatabasePageClient() {
               <div className="col-span-3 text-center">Potential Match &amp; Role</div>
               <div className="col-span-1">Exp.</div>
               <div className="col-span-2 text-right">Actions</div>
-            </div>
-
-            <div className="rounded-xl border border-white/5 bg-[#182028] p-3 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)]">
-              <div className="flex flex-col gap-3 lg:flex-row">
-                <div className="relative min-w-0 flex-1">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#889297]" />
-                  <Input
-                    value={searchInput}
-                    onChange={(event) => setSearchInput(event.target.value)}
-                    placeholder="Search candidates, skills, or roles..."
-                    className="h-12 rounded-full border-white/5 bg-[#060f16] pl-12 pr-16"
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        setSearchQuery(searchInput);
-                      }
-                    }}
-                  />
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 rounded bg-[#2d363e] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-[#bdc8cd]">
-                    ⌘ K
-                  </div>
-                </div>
-
-                <Select
-                  value={dateFilter}
-                  onChange={(event) => setDateFilter(event.target.value)}
-                  className="h-12 min-w-[200px] rounded-full border-white/5 bg-[#060f16]"
-                >
-                  {dateFilterOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-              </div>
             </div>
 
             {loading ? (
@@ -973,7 +1095,8 @@ export function CandidateDatabasePageClient() {
 
           <div className="flex items-center justify-between border-t border-white/5 pt-8">
             <p className="text-sm text-[#bdc8cd]">
-              Showing {showingFrom} to {showingTo} of {filteredRecords.length.toLocaleString("en-US")} candidates
+              Showing {showingFrom} to {showingTo} of {filteredRecords.length.toLocaleString("en-US")} visible candidates
+              {` (${totalCandidateCount.toLocaleString("en-US")} in database)`}
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -1029,7 +1152,7 @@ export function CandidateDatabasePageClient() {
                 type="button"
                 variant="secondary"
                 onClick={handleBackfill}
-                disabled={backfillLoading}
+                disabled={backfillLoading || openVacancyCount === 0}
                 className="rounded-xl border-[#7eb9df]/14 bg-[#222b33] px-4 py-2 text-[#bdc8cd] hover:text-[#a9e9ff]"
               >
                 {backfillLoading ? "Refreshing..." : "Refresh Matches"}

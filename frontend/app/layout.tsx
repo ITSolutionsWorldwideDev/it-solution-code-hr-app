@@ -17,8 +17,8 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RecruitFlow AI",
-  description: "Modern recruitment dashboard for AI-assisted hiring operations.",
+  title: "Talent Genie",
+  description: "AI-powered recruitment workspace for modern hiring operations.",
 };
 
 export default function RootLayout({

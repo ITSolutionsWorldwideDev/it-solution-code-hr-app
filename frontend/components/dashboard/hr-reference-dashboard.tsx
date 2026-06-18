@@ -25,6 +25,8 @@ import {
   YAxis,
 } from "recharts";
 
+import { useRole } from "@/components/providers/role-provider";
+import { buildVisibleCandidateDatabase } from "@/lib/candidate-utils";
 import { roleProfiles } from "@/lib/session";
 import type {
   ApplicationApiRecord,
@@ -114,6 +116,108 @@ function getCandidateParsedTime(candidate: CandidateApiRecord) {
       ? candidate.parsed_data.parsed_at
       : null;
   return getTimeValue(parsedAt);
+}
+
+function getCandidateFitScore(candidate: CandidateApiRecord) {
+  const rawValue = candidate.parsed_data?.fit_score ?? candidate.match_score ?? null;
+  if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+    return rawValue;
+  }
+
+  if (typeof rawValue === "string" && rawValue.trim()) {
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function buildCandidateGrowthSeries(candidates: CandidateApiRecord[], numberOfDays = 14) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return Array.from({ length: numberOfDays }, (_, index) => {
+    const day = new Date(today);
+    day.setDate(today.getDate() - (numberOfDays - 1 - index));
+    const dayStart = day.getTime();
+    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+
+    const added = candidates.filter((candidate) => {
+      const time = getCandidateParsedTime(candidate);
+      return time !== null && time >= dayStart && time < dayEnd;
+    }).length;
+
+    return {
+      label: formatRelativeDate(day),
+      added,
+    };
+  });
+}
+
+function countCandidatesWithinWindow(
+  candidates: CandidateApiRecord[],
+  startOffsetInDays: number,
+  endOffsetInDays: number,
+) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const start = new Date(today);
+  start.setDate(today.getDate() - startOffsetInDays);
+  const end = new Date(today);
+  end.setDate(today.getDate() - endOffsetInDays);
+
+  return candidates.filter((candidate) => {
+    const time = getCandidateParsedTime(candidate);
+    return time !== null && time >= start.getTime() && time < end.getTime();
+  }).length;
+}
+
+function buildCandidateReadinessBreakdown(candidates: CandidateApiRecord[]) {
+  const counts = {
+    strongMatch: 0,
+    potentialFit: 0,
+    needsReview: 0,
+    lowFit: 0,
+  };
+
+  for (const candidate of candidates) {
+    const fitScore = getCandidateFitScore(candidate);
+    const parseStatus =
+      typeof candidate.parsed_data?.parse_status === "string"
+        ? candidate.parsed_data.parse_status.toLowerCase()
+        : null;
+    const hasSummary = typeof candidate.ai_summary === "string" && candidate.ai_summary.trim().length > 0;
+
+    if (parseStatus === "failed" || parseStatus === "pending" || !hasSummary) {
+      counts.needsReview += 1;
+      continue;
+    }
+
+    if (fitScore !== null && fitScore >= 70) {
+      counts.strongMatch += 1;
+      continue;
+    }
+
+    if (fitScore !== null && fitScore >= 50) {
+      counts.potentialFit += 1;
+      continue;
+    }
+
+    if (fitScore !== null && fitScore > 0) {
+      counts.lowFit += 1;
+      continue;
+    }
+
+    counts.needsReview += 1;
+  }
+
+  return [
+    { name: "Strong Match", value: counts.strongMatch, color: acquisitionColors[0] },
+    { name: "Potential Fit", value: counts.potentialFit, color: acquisitionColors[1] },
+    { name: "Needs Review", value: counts.needsReview, color: acquisitionColors[2] },
+    { name: "Low Fit", value: counts.lowFit, color: acquisitionColors[3] },
+  ];
 }
 
 function buildChartSeries(applications: ApplicationApiRecord[]) {
@@ -309,6 +413,7 @@ function KpiRingCard({
   percent,
   color,
   glow,
+  className,
 }: {
   label: string;
   value: string;
@@ -316,11 +421,12 @@ function KpiRingCard({
   percent: number;
   color: string;
   glow: string;
+  className?: string;
 }) {
   const strokeDashoffset = 282.6 - (282.6 * percent) / 100;
 
   return (
-    <div className="rounded-[26px] bg-[#151b21] px-6 py-5 shadow-[0_18px_34px_rgba(0,0,0,0.32)]">
+    <div className={cn("rounded-[26px] bg-[#151b21] px-6 py-5 shadow-[0_18px_34px_rgba(0,0,0,0.32)]", className)}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[0.82rem] font-semibold uppercase tracking-[0.18em] text-white/45">{label}</p>
@@ -328,7 +434,7 @@ function KpiRingCard({
           <p className="mt-2 text-sm text-white/55">{helper}</p>
         </div>
 
-        <div className={cn("relative h-[84px] w-[84px] shrink-0 rounded-full", glow)}>
+        <div className={cn("relative h-[68px] w-[68px] shrink-0 rounded-full", glow)}>
           <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
             <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6" />
             <circle
@@ -343,10 +449,83 @@ function KpiRingCard({
               strokeDashoffset={strokeDashoffset}
             />
           </svg>
-          <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-white">
+          <div className="absolute inset-0 flex items-center justify-center text-[0.82rem] font-semibold text-white">
             {percent}%
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function CandidateVolumeCard({
+  totalCandidates,
+  recentCandidates,
+  strongFitShare,
+  growthSeries,
+}: {
+  totalCandidates: number;
+  recentCandidates: number;
+  strongFitShare: number;
+  growthSeries: { label: string; added: number }[];
+}) {
+  return (
+    <div className="rounded-[26px] bg-[#151b21] px-6 py-5 shadow-[0_18px_34px_rgba(0,0,0,0.32)] md:col-span-2 2xl:col-span-2">
+      <div className="flex items-start justify-between gap-5">
+        <div>
+          <p className="text-[0.82rem] font-semibold uppercase tracking-[0.18em] text-white/45">
+            Candidates In Database
+          </p>
+          <p className="mt-4 text-[2.7rem] font-semibold tracking-[-0.06em] text-white">
+            {totalCandidates.toLocaleString("en-US")}
+          </p>
+          <p className="mt-2 text-sm text-white/55">
+            {recentCandidates} added in the last 30 days
+          </p>
+        </div>
+
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span className="rounded-full border border-[#27414c] bg-[#12202a] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#93efff]">
+            Live pool
+          </span>
+          <span className="text-sm text-white/55">
+            {strongFitShare}% strong fit
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-5 h-[92px] rounded-[20px] border border-white/6 bg-[#10171d] px-3 py-2">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={growthSeries} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="candidateGrowthArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#63e7ff" stopOpacity={0.36} />
+                <stop offset="100%" stopColor="#63e7ff" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <Tooltip
+              contentStyle={{
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.1)",
+                background: "#121a33",
+                color: "#fff",
+              }}
+            />
+            <Area
+              type="monotone"
+              dataKey="added"
+              stroke="#63e7ff"
+              strokeWidth={2.8}
+              fill="url(#candidateGrowthArea)"
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-4 text-xs uppercase tracking-[0.16em] text-white/40">
+        <span>{growthSeries[0]?.label ?? ""}</span>
+        <span>Growth Momentum</span>
+        <span>{growthSeries[growthSeries.length - 1]?.label ?? ""}</span>
       </div>
     </div>
   );
@@ -359,21 +538,30 @@ export function HRReferenceDashboard({
   candidates,
   vacancies,
 }: HRReferenceDashboardProps) {
+  const { name } = useRole();
   const profile = roleProfiles.HR;
+  const profileInitials = name
+    .split(/\s+/)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  const visibleCandidates = buildVisibleCandidateDatabase(candidates);
+  const totalCandidates = candidates.length;
   const totalApplications = applications.length;
-  const hasTalentPoolOnly = applications.length === 0 && candidates.length > 0;
+  const hasTalentPoolOnly = applications.length === 0 && visibleCandidates.length > 0;
   const openVacancies = vacancies.filter((vacancy) => vacancy.status === "open").length;
   const shortlisted = hasTalentPoolOnly
-    ? candidates.filter((candidate) => Number(candidate.parsed_data?.fit_score ?? candidate.match_score ?? 0) >= 70).length
+    ? visibleCandidates.filter((candidate) => Number(candidate.parsed_data?.fit_score ?? candidate.match_score ?? 0) >= 70).length
     : applications.filter((application) => ["primary", "reserve"].includes(application.shortlist_bucket)).length;
   const rejected = hasTalentPoolOnly
-    ? candidates.filter((candidate) => {
+    ? visibleCandidates.filter((candidate) => {
         const fitScore = Number(candidate.parsed_data?.fit_score ?? candidate.match_score ?? 0);
         return Number.isFinite(fitScore) && fitScore > 0 && fitScore < 50;
       }).length
     : applications.filter((application) => application.stage.endsWith("_rejected")).length;
   const sentToPipeline = hasTalentPoolOnly
-    ? candidates.filter((candidate) => {
+    ? visibleCandidates.filter((candidate) => {
         const fitScore = Number(candidate.parsed_data?.fit_score ?? candidate.match_score ?? 0);
         return Number.isFinite(fitScore) && fitScore >= 80;
       }).length
@@ -386,63 +574,69 @@ export function HRReferenceDashboard({
           "hr_rejected",
         ].includes(application.stage) || technicalAndBeyondStages.has(application.stage),
       ).length;
-  const inviteQueue = hasTalentPoolOnly
-    ? candidates.filter((candidate) => Boolean(candidate.parsed_data?.selected_vacancy_id)).length
+  const reviewQueue = hasTalentPoolOnly
+    ? visibleCandidates.filter((candidate) => {
+        const parseStatus =
+          typeof candidate.parsed_data?.parse_status === "string"
+            ? candidate.parsed_data.parse_status.toLowerCase()
+            : null;
+        return parseStatus === "pending" || parseStatus === "failed" || !candidate.ai_summary;
+      }).length
     : applications.filter((application) =>
-        ["hr_invite_selected", "hr_invite_sent", "hr_interview_scheduled", "hr_in_progress"].includes(application.stage),
+        ["ranked", "primary_shortlist", "reserve_shortlist", "hr_invite_selected"].includes(application.stage),
       ).length;
 
-  const chartSeries = hasTalentPoolOnly ? buildTalentPoolChartSeries(candidates) : buildChartSeries(applications);
-  const topVacancies = hasTalentPoolOnly ? buildTalentPoolVacancyRows(candidates) : buildTopVacancyRows(applications, vacancies);
+  const chartSeries = hasTalentPoolOnly ? buildTalentPoolChartSeries(visibleCandidates) : buildChartSeries(applications);
+  const topVacancies = hasTalentPoolOnly ? buildTalentPoolVacancyRows(visibleCandidates) : buildTopVacancyRows(applications, vacancies);
   const recentApplicants = hasTalentPoolOnly
-    ? buildRecentTalentPoolCandidates(candidates)
+    ? buildRecentTalentPoolCandidates(visibleCandidates)
     : buildRecentApplicants(applications, candidates, vacancies);
   const reminders = buildReminders(applications, vacancies);
-  const activityFeed = hrActivity.length > 0 ? hrActivity : data.recentActivity;
-  const chartBreakdown = [
-    { name: "Applications", value: totalApplications, color: acquisitionColors[0] },
-    { name: "Shortlisted", value: shortlisted, color: acquisitionColors[1] },
-    { name: "Sent To Pipeline", value: sentToPipeline, color: acquisitionColors[2] },
-    { name: "Rejected", value: rejected, color: acquisitionColors[3] },
-  ];
+  const activityFeed = hrActivity;
+  const candidateGrowthSeries = buildCandidateGrowthSeries(visibleCandidates);
+  const recentCandidates = countCandidatesWithinWindow(visibleCandidates, 30, 0);
+  const strongFitCount = visibleCandidates.filter((candidate) => {
+    const fitScore = getCandidateFitScore(candidate);
+    return fitScore !== null && fitScore >= 70;
+  }).length;
+  const potentialFitCount = visibleCandidates.filter((candidate) => {
+    const fitScore = getCandidateFitScore(candidate);
+    return fitScore !== null && fitScore >= 50 && fitScore < 70;
+  }).length;
+  const candidateReadinessBreakdown = buildCandidateReadinessBreakdown(visibleCandidates);
+  const strongFitShare = toPercent(strongFitCount, Math.max(totalCandidates, 1));
+  const reviewQueuePercent = toPercent(reviewQueue, Math.max(totalApplications || totalCandidates, 1));
+  const potentialFitShare = toPercent(potentialFitCount, Math.max(totalCandidates, 1));
+  const openVacancyShare = toPercent(openVacancies, Math.max(vacancies.length, 1));
 
   const kpis = [
     {
-      label: "Applications",
-      value: String(hasTalentPoolOnly ? candidates.length : totalApplications),
-      helper: hasTalentPoolOnly
-        ? "Candidates currently stored in the talent pool"
-        : data.kpis.find((item) => item.label === "Top Ranked")?.delta ?? "Current applicant volume",
-      percent: toPercent(hasTalentPoolOnly ? candidates.length : totalApplications, Math.max(hasTalentPoolOnly ? candidates.length : totalApplications, 1)),
-      theme: kpiThemes[0],
-    },
-    {
-      label: "Shortlisted",
-      value: String(shortlisted),
-      helper: hasTalentPoolOnly
-        ? "Strong talent-pool fits across current open vacancies"
-        : data.kpis.find((item) => item.label === "Shortlisted")?.delta ?? "Ready for recruiter action",
-      percent: toPercent(shortlisted, hasTalentPoolOnly ? candidates.length : totalApplications),
+      label: "Open Vacancies",
+      value: String(openVacancies),
+      helper: `${openVacancyShare}% of tracked vacancies are open`,
+      percent: openVacancyShare,
       theme: kpiThemes[1],
     },
-      {
-        label: "Approved",
-        value: String(sentToPipeline),
-        helper:
-          hasTalentPoolOnly
-            ? "High-confidence talent-pool candidates"
-            : data.kpis.find((item) => item.label === "Candidates Sent To Pipeline")?.delta ?? "Moved into the pipeline",
-        percent: toPercent(sentToPipeline, hasTalentPoolOnly ? candidates.length : totalApplications),
-        theme: kpiThemes[2],
-      },
     {
-      label: "Review Queue",
-      value: String(inviteQueue || openVacancies),
-      helper: hasTalentPoolOnly
-        ? `${openVacancies} open vacancies available for talent-pool matching`
-        : `${openVacancies} active vacancies currently recruiting`,
-      percent: toPercent(inviteQueue, (hasTalentPoolOnly ? candidates.length : totalApplications) || openVacancies || 1),
+      label: "Strong Matches",
+      value: String(strongFitCount),
+      helper: `${strongFitShare}% of database scored 70%+`,
+      percent: strongFitShare,
+      theme: kpiThemes[2],
+    },
+    {
+      label: "Potential Fits",
+      value: String(potentialFitCount),
+      helper: `${potentialFitShare}% are promising but not top-tier yet`,
+      percent: potentialFitShare,
       theme: kpiThemes[3],
+    },
+    {
+      label: "Needs Review",
+      value: String(reviewQueue),
+      helper: `${reviewQueuePercent}% of the active pool still needs HR review`,
+      percent: reviewQueuePercent,
+      theme: kpiThemes[0],
     },
   ];
 
@@ -465,7 +659,13 @@ export function HRReferenceDashboard({
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,2.45fr)_320px]">
         <div className="space-y-5">
-          <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-6">
+            <CandidateVolumeCard
+              totalCandidates={totalCandidates}
+              recentCandidates={recentCandidates}
+              strongFitShare={strongFitShare}
+              growthSeries={candidateGrowthSeries}
+            />
             {kpis.map((kpi) => (
               <KpiRingCard
                 key={kpi.label}
@@ -475,6 +675,7 @@ export function HRReferenceDashboard({
                 percent={kpi.percent}
                 color={kpi.theme.ring}
                 glow={kpi.theme.glow}
+                className="2xl:col-span-1"
               />
             ))}
           </section>
@@ -576,14 +777,14 @@ export function HRReferenceDashboard({
             <div className="space-y-5">
               <div className="rounded-[30px] bg-[#151b21] px-5 py-5 shadow-[0_20px_36px_rgba(0,0,0,0.32)]">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-[1.35rem] font-semibold text-white">Acquisitions</p>
+                  <p className="text-[1.35rem] font-semibold text-white">Candidate Readiness</p>
                   <span className="text-sm text-[#92afc1]">This month</span>
                 </div>
                 <div className="mt-4 h-[170px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={chartBreakdown}
+                        data={candidateReadinessBreakdown}
                         dataKey="value"
                         nameKey="name"
                         innerRadius={45}
@@ -591,7 +792,7 @@ export function HRReferenceDashboard({
                         paddingAngle={4}
                         stroke="none"
                       >
-                        {chartBreakdown.map((entry) => (
+                        {candidateReadinessBreakdown.map((entry) => (
                           <Cell key={entry.name} fill={entry.color} />
                         ))}
                       </Pie>
@@ -607,13 +808,13 @@ export function HRReferenceDashboard({
                   </ResponsiveContainer>
                 </div>
                 <div className="mt-2 space-y-3">
-                  {chartBreakdown.map((entry) => (
+                  {candidateReadinessBreakdown.map((entry) => (
                     <div key={entry.name} className="flex items-center justify-between gap-3 text-sm text-white/78">
                       <span className="flex items-center gap-3">
                         <span className="h-3 w-5 rounded-full" style={{ backgroundColor: entry.color }} />
                         {entry.name}
                       </span>
-                      <span>{toPercent(entry.value, Math.max(totalApplications, 1))}%</span>
+                      <span>{toPercent(entry.value, Math.max(totalCandidates, 1))}%</span>
                     </div>
                   ))}
                 </div>
@@ -655,9 +856,9 @@ export function HRReferenceDashboard({
 
           <div className="mt-8 text-center">
             <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-full bg-[radial-gradient(circle_at_30%_30%,#ebfdff_0%,#93efff_52%,#42cbff_100%)] text-[2rem] font-semibold text-[#102938] shadow-[0_18px_34px_rgba(0,0,0,0.24)]">
-              {profile.initials}
+              {profileInitials || profile.initials}
             </div>
-            <p className="mt-5 text-[1.2rem] font-semibold text-white">{profile.name}</p>
+            <p className="mt-5 text-[1.2rem] font-semibold text-white">{name}</p>
             <p className="mt-1 text-sm text-[#96abc0]">{profile.title}</p>
           </div>
 
@@ -700,17 +901,23 @@ export function HRReferenceDashboard({
               <Activity className="h-4 w-4 text-[#93efff]" />
             </div>
             <div className="mt-4 space-y-4">
-              {activityFeed.slice(0, 4).map((item: ActivityItem | DashboardActivityApiRecord) => (
-                <div key={item.id} className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#10171d] text-[#b8f5ff]">
-                      <Mail className="h-4 w-4" />
+              {activityFeed.length > 0 ? (
+                activityFeed.slice(0, 4).map((item: ActivityItem | DashboardActivityApiRecord) => (
+                  <div key={item.id} className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#10171d] text-[#b8f5ff]">
+                        <Mail className="h-4 w-4" />
+                      </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium leading-6 text-white/90">{item.title}</p>
+                      <p className="mt-1 text-xs text-[#92afc1]">{item.timestamp}</p>
                     </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium leading-6 text-white/90">{item.title}</p>
-                    <p className="mt-1 text-xs text-[#92afc1]">{item.timestamp}</p>
                   </div>
+                ))
+              ) : (
+                <div className="rounded-[18px] border border-white/8 bg-[#10171d] px-4 py-4 text-sm text-[#92afc1]">
+                  No live HR activity yet.
                 </div>
-              ))}
+              )}
             </div>
           </div>
 

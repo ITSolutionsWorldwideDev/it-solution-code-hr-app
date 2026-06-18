@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -10,7 +11,6 @@ import {
   LayoutDashboard,
   Plus,
   Settings,
-  TerminalSquare,
   UserPlus,
   Users,
   Workflow,
@@ -38,17 +38,21 @@ export function Sidebar() {
   return (
     <aside className="hidden h-screen w-64 shrink-0 border-r border-white/5 bg-[#060f19] lg:sticky lg:top-0 lg:block">
       <div className="flex h-full flex-col">
-        <div className="px-5 pb-6 pt-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded bg-white text-[#006a64]">
-              <TerminalSquare className="h-7 w-7" strokeWidth={2.2} />
+        <div className="px-2 pb-5 pt-14">
+          <div className="flex w-full flex-col items-center justify-start">
+            <div className="relative h-[190px] w-full overflow-hidden">
+              <Image
+                src="/final-logo.png"
+                alt="Talent Genie"
+                fill
+                priority
+                className="object-contain object-top scale-[1.28]"
+                sizes="240px"
+              />
             </div>
-            <div>
-              <h1 className="text-[2rem] font-bold tracking-[-0.04em] text-white">TalentEngine</h1>
-              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-[#d0d8d7]">
-                Enterprise Recruitment
-              </p>
-            </div>
+            <p className="mt-2 text-center text-[1.65rem] font-semibold tracking-[0.08em] text-[#d9e7ff]">
+              Talent Genie
+            </p>
           </div>
         </div>
 
@@ -77,13 +81,13 @@ export function Sidebar() {
         </nav>
 
         <div className="border-t border-white/5 bg-white/[0.03] px-5 py-5">
-          <button
-            type="button"
+          <Link
+            href="/hiring-requests"
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#007774] px-4 py-4 text-lg font-bold text-[#a1fcf7] transition hover:brightness-110"
           >
             <Plus className="h-5 w-5" />
             Post New Job
-          </button>
+          </Link>
         </div>
 
         <div className="space-y-1 px-2 pb-4 pt-2">

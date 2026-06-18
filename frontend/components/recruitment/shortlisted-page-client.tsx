@@ -9,11 +9,13 @@ import {
   Mail,
   Sparkles,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { useRole } from "@/components/providers/role-provider";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { apiRequest } from "@/lib/api/client";
+import { isPlaceholderCandidate } from "@/lib/candidate-utils";
 import type {
   ApplicationApiRecord,
   ApplicationStageApi,
@@ -317,6 +319,24 @@ function experienceLabel(candidate: CandidateApiRecord | null) {
   return source.length > 30 ? `${source.slice(0, 27)}...` : source;
 }
 
+function formatShortDate(value?: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalizedValue = /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`;
+  const parsed = new Date(normalizedValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(parsed);
+}
+
 function isFromTalentPool(application: ApplicationApiRecord) {
   const parsedData =
     application.parsed_data && typeof application.parsed_data === "object"
@@ -402,6 +422,46 @@ function isInApprovalPipeline(application: ApplicationApiRecord) {
   return approvalPipelineStages.has(application.stage);
 }
 
+function isTransientNetworkError(message: string | null) {
+  if (!message) {
+    return false;
+  }
+
+  return message.includes("Could not reach the API: Failed to fetch");
+}
+
+function shortlistPipelineStatusLabel(application: ApplicationApiRecord) {
+  switch (application.stage) {
+    case "hr_invite_sent":
+      return "Already Sent to Pipeline";
+    case "hr_interview_scheduled":
+    case "hr_in_progress":
+      return "In HR Pipeline";
+    case "hr_passed":
+      return "Passed to Technical";
+    case "technical_interview_scheduled":
+    case "technical_in_progress":
+      return "In Technical Pipeline";
+    case "technical_passed":
+      return "Passed to Management";
+    case "management_interview_scheduled":
+    case "management_in_progress":
+      return "In Management Pipeline";
+    case "selected":
+      return "Selected";
+    case "offer_sent":
+      return "Offer Sent";
+    case "offer_accepted":
+      return "Offer Accepted";
+    case "offer_declined":
+      return "Offer Declined";
+    case "hired":
+      return "Hired";
+    default:
+      return "Already Sent to Pipeline";
+  }
+}
+
 async function ensureDemoUser(role: keyof typeof roleToUserRole, fullName: string): Promise<UserApiRecord> {
   const users = await apiRequest<UserApiRecord[]>({ path: "/users/" });
   const existing = users.find((user) => user.role === roleToUserRole[role] && user.full_name === fullName);
@@ -424,7 +484,9 @@ async function ensureDemoUser(role: keyof typeof roleToUserRole, fullName: strin
 
 export function ShortlistedPageClient() {
   const { role, name } = useRole();
+  const router = useRouter();
   const [vacancies, setVacancies] = useState<VacancyApiRecord[]>([]);
+  const [vacancyApplicationCounts, setVacancyApplicationCounts] = useState<Record<number, { total: number; shortlisted: number }>>({});
   const [selectedVacancyId, setSelectedVacancyId] = useState("");
   const [applications, setApplications] = useState<ApplicationApiRecord[]>([]);
   const [candidates, setCandidates] = useState<CandidateApiRecord[]>([]);
@@ -435,16 +497,13 @@ export function ShortlistedPageClient() {
   const [potentialTalentLoading, setPotentialTalentLoading] = useState(false);
   const [potentialTalentError, setPotentialTalentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [shortlistLoading, setShortlistLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<"generate_top_10" | "send_selected_emails" | null>(null);
   const [cardBusyAction, setCardBusyAction] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [detailErrorMessage, setDetailErrorMessage] = useState<string | null>(null);
-  const [sortMode, setSortMode] = useState<"match" | "rank">("match");
-  const [statusFilter, setStatusFilter] = useState<"all" | "primary" | "reserve" | "send_selected" | "invite_sent">(
-    "all",
-  );
   const [vacancyMenuOpen, setVacancyMenuOpen] = useState(false);
   const [pendingInviteIds, setPendingInviteIds] = useState<number[]>([]);
   const [rejectionEmailSentIds, setRejectionEmailSentIds] = useState<number[]>([]);
@@ -454,6 +513,13 @@ export function ShortlistedPageClient() {
     () => vacancies.find((vacancy) => String(vacancy.id) === selectedVacancyId) ?? null,
     [selectedVacancyId, vacancies],
   );
+  const duplicateVacancyTitles = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const vacancy of vacancies) {
+      counts.set(vacancy.title, (counts.get(vacancy.title) ?? 0) + 1);
+    }
+    return counts;
+  }, [vacancies]);
 
   const loadVacancyShortlist = async (vacancyId: string, syncSelection: boolean) => {
     if (!vacancyId) {
@@ -469,6 +535,7 @@ export function ShortlistedPageClient() {
 
     setApplications(applicationResponse);
     setCandidates(candidateResponse);
+    setErrorMessage(null);
 
     if (syncSelection) {
       setSelectedIds(
@@ -499,7 +566,12 @@ export function ShortlistedPageClient() {
       setPotentialTalentError(null);
     } catch (error) {
       setPotentialTalent([]);
-      setPotentialTalentError(error instanceof Error ? error.message : "Failed to load potential talent.");
+      const message = error instanceof Error ? error.message : "Failed to load potential talent.";
+      setPotentialTalentError(
+        message === "Internal Server Error" || isTransientNetworkError(message)
+          ? "Potential talent is temporarily unavailable for this vacancy."
+          : message,
+      );
     } finally {
       setPotentialTalentLoading(false);
     }
@@ -509,10 +581,39 @@ export function ShortlistedPageClient() {
     const loadVacancies = async () => {
       setLoading(true);
       try {
-        const response = await apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" });
-        setVacancies(response);
-        if (response[0]) {
-          setSelectedVacancyId(String(response[0].id));
+        const [vacancyResponse, applicationResponse, candidateResponse] = await Promise.all([
+          apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" }),
+          apiRequest<ApplicationApiRecord[]>({ path: "/applications/" }),
+          apiRequest<CandidateApiRecord[]>({ path: "/candidates/" }),
+        ]);
+        setVacancies(vacancyResponse);
+
+        const visibleCandidateIds = new Set(
+          candidateResponse
+            .filter((candidate) => !isPlaceholderCandidate(candidate))
+            .map((candidate) => candidate.id),
+        );
+        const counts = applicationResponse.reduce<Record<number, { total: number; shortlisted: number }>>((acc, application) => {
+          const current = acc[application.vacancy_id] ?? { total: 0, shortlisted: 0 };
+          const isVisibleCandidate = visibleCandidateIds.has(application.candidate_id);
+          if (isVisibleCandidate) {
+            current.total += 1;
+          }
+          if (isVisibleCandidate && ["primary", "reserve"].includes(application.shortlist_bucket)) {
+            current.shortlisted += 1;
+          }
+          acc[application.vacancy_id] = current;
+          return acc;
+        }, {});
+        setVacancyApplicationCounts(counts);
+
+        const preferredVacancy =
+          vacancyResponse.find((vacancy) => (counts[vacancy.id]?.shortlisted ?? 0) > 0) ??
+          vacancyResponse.find((vacancy) => (counts[vacancy.id]?.total ?? 0) > 0) ??
+          vacancyResponse[0];
+
+        if (preferredVacancy) {
+          setSelectedVacancyId(String(preferredVacancy.id));
         }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Failed to load vacancies.");
@@ -528,26 +629,28 @@ export function ShortlistedPageClient() {
     if (!selectedVacancyId) {
       setApplications([]);
       setCandidates([]);
+      setPotentialTalent([]);
+      setShortlistLoading(false);
       return;
     }
 
     const loadApplications = async () => {
-      setLoading(true);
+      setShortlistLoading(true);
       setErrorMessage(null);
       setSuccessMessage(null);
 
       try {
-        await Promise.all([loadVacancyShortlist(selectedVacancyId, true), loadPotentialTalent(selectedVacancyId)]);
+        await loadVacancyShortlist(selectedVacancyId, true);
       } catch (error) {
         setApplications([]);
         setCandidates([]);
-        setPotentialTalent([]);
         setErrorMessage(error instanceof Error ? error.message : "Failed to load shortlisted candidates.");
       } finally {
-        setLoading(false);
+        setShortlistLoading(false);
       }
     };
 
+    void loadPotentialTalent(selectedVacancyId);
     void loadApplications();
   }, [selectedVacancyId]);
 
@@ -598,43 +701,20 @@ export function ShortlistedPageClient() {
   }, [applications, pendingInviteIds]);
 
   const shortlistedCandidates = useMemo<ShortlistedCandidateRecord[]>(() => {
-    const shortlistRecords = applications
+    return applications
       .filter((application) => ["primary", "reserve"].includes(application.shortlist_bucket))
       .map((application) => ({
         application,
         candidate: candidates.find((candidate) => candidate.id === application.candidate_id) ?? null,
-      }));
-
-    const filtered = shortlistRecords.filter(({ application }) => {
-      if (statusFilter === "all") {
-        return true;
-      }
-      if (statusFilter === "primary") {
-        return application.shortlist_bucket === "primary";
-      }
-      if (statusFilter === "reserve") {
-        return application.shortlist_bucket === "reserve";
-      }
-      if (statusFilter === "send_selected") {
-        return selectedIds.includes(application.id);
-      }
-      if (statusFilter === "invite_sent") {
-        return Boolean(application.invite_sent_at);
-      }
-      return true;
-    });
-
-    return filtered.sort((left, right) => {
-      if (sortMode === "rank") {
-        return (left.application.ranking_position ?? 999) - (right.application.ranking_position ?? 999);
-      }
-
-      return (
+      }))
+      .filter(({ candidate }) => !candidate || !isPlaceholderCandidate(candidate))
+      .sort((left, right) => {
+        return (
         (right.application.ranking_score ?? right.application.match_score ?? 0) -
         (left.application.ranking_score ?? left.application.match_score ?? 0)
-      );
-    });
-  }, [applications, candidates, selectedIds, sortMode, statusFilter]);
+        );
+      });
+  }, [applications, candidates]);
 
   const directApplicantCount = useMemo(
     () =>
@@ -753,6 +833,10 @@ export function ShortlistedPageClient() {
   const visibleCount = shortlistedCandidates.length;
   const allVisibleSelected =
     visibleCount > 0 && shortlistedCandidates.every(({ application }) => selectedIds.includes(application.id));
+  const hideInlineError =
+    isTransientNetworkError(errorMessage) &&
+    !shortlistLoading &&
+    (shortlistedCandidates.length > 0 || potentialTalent.length > 0 || potentialTalentLoading);
 
   const handleGenerateShortlist = async () => {
     if (!selectedVacancyId) {
@@ -814,7 +898,7 @@ export function ShortlistedPageClient() {
 
     try {
       const user = await ensureDemoUser(role, name);
-      let queuedCount = 0;
+      let movedCount = 0;
       let skippedCount = 0;
       let failedCount = 0;
       const failedApplicationIds: number[] = [];
@@ -844,15 +928,16 @@ export function ShortlistedPageClient() {
             continue;
           }
 
-          await apiRequest<ApplicationSendInviteResponse>({
-            path: `/applications/${applicationId}/send-hr-invite`,
-            method: "POST",
+          await apiRequest<ApplicationApiRecord>({
+            path: `/applications/${applicationId}/stage`,
+            method: "PATCH",
             body: JSON.stringify({
-              sent_by_id: user.id,
-              allow_resend: true,
+              to_stage: "hr_invite_sent",
+              changed_by_id: user.id,
+              notes: "Moved into the HR pipeline from shortlisted.",
             }),
           });
-          queuedCount += 1;
+          movedCount += 1;
         } catch (error) {
           failedCount += 1;
           failedApplicationIds.push(applicationId);
@@ -871,30 +956,30 @@ export function ShortlistedPageClient() {
 
       if (failedCount === 0 && skippedCount === 0) {
         setSuccessMessage(
-          `${queuedCount} HR invitation email(s) were handed to n8n. They stay here until delivery is confirmed.`,
+          `${movedCount} candidate${movedCount === 1 ? "" : "s"} ${movedCount === 1 ? "was" : "were"} sent to the pipeline.`,
         );
-      } else if (failedCount === 0 && queuedCount === 0 && skippedCount > 0) {
+      } else if (failedCount === 0 && movedCount === 0 && skippedCount > 0) {
         setSuccessMessage(
           `${skippedCount} selected candidate${skippedCount === 1 ? " is" : "s are"} already in the pipeline, so nothing changed.`,
         );
       } else if (failedCount === 0) {
         setSuccessMessage(
-          `${queuedCount} HR invitation email(s) were handed to n8n. ${skippedCount} candidate${skippedCount === 1 ? " was" : "s were"} already in the pipeline and skipped.`,
+          `${movedCount} candidate${movedCount === 1 ? " was" : "s were"} sent to the pipeline. ${skippedCount} candidate${skippedCount === 1 ? " was" : "s were"} already in the pipeline and skipped.`,
         );
-      } else if (queuedCount === 0) {
+      } else if (movedCount === 0) {
         setErrorMessage(
-          failureMessages[0] ?? "None of the selected HR invitation emails could be queued for n8n.",
+          failureMessages[0] ?? "None of the selected candidates could be sent to the pipeline.",
         );
       } else {
         setSuccessMessage(
-          `${queuedCount} HR invitation email(s) were handed to n8n, while ${failedCount} failed to queue.${skippedCount > 0 ? ` ${skippedCount} candidate${skippedCount === 1 ? " was" : "s were"} already in the pipeline and skipped.` : ""}`,
+          `${movedCount} candidate${movedCount === 1 ? " was" : "s were"} sent to the pipeline, while ${failedCount} failed.${skippedCount > 0 ? ` ${skippedCount} candidate${skippedCount === 1 ? " was" : "s were"} already in the pipeline and skipped.` : ""}`,
         );
         setErrorMessage(
-          failureMessages[0] ?? `Queueing failed for application ids: ${failedApplicationIds.join(", ")}.`,
+          failureMessages[0] ?? `Pipeline update failed for application ids: ${failedApplicationIds.join(", ")}.`,
         );
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to send selected invitation emails.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to send selected candidates to the pipeline.");
     } finally {
       setBusy(false);
       setBusyAction(null);
@@ -944,20 +1029,28 @@ export function ShortlistedPageClient() {
           changed_by_id: user.id,
         }),
       });
-      const response = await apiRequest<ApplicationSendInviteResponse>({
-        path: `/applications/${applicationId}/send-hr-invite`,
-        method: "POST",
+      const currentApplication = applications.find((application) => application.id === applicationId);
+      if (currentApplication && isInInvitePipeline(currentApplication)) {
+        setSuccessMessage(`Candidate is already in the pipeline as ${shortlistPipelineStatusLabel(currentApplication)}.`);
+        router.push("/pipeline");
+        return;
+      }
+      await apiRequest<ApplicationApiRecord>({
+        path: `/applications/${applicationId}/stage`,
+        method: "PATCH",
         body: JSON.stringify({
-          sent_by_id: user.id,
-          allow_resend: true,
+          to_stage: "hr_invite_sent",
+          changed_by_id: user.id,
+          notes: "Moved into the HR pipeline from shortlisted.",
         }),
       });
       setPendingInviteIds((current) => [...new Set([...current, applicationId])]);
       setRejectionEmailSentIds((current) => current.filter((id) => id !== applicationId));
       await loadVacancyShortlist(selectedVacancyId, false);
-      setSuccessMessage(response.message);
+      setSuccessMessage("Candidate was sent to the pipeline.");
+      router.push("/pipeline");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to send HR invite.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to send candidate to the pipeline.");
     } finally {
       setBusy(false);
       setCardBusyAction(null);
@@ -1113,53 +1206,25 @@ export function ShortlistedPageClient() {
                   onChange={(event) => setSelectedVacancyId(event.target.value)}
                   className="appearance-none bg-transparent pr-8 font-mono text-[1rem] text-[#dae3f2] focus:outline-none"
                 >
-                  {vacancies.map((vacancy) => (
-                    <option key={vacancy.id} value={String(vacancy.id)}>
-                      {vacancy.title}
-                    </option>
-                  ))}
+                  {vacancies.map((vacancy) => {
+                    const hasDuplicateTitle = (duplicateVacancyTitles.get(vacancy.title) ?? 0) > 1;
+                    const shortlistedCount = vacancyApplicationCounts[vacancy.id]?.shortlisted ?? 0;
+                    const createdLabel = formatShortDate(vacancy.created_at);
+
+                    return (
+                      <option key={vacancy.id} value={String(vacancy.id)}>
+                        {hasDuplicateTitle ? `${vacancy.title} (#${vacancy.id})` : vacancy.title}
+                        {createdLabel ? ` · ${createdLabel}` : ""}
+                        {` · ${shortlistedCount} shortlisted`}
+                      </option>
+                    );
+                  })}
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 text-[#859491]" />
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold uppercase tracking-[0.18em] text-[#bacac7]">Sort By</span>
-              <div className="relative">
-                <select
-                  value={sortMode}
-                  onChange={(event) => setSortMode(event.target.value as "match" | "rank")}
-                  className="appearance-none rounded-xl border border-white/5 bg-[#222b36] py-2 pl-4 pr-10 text-[1rem] text-[#dae3f2] focus:outline-none"
-                >
-                  <option value="match">Match Score</option>
-                  <option value="rank">Experience</option>
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#859491]" />
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold uppercase tracking-[0.18em] text-[#bacac7]">Status</span>
-              <div className="relative">
-                <select
-                  value={statusFilter}
-                  onChange={(event) =>
-                    setStatusFilter(
-                      event.target.value as "all" | "primary" | "reserve" | "send_selected" | "invite_sent",
-                    )
-                  }
-                  className="appearance-none rounded-xl border border-white/5 bg-[#222b36] py-2 pl-4 pr-10 text-[1rem] text-[#dae3f2] focus:outline-none"
-                >
-                  <option value="all">All</option>
-                  <option value="invite_sent">Interviewed</option>
-                  <option value="reserve">Pending</option>
-                  <option value="primary">Offered</option>
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#859491]" />
-              </div>
-            </div>
-          </div>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] p-5 shadow-[0_0_0_1px_rgba(197,198,199,0.04),0_18px_50px_rgba(0,0,0,0.22)] backdrop-blur">
@@ -1198,7 +1263,7 @@ export function ShortlistedPageClient() {
               disabled={selectedIds.length === 0 || busy}
               className="justify-center rounded-2xl bg-[#62f9ee] px-8 py-5 text-[1rem] font-bold text-[#00716b] shadow-[0_0_15px_rgba(102,252,241,0.2)] hover:brightness-105"
             >
-              Send Selected Emails
+              Send Selected to Pipeline
             </Button>
           </div>
         </div>
@@ -1207,12 +1272,18 @@ export function ShortlistedPageClient() {
           <div className="rounded-xl border border-[#2b4551] bg-[#13202b] px-4 py-3 text-sm text-[#c9dff1]">
             {busyAction === "generate_top_10"
               ? "Generating the shortlist for this vacancy."
-              : "Sending selected email invites."}
+              : "Sending selected candidates to the pipeline."}
           </div>
         ) : null}
 
-        {errorMessage ? (
+        {errorMessage && shortlistedCandidates.length === 0 ? (
           <div className="rounded-xl border border-[#6b3041] bg-[#2a1620] px-4 py-3 text-sm text-[#ffb9c7]">
+            {errorMessage}
+          </div>
+        ) : null}
+
+        {errorMessage && shortlistedCandidates.length > 0 && !hideInlineError ? (
+          <div className="rounded-xl border border-[#504428] bg-[#221b10] px-4 py-3 text-sm text-[#f6d7a7]">
             {errorMessage}
           </div>
         ) : null}
@@ -1224,7 +1295,7 @@ export function ShortlistedPageClient() {
         ) : null}
 
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur">
-          {loading ? (
+          {loading || (shortlistLoading && applications.length === 0 && candidates.length === 0) ? (
             <div className="flex min-h-[260px] items-center justify-center gap-3 text-[#bacac7]">
               <LoaderCircle className="h-6 w-6 animate-spin text-[#66fcf1]" />
               <span>Loading shortlist...</span>
@@ -1265,6 +1336,7 @@ export function ShortlistedPageClient() {
                     Math.min(100, Math.round(application.ranking_score ?? application.match_score ?? 0)),
                   );
                   const isRejected = application.stage === "hr_rejected";
+                  const alreadySentToPipeline = !isRejected && isInInvitePipeline(application);
 
                   return (
                     <Fragment key={application.id}>
@@ -1302,6 +1374,12 @@ export function ShortlistedPageClient() {
                         </td>
                         <td className="px-6 py-7">
                           <div className="flex flex-wrap items-center justify-end gap-3">
+                            {alreadySentToPipeline ? (
+                              <span className="inline-flex items-center gap-2 px-1 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#9be7f5]">
+                                <span className="h-2 w-2 rounded-full bg-[#9be7f5]" />
+                                {shortlistPipelineStatusLabel(application)}
+                              </span>
+                            ) : null}
                             <Button
                               type="button"
                               variant="secondary"
@@ -1317,7 +1395,7 @@ export function ShortlistedPageClient() {
                               }
                               className="rounded-lg border border-white/10 bg-[#222b36] px-4 py-2 text-xs font-medium text-[#dae3f2] hover:bg-[#2c3541]"
                             >
-                              {isRejected ? "Approve Candidate" : "Approve Invite Mail"}
+                              {isRejected ? "Approve Candidate" : "Send to Pipeline"}
                             </Button>
                             <Button
                               type="button"

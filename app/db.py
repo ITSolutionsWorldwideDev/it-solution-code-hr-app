@@ -1,11 +1,24 @@
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.config import settings
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(dotenv_path=BASE_DIR / ".env", override=True)
+
+from app.config import normalize_database_url, settings
 import app.models  # noqa: F401
 from app.models.department import Department
 
 
-engine = create_engine(settings.database_url, echo=False)
+database_url = (
+    normalize_database_url(os.getenv("WEBSITE_DATABASE_URL"))
+    if os.getenv("WEBSITE_DATABASE_URL")
+    else settings.database_url
+)
+engine = create_engine(database_url, echo=False)
 DEFAULT_DEPARTMENTS = (
     ("Human Resources (HR)", "Recruitment, people operations, talent management, and employee support."),
     ("Information Technology (IT) & Software Development", "Software engineering, systems administration, ERP, BI, SAP, web, and platform delivery."),
