@@ -737,7 +737,7 @@ export function RolePipelineView() {
   };
 
   return (
-    <div className="-mx-5 min-h-[calc(100vh-122px)] bg-[#051424] lg:-mx-10 xl:-mx-12">
+    <div className="-mx-5 min-h-[calc(100vh-122px)] bg-[#0b141e] lg:-mx-10 xl:-mx-12">
       <div className="w-full space-y-8 px-5 py-8 lg:px-10 xl:px-12">
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
