@@ -26,7 +26,7 @@ import {
 } from "recharts";
 
 import { useRole } from "@/components/providers/role-provider";
-import { buildVisibleCandidateDatabase } from "@/lib/candidate-utils";
+import { buildVisibleCandidateDatabase, isPlaceholderCandidate } from "@/lib/candidate-utils";
 import { roleProfiles } from "@/lib/session";
 import type {
   ApplicationApiRecord,
@@ -318,9 +318,11 @@ function buildTalentPoolVacancyRows(candidates: CandidateApiRecord[]) {
 function buildRecentApplicants(applications: ApplicationApiRecord[], candidates: CandidateApiRecord[], vacancies: VacancyApiRecord[]) {
   return [...applications]
     .sort((left, right) => (getTimeValue(right.created_at) ?? 0) - (getTimeValue(left.created_at) ?? 0))
-    .slice(0, 5)
     .map((application) => {
       const candidate = candidates.find((item) => item.id === application.candidate_id) ?? null;
+      if (candidate && isPlaceholderCandidate(candidate)) {
+        return null;
+      }
       const vacancy = vacancies.find((item) => item.id === application.vacancy_id) ?? null;
       const name = candidate?.name?.trim() || `Candidate #${application.candidate_id}`;
       const initials = name
@@ -337,7 +339,9 @@ function buildRecentApplicants(applications: ApplicationApiRecord[], candidates:
         vacancyTitle: vacancy?.title ?? `Vacancy #${application.vacancy_id}`,
         createdAt: application.created_at,
       };
-    });
+    })
+    .filter((application): application is NonNullable<typeof application> => application !== null)
+    .slice(0, 5);
 }
 
 function buildRecentTalentPoolCandidates(candidates: CandidateApiRecord[]) {

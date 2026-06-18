@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
+import { AppScaleProvider } from "@/components/providers/app-scale-provider";
 import { RoleProvider } from "@/components/providers/role-provider";
 
 import "./globals.css";
@@ -29,7 +30,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} ${jetBrainsMono.variable}`}>
-        <RoleProvider>{children}</RoleProvider>
+        <RoleProvider>
+          <AppScaleProvider>{children}</AppScaleProvider>
+        </RoleProvider>
       </body>
     </html>
   );

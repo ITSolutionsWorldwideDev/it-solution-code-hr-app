@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Bell, Clock3, HelpCircle, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { useRole } from "@/components/providers/role-provider";
 import { getInitialsFromName, roleProfiles } from "@/lib/session";
@@ -58,33 +58,6 @@ export function TopBar() {
         </div>
 
         <div className="ml-6 flex flex-wrap items-center gap-5">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-full p-2 text-[#bacac7] transition hover:bg-[#17202b] hover:text-white"
-              aria-label="History"
-            >
-              <Clock3 className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              className="relative rounded-full p-2 text-[#bacac7] transition hover:bg-[#17202b] hover:text-white"
-              aria-label="Notifications"
-            >
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full border border-[#0b141e] bg-[#66fcf1]" />
-            </button>
-            <button
-              type="button"
-              className="rounded-full p-2 text-[#bacac7] transition hover:bg-[#17202b] hover:text-white"
-              aria-label="Help"
-            >
-              <HelpCircle className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="h-8 w-px bg-white/10" />
-
           <Link
             href="/candidates?tab=bulk_parse"
             className="inline-flex items-center rounded-xl bg-[#222b36] px-6 py-2.5 text-[0.98rem] font-bold text-[#dae3f2] transition hover:brightness-110"

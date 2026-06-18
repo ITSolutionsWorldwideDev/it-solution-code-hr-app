@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
+import { useAppScale } from "@/components/providers/app-scale-provider";
 import { useRole } from "@/components/providers/role-provider";
 
 type DashboardShellProps = {
@@ -15,6 +16,7 @@ type DashboardShellProps = {
 export function DashboardShell({ children, showTopBar = true }: DashboardShellProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const { scale } = useAppScale();
   const { isAuthenticated, isHydrated } = useRole();
 
   useEffect(() => {
@@ -36,7 +38,7 @@ export function DashboardShell({ children, showTopBar = true }: DashboardShellPr
   }
 
   return (
-    <div className="min-h-screen bg-[#0b141e] text-[#dae3f2]">
+    <div data-app-scale={scale} className="app-scale-shell min-h-screen bg-[#0b141e] text-[#dae3f2]">
       <div className="flex min-h-screen w-full overflow-hidden bg-[#0b141e]">
         <Sidebar />
         <main className="min-w-0 flex-1 bg-[#0b141e] text-[#dae3f2]">

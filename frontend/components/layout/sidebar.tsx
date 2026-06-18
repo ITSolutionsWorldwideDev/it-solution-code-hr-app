@@ -56,7 +56,7 @@ export function Sidebar() {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto px-2">
+        <nav className="no-scrollbar flex-1 space-y-1 overflow-y-auto px-2">
           {visibleItems.map((item) => {
             const Icon = item.icon;
             const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);

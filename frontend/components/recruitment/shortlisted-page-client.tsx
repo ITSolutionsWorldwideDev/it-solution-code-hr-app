@@ -833,6 +833,8 @@ export function ShortlistedPageClient() {
   const visibleCount = shortlistedCandidates.length;
   const allVisibleSelected =
     visibleCount > 0 && shortlistedCandidates.every(({ application }) => selectedIds.includes(application.id));
+  const isRefreshingShortlist =
+    shortlistLoading && (applications.length > 0 || candidates.length > 0 || shortlistedCandidates.length > 0);
   const hideInlineError =
     isTransientNetworkError(errorMessage) &&
     !shortlistLoading &&
@@ -1222,6 +1224,12 @@ export function ShortlistedPageClient() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 text-[#859491]" />
               </div>
+              {shortlistLoading ? (
+                <span className="inline-flex items-center gap-2 text-sm text-[#9ed7e2]">
+                  <LoaderCircle className="h-4 w-4 animate-spin text-[#66fcf1]" />
+                  Updating...
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -1269,7 +1277,8 @@ export function ShortlistedPageClient() {
         </div>
 
         {busyAction ? (
-          <div className="rounded-xl border border-[#2b4551] bg-[#13202b] px-4 py-3 text-sm text-[#c9dff1]">
+          <div className="flex items-center gap-3 rounded-xl border border-[#2b4551] bg-[#13202b] px-4 py-3 text-sm text-[#c9dff1]">
+            <LoaderCircle className="h-4 w-4 animate-spin text-[#66fcf1]" />
             {busyAction === "generate_top_10"
               ? "Generating the shortlist for this vacancy."
               : "Sending selected candidates to the pipeline."}
@@ -1294,7 +1303,13 @@ export function ShortlistedPageClient() {
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur">
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur">
+          {isRefreshingShortlist ? (
+            <div className="absolute right-5 top-5 z-10 inline-flex items-center gap-2 rounded-full border border-[#2b4551] bg-[#13202b]/95 px-3 py-2 text-xs font-medium text-[#c9dff1] shadow-[0_8px_24px_rgba(0,0,0,0.22)]">
+              <LoaderCircle className="h-4 w-4 animate-spin text-[#66fcf1]" />
+              Refreshing shortlist...
+            </div>
+          ) : null}
           {loading || (shortlistLoading && applications.length === 0 && candidates.length === 0) ? (
             <div className="flex min-h-[260px] items-center justify-center gap-3 text-[#bacac7]">
               <LoaderCircle className="h-6 w-6 animate-spin text-[#66fcf1]" />
@@ -1532,8 +1547,9 @@ export function ShortlistedPageClient() {
         ) : null}
 
         {potentialTalentLoading ? (
-          <div className="rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] px-5 py-8 text-sm text-[#bacac7]">
-            Loading potential talent...
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] px-5 py-8 text-sm text-[#bacac7]">
+            <LoaderCircle className="h-5 w-5 animate-spin text-[#66fcf1]" />
+            <span>Loading potential talent...</span>
           </div>
         ) : potentialTalent.length === 0 ? (
           <div className="rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] px-5 py-8 text-sm text-[#bacac7]">

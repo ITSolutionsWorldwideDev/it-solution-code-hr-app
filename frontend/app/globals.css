@@ -25,6 +25,20 @@ body {
   background-color: #0b141e;
 }
 
+@media (min-width: 1280px) {
+  .app-scale-shell[data-app-scale="67"] {
+    zoom: 0.67;
+  }
+
+  .app-scale-shell[data-app-scale="85"] {
+    zoom: 0.85;
+  }
+
+  .app-scale-shell[data-app-scale="100"] {
+    zoom: 1;
+  }
+}
+
 * {
   @apply border-line;
 }
@@ -133,4 +147,13 @@ option:focus {
   flex-direction: column;
   align-items: center;
   min-width: 170px;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
