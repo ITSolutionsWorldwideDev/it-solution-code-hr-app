@@ -18,7 +18,11 @@ from app.services.application_workflow_service import (
     rank_applications_for_vacancy,
 )
 from app.services.candidate_service import get_vacancy_matches
-from app.services.talent_discovery_service import suggest_talent_for_vacancy, trigger_talent_discovery_for_vacancy
+from app.services.talent_discovery_service import (
+    get_cached_talent_discovery_for_vacancy,
+    suggest_talent_for_vacancy,
+    trigger_talent_discovery_for_vacancy,
+)
 from app.services.vacancy_service import clear_all_vacancies, delete_vacancy_with_dependencies
 from app.services.website_publish_service import auto_publish_vacancy_to_website
 
@@ -73,6 +77,16 @@ def suggest_vacancy_talent_route(vacancy_id: int, session: Session = Depends(get
 )
 def trigger_vacancy_discovery_route(vacancy_id: int, session: Session = Depends(get_session)):
     return trigger_talent_discovery_for_vacancy(session, vacancy_id)
+
+
+@router.get(
+    "/{vacancy_id}/discovery-summary",
+    response_model=VacancyDiscoverySummaryRead,
+    summary="Read cached talent discovery results",
+    description="Return the most recently stored hidden-potential matches for a vacancy without recomputing them.",
+)
+def get_vacancy_discovery_summary_route(vacancy_id: int, session: Session = Depends(get_session)):
+    return get_cached_talent_discovery_for_vacancy(session, vacancy_id)
 
 
 @router.get(

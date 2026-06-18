@@ -22,6 +22,62 @@ from app.schemas.talent_suggestion import TalentSuggestionRead
 from app.services.crud import get_or_404
 
 
+def get_cached_talent_discovery_for_vacancy(
+    session: Session,
+    vacancy_id: int,
+    *,
+    discovery_threshold: int = 70,
+) -> VacancyDiscoverySummaryRead:
+    get_or_404(session, Vacancy, vacancy_id)
+
+    matches = list(
+        session.exec(
+            select(PotentialMatch)
+            .where(PotentialMatch.vacancy_id == vacancy_id)
+            .order_by(PotentialMatch.potential_score.desc(), PotentialMatch.last_computed_at.desc())
+        ).all()
+    )
+
+    if not matches:
+        return VacancyDiscoverySummaryRead(vacancy_id=vacancy_id, new_discoveries=[], top_candidates=[])
+
+    candidate_ids = [match.candidate_id for match in matches]
+    candidates = {
+        candidate.id: candidate
+        for candidate in session.exec(select(Candidate).where(Candidate.id.in_(candidate_ids))).all()
+    }
+    application_lookup = _load_application_status(session, vacancy_id, candidate_ids)
+
+    top_candidates: list[HiddenPotentialDiscoveryRead] = []
+    new_discoveries: list[HiddenPotentialDiscoveryRead] = []
+
+    for match in matches:
+        candidate = candidates.get(match.candidate_id)
+        if candidate is None or _is_placeholder_candidate(candidate):
+            continue
+
+        summary = HiddenPotentialDiscoveryRead(
+            candidate_id=candidate.id,
+            candidate_name=candidate.name,
+            original_role=application_lookup.get(
+                candidate.id,
+                {"original_applied_role": "No prior application"},
+            )["original_applied_role"],
+            potential_score=int(round(match.potential_score)),
+            reason=match.justification,
+        )
+        top_candidates.append(summary)
+
+        if summary.potential_score > discovery_threshold:
+            new_discoveries.append(summary)
+
+    return VacancyDiscoverySummaryRead(
+        vacancy_id=vacancy_id,
+        new_discoveries=new_discoveries,
+        top_candidates=top_candidates[:10],
+    )
+
+
 def suggest_talent_for_vacancy(
     session: Session,
     vacancy_id: int,
@@ -315,6 +371,22 @@ def _refine_candidates_for_vacancy(
         )
 
     return results
+
+
+def _is_placeholder_candidate(candidate: Candidate) -> bool:
+    email = candidate.email.lower() if isinstance(candidate.email, str) else ""
+    name = candidate.name.strip() if isinstance(candidate.name, str) else ""
+    parse_status = ""
+    if isinstance(candidate.parsed_data, dict):
+        raw_status = candidate.parsed_data.get("parse_status")
+        if isinstance(raw_status, str):
+            parse_status = raw_status.lower()
+
+    return (
+        name == "Pending Candidate"
+        or email.endswith("@placeholder.local")
+        or parse_status == "pending"
+    )
 
 
 def _evaluate_hidden_potential_candidates(

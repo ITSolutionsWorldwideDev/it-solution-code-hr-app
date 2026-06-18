@@ -495,6 +495,7 @@ export function ShortlistedPageClient() {
   const [selectedRoleSuggestions, setSelectedRoleSuggestions] = useState<CandidateRoleSuggestionApiRecord[]>([]);
   const [potentialTalent, setPotentialTalent] = useState<PotentialTalentRecord[]>([]);
   const [potentialTalentLoading, setPotentialTalentLoading] = useState(false);
+  const [potentialTalentRefreshing, setPotentialTalentRefreshing] = useState(false);
   const [potentialTalentError, setPotentialTalentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [shortlistLoading, setShortlistLoading] = useState(false);
@@ -553,11 +554,26 @@ export function ShortlistedPageClient() {
   const loadPotentialTalent = async (vacancyId: string) => {
     if (!vacancyId) {
       setPotentialTalent([]);
+      setPotentialTalentRefreshing(false);
       return;
     }
 
+    let hasCachedCandidates = false;
     setPotentialTalentLoading(true);
     try {
+      const cachedDiscovery = await apiRequest<VacancyDiscoverySummaryApiRecord>({
+        path: `/vacancies/${vacancyId}/discovery-summary`,
+      });
+      const cachedTopCandidates = (cachedDiscovery.top_candidates ?? []).slice(0, 5);
+      hasCachedCandidates = cachedTopCandidates.length > 0;
+      setPotentialTalent(cachedTopCandidates);
+      setPotentialTalentError(null);
+
+      if (hasCachedCandidates) {
+        setPotentialTalentLoading(false);
+        setPotentialTalentRefreshing(true);
+      }
+
       const discovery = await apiRequest<VacancyDiscoverySummaryApiRecord>({
         path: `/vacancies/${vacancyId}/trigger-discovery`,
         method: "POST",
@@ -565,15 +581,20 @@ export function ShortlistedPageClient() {
       setPotentialTalent((discovery.top_candidates ?? []).slice(0, 5));
       setPotentialTalentError(null);
     } catch (error) {
-      setPotentialTalent([]);
-      const message = error instanceof Error ? error.message : "Failed to load potential talent.";
-      setPotentialTalentError(
-        message === "Internal Server Error" || isTransientNetworkError(message)
-          ? "Potential talent is temporarily unavailable for this vacancy."
-          : message,
-      );
+      if (!hasCachedCandidates) {
+        setPotentialTalent([]);
+        const message = error instanceof Error ? error.message : "Failed to load potential talent.";
+        setPotentialTalentError(
+          message === "Internal Server Error" || isTransientNetworkError(message)
+            ? "Potential talent is temporarily unavailable for this vacancy."
+            : message,
+        );
+      } else {
+        setPotentialTalentError(null);
+      }
     } finally {
       setPotentialTalentLoading(false);
+      setPotentialTalentRefreshing(false);
     }
   };
 
@@ -1034,7 +1055,6 @@ export function ShortlistedPageClient() {
       const currentApplication = applications.find((application) => application.id === applicationId);
       if (currentApplication && isInInvitePipeline(currentApplication)) {
         setSuccessMessage(`Candidate is already in the pipeline as ${shortlistPipelineStatusLabel(currentApplication)}.`);
-        router.push("/pipeline");
         return;
       }
       await apiRequest<ApplicationApiRecord>({
@@ -1050,7 +1070,6 @@ export function ShortlistedPageClient() {
       setRejectionEmailSentIds((current) => current.filter((id) => id !== applicationId));
       await loadVacancyShortlist(selectedVacancyId, false);
       setSuccessMessage("Candidate was sent to the pipeline.");
-      router.push("/pipeline");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to send candidate to the pipeline.");
     } finally {
@@ -1538,6 +1557,12 @@ export function ShortlistedPageClient() {
           <span className="rounded-full bg-[#66fcf1]/10 px-3 py-1 text-[10px] font-bold uppercase text-[#66fcf1]">
             AI Discovery
           </span>
+          {potentialTalentRefreshing ? (
+            <span className="inline-flex items-center gap-2 text-sm text-[#9ed7e2]">
+              <LoaderCircle className="h-4 w-4 animate-spin text-[#66fcf1]" />
+              Refreshing pool...
+            </span>
+          ) : null}
         </div>
 
         {potentialTalentError ? (

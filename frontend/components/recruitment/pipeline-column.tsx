@@ -1,8 +1,10 @@
-import type { AppRole } from "@/lib/session";
-import type { PipelineCandidateRecord, PipelineStage } from "@/lib/recruitment-types";
-import { cn } from "@/lib/utils";
+import { useDroppable } from "@dnd-kit/core";
+import { CircleX, SearchX } from "lucide-react";
 
 import { PipelineCard } from "@/components/recruitment/pipeline-card";
+import type { PipelineCandidateRecord, PipelineStage } from "@/lib/recruitment-types";
+import type { AppRole } from "@/lib/session";
+import { cn } from "@/lib/utils";
 
 type PipelineColumnProps = {
   stage: PipelineStage;
@@ -11,7 +13,6 @@ type PipelineColumnProps = {
   candidates: PipelineCandidateRecord[];
   onMoveForward: (candidateId: string) => void;
   onApprove: (candidateId: string) => void;
-  onMoveToStage: (targetStage: PipelineStage) => void;
   onReject: (candidateId: string) => void;
   onScheduleMeeting: (candidateId: string, scheduledAt: string) => void;
   onSendStageEmail: (
@@ -30,39 +31,35 @@ type PipelineColumnProps = {
   actionLabel: string;
   role: AppRole;
   canMoveForward: boolean;
-  canDropHere: boolean;
-  isDragging: boolean;
-  onCardDragStart: (candidateId: string, stage: PipelineStage) => void;
-  onCardDragEnd: () => void;
-  selectedCandidateId: string | null;
-  onCardSelect: (candidateId: string) => void;
+  isActiveDropTarget: boolean;
+  activeCandidateId: string | null;
   busyApplicationId: string | null;
 };
 
 const accentStyles: Record<PipelineStage, string> = {
-  applied: "border-white/8 bg-[#161a18]",
-  ranked: "border-white/8 bg-[#161a18]",
-  shortlisted: "border-white/8 bg-[#161a18]",
-  hr_review: "border-white/8 bg-[#161a18]",
-  hr_invite_sent: "border-white/8 bg-[#161a18]",
-  hr_interview_scheduled: "border-white/8 bg-[#161a18]",
-  hr_in_progress: "border-white/8 bg-[#161a18]",
-  hr_approved: "border-white/8 bg-[#161a18]",
-  hr_passed: "border-white/8 bg-[#161a18]",
-  technical_review: "border-white/8 bg-[#161a18]",
-  technical_interview_scheduled: "border-white/8 bg-[#161a18]",
-  technical_in_progress: "border-white/8 bg-[#161a18]",
-  technical_approved: "border-white/8 bg-[#161a18]",
-  technical_passed: "border-white/8 bg-[#161a18]",
-  management_review: "border-white/8 bg-[#161a18]",
-  management_interview_scheduled: "border-white/8 bg-[#161a18]",
-  management_in_progress: "border-white/8 bg-[#161a18]",
-  selected: "border-white/8 bg-[#161a18]",
-  offer_sent: "border-white/8 bg-[#161a18]",
-  offer_accepted: "border-white/8 bg-[#161a18]",
-  offer_declined: "border-white/8 bg-[#161a18]",
-  hired: "border-white/8 bg-[#161a18]",
-  rejected: "border-white/8 bg-[#161a18]",
+  applied: "border-white/8 bg-transparent",
+  ranked: "border-white/8 bg-transparent",
+  shortlisted: "border-white/8 bg-transparent",
+  hr_review: "border-white/8 bg-transparent",
+  hr_invite_sent: "border-white/8 bg-transparent",
+  hr_interview_scheduled: "border-white/8 bg-transparent",
+  hr_in_progress: "border-white/8 bg-transparent",
+  hr_approved: "border-white/8 bg-transparent",
+  hr_passed: "border-white/8 bg-transparent",
+  technical_review: "border-white/8 bg-transparent",
+  technical_interview_scheduled: "border-white/8 bg-transparent",
+  technical_in_progress: "border-white/8 bg-transparent",
+  technical_approved: "border-white/8 bg-transparent",
+  technical_passed: "border-white/8 bg-transparent",
+  management_review: "border-white/8 bg-transparent",
+  management_interview_scheduled: "border-white/8 bg-transparent",
+  management_in_progress: "border-white/8 bg-transparent",
+  selected: "border-white/8 bg-transparent",
+  offer_sent: "border-white/8 bg-transparent",
+  offer_accepted: "border-white/8 bg-transparent",
+  offer_declined: "border-white/8 bg-transparent",
+  hired: "border-white/8 bg-transparent",
+  rejected: "border-white/8 bg-transparent",
 };
 
 export function PipelineColumn({
@@ -72,7 +69,6 @@ export function PipelineColumn({
   candidates,
   onMoveForward,
   onApprove,
-  onMoveToStage,
   onReject,
   onScheduleMeeting,
   onSendStageEmail,
@@ -80,66 +76,50 @@ export function PipelineColumn({
   actionLabel,
   role,
   canMoveForward,
-  canDropHere,
-  isDragging,
-  onCardDragStart,
-  onCardDragEnd,
-  selectedCandidateId,
-  onCardSelect,
+  isActiveDropTarget,
+  activeCandidateId,
   busyApplicationId,
 }: PipelineColumnProps) {
-  const isBusy = busyApplicationId !== null;
+  const { isOver, setNodeRef } = useDroppable({
+    id: stage,
+    disabled: busyApplicationId !== null,
+  });
+  const EmptyIcon = stage === "rejected" ? CircleX : SearchX;
 
   return (
     <section
-      onDragOver={(event) => {
-        if (canDropHere && !isBusy) {
-          event.preventDefault();
-        }
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        if (canDropHere && !isBusy) {
-          onMoveToStage(stage);
-        }
-      }}
+      ref={setNodeRef}
       className={cn(
-        "flex min-h-[360px] min-w-[286px] flex-col rounded-[26px] border p-4 shadow-[0_18px_36px_rgba(0,0,0,0.18)] transition",
-        canDropHere && isDragging && "border-[#63e7ff]/35 bg-[#182028]",
+        "flex min-h-[420px] min-w-0 flex-col gap-4 transition",
         accentStyles[stage],
+        isActiveDropTarget && "rounded-xl",
+        isOver && "rounded-xl bg-[#102132]/50",
       )}
     >
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[0.9rem] font-medium uppercase tracking-[0.14em] text-white/88">{label}</h2>
-          <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#96a199]">
-            {candidates.length} candidate{candidates.length === 1 ? "" : "s"}
-          </p>
+      <div className="flex items-start justify-between gap-3 px-2">
+        <div className="flex items-start gap-2">
+          <h2 className="max-w-[220px] truncate whitespace-nowrap font-mono text-[0.82rem] font-medium uppercase leading-5 tracking-[0.16em] text-white/88">
+            {label}
+          </h2>
+          <span className="inline-flex min-w-7 items-center justify-center rounded-md bg-[#313f54] px-2 py-1 text-[10px] font-bold text-[#d8e8f8]">
+            {candidates.length}
+          </span>
         </div>
-        <div className="text-[#7f8a83]">•••</div>
+        <div className="pt-1 text-[#96a199]">•••</div>
       </div>
 
-      <div className="space-y-3">
-        {canDropHere && isDragging ? (
-          <div className="rounded-[16px] border border-dashed border-[#63e7ff]/30 bg-[#151d24] px-4 py-3 text-center text-xs uppercase tracking-[0.16em] text-[#d9f8ff]">
-            Drop here to move to {label.toLowerCase()}
-          </div>
-        ) : null}
-
-        {canDropHere ? (
-          <button
-            type="button"
-            onClick={() => onMoveToStage(stage)}
-            disabled={!isDragging || isBusy}
+      <div className="space-y-4">
+        {activeCandidateId && isActiveDropTarget ? (
+          <div
             className={cn(
-              "w-full rounded-[16px] border px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.16em] transition",
-              isDragging && !isBusy
-                ? "border-[#63e7ff]/28 bg-[#182028] text-[#e0f9ff] hover:bg-[#1d2730]"
-                : "border-white/8 bg-[#131716] text-[#748078]",
+              "rounded-xl border border-dashed px-4 py-3 text-center text-xs uppercase tracking-[0.16em] transition",
+              isOver
+                ? "border-[#63e7ff]/45 bg-[#162433] text-[#e4fbff]"
+                : "border-white/10 bg-[#101a28] text-[#b8dfe8]",
             )}
           >
-            {isDragging ? `Move selected card to ${label}` : `Drop zone: ${label}`}
-          </button>
+            {isOver ? `Release to move to ${label.toLowerCase()}` : `Drop here to move to ${label.toLowerCase()}`}
+          </div>
         ) : null}
 
         {candidates.length > 0 ? (
@@ -157,16 +137,17 @@ export function PipelineColumn({
               actionLabel={actionLabel}
               role={role}
               owner={owner}
-              onCardDragStart={onCardDragStart}
-              onCardDragEnd={onCardDragEnd}
-              isSelected={selectedCandidateId === candidate.id}
-              onCardSelect={onCardSelect}
               busy={busyApplicationId === candidate.id}
             />
           ))
         ) : (
-          <div className="rounded-[18px] border border-dashed border-white/10 bg-[#111413] px-4 py-7 text-center text-sm text-[#98a39d]">
-            No candidates in this stage yet.
+          <div className="flex h-[486px] items-center justify-center rounded-xl border-2 border-dashed border-white/10 bg-transparent px-4 py-7 text-center text-sm text-[#98a39d] grayscale">
+            <div className="flex flex-col items-center gap-4">
+              <span className="flex h-16 w-16 items-center justify-center rounded-full border border-white/12 text-white/30">
+                <EmptyIcon className="h-8 w-8" />
+              </span>
+              <span className="text-[1.05rem] text-white/40">No candidates in this stage yet.</span>
+            </div>
           </div>
         )}
       </div>

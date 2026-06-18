@@ -10,7 +10,6 @@ import type {
 export const pipelineStageOrder: PipelineStage[] = [
   "hr_invite_sent",
   "hr_in_progress",
-  "hr_passed",
   "technical_in_progress",
   "technical_passed",
   "management_in_progress",
@@ -27,11 +26,11 @@ export const pipelineStageLabels: Record<PipelineStage, string> = {
   ranked: "Ranked",
   shortlisted: "Shortlisted",
   hr_review: "HR Review",
-  hr_invite_sent: "Waiting For Candidate Approval",
+  hr_invite_sent: "Waiting For Approval",
   hr_interview_scheduled: "HR Interview",
   hr_in_progress: "HR Interview",
   hr_approved: "HR Approved",
-  hr_passed: "HR Passed",
+  hr_passed: "Technical Pipeline",
   technical_review: "Technical Review",
   technical_interview_scheduled: "Technical Interview",
   technical_in_progress: "Technical Interview",
@@ -66,7 +65,6 @@ export function mapApplicationStageToPipelineStage(application: ApplicationApiRe
     case "hr_in_progress":
       return "hr_in_progress";
     case "hr_passed":
-      return "hr_passed";
     case "technical_interview_scheduled":
     case "technical_in_progress":
       return "technical_in_progress";

@@ -1,12 +1,21 @@
 "use client";
 
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import { useMemo, useState } from "react";
 
-import { pipelineStageLabels, pipelineStageOrder } from "@/lib/pipeline";
-import type { AppRole } from "@/lib/session";
-import type { PipelineCandidateRecord, PipelineStage } from "@/lib/recruitment-types";
-
 import { PipelineColumn } from "@/components/recruitment/pipeline-column";
+import { pipelineStageLabels, pipelineStageOrder } from "@/lib/pipeline";
+import type { PipelineCandidateRecord, PipelineStage } from "@/lib/recruitment-types";
+import type { AppRole } from "@/lib/session";
 
 type PipelineBoardProps = {
   candidates: PipelineCandidateRecord[];
@@ -34,10 +43,11 @@ type PipelineBoardProps = {
 };
 
 const movableStagesByRole: Record<AppRole, PipelineStage[]> = {
-  HR: ["hr_in_progress"],
+  HR: ["hr_invite_sent", "hr_in_progress"],
   Technical: ["technical_in_progress"],
   Manager: ["management_in_progress", "selected", "offer_sent", "offer_accepted"],
   Admin: [
+    "hr_invite_sent",
     "hr_in_progress",
     "technical_in_progress",
     "management_in_progress",
@@ -97,8 +107,14 @@ export function PipelineBoard({
 }: PipelineBoardProps) {
   const activeStages = visibleStages ?? pipelineStageOrder;
   const movableStages = movableStagesByRole[role];
-  const [draggingCandidateId, setDraggingCandidateId] = useState<string | null>(null);
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+  );
 
   const groupedCandidates = useMemo(() => {
     return activeStages.map((stage) => ({
@@ -109,61 +125,86 @@ export function PipelineBoard({
     }));
   }, [activeStages, candidates]);
 
-  const handleDragStart = (candidateId: string, _stage: PipelineStage) => {
-    setDraggingCandidateId(candidateId);
-    setSelectedCandidateId(candidateId);
-  };
+  const activeCandidate =
+    activeCandidateId !== null
+      ? candidates.find((candidate) => candidate.id === activeCandidateId) ?? null
+      : null;
 
-  const handleDragEnd = () => {
-    setDraggingCandidateId(null);
-  };
-
-  const handleCardSelect = (candidateId: string) => {
-    setSelectedCandidateId((current) => (current === candidateId ? null : candidateId));
-  };
-
-  const handleDropToStage = (targetStage: PipelineStage) => {
-    const candidateId = draggingCandidateId ?? selectedCandidateId;
-    if (!candidateId || busyApplicationId !== null) {
-      handleDragEnd();
+  const handleDragStart = (event: DragStartEvent) => {
+    if (busyApplicationId !== null) {
       return;
     }
 
-    onMoveToStage(candidateId, targetStage);
-    handleDragEnd();
-    setSelectedCandidateId(null);
+    setActiveCandidateId(String(event.active.id));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const candidateId = activeCandidateId;
+    setActiveCandidateId(null);
+
+    if (!candidateId || busyApplicationId !== null) {
+      return;
+    }
+
+    const targetStage = event.over?.id;
+    if (!targetStage || typeof targetStage !== "string") {
+      return;
+    }
+
+    const currentCandidate = candidates.find((candidate) => candidate.id === candidateId);
+    if (!currentCandidate || currentCandidate.stage === targetStage) {
+      return;
+    }
+
+    onMoveToStage(candidateId, targetStage as PipelineStage);
   };
 
   return (
-    <div className="overflow-x-auto pb-3">
-      <div className="flex min-w-max gap-4">
-        {groupedCandidates.map((column) => (
-          <PipelineColumn
-            key={column.stage}
-            stage={column.stage}
-            label={column.label}
-            owner={column.owner}
-            candidates={column.candidates}
-            onMoveForward={onMoveForward}
-            onApprove={onApprove}
-            onMoveToStage={handleDropToStage}
-            onReject={onReject}
-            onScheduleMeeting={onScheduleMeeting}
-            onSendStageEmail={onSendStageEmail}
-            onDeleteFromPipeline={onDeleteFromPipeline}
-            actionLabel={actionLabels[column.stage] ?? "Approve"}
-            role={role}
-            canMoveForward={movableStages.includes(column.stage)}
-            canDropHere={Boolean(draggingCandidateId || selectedCandidateId)}
-            isDragging={Boolean(draggingCandidateId || selectedCandidateId)}
-            onCardDragStart={handleDragStart}
-            onCardDragEnd={handleDragEnd}
-            selectedCandidateId={selectedCandidateId}
-            onCardSelect={handleCardSelect}
-            busyApplicationId={busyApplicationId}
-          />
-        ))}
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div className="overflow-x-auto pb-3">
+        <div
+          className="mx-auto grid min-w-[1120px] max-w-[1560px] items-start gap-6"
+          style={{ gridTemplateColumns: `repeat(${groupedCandidates.length}, minmax(0, 1fr))` }}
+        >
+          {groupedCandidates.map((column) => (
+            <PipelineColumn
+              key={column.stage}
+              stage={column.stage}
+              label={column.label}
+              owner={column.owner}
+              candidates={column.candidates}
+              onMoveForward={onMoveForward}
+              onApprove={onApprove}
+              onReject={onReject}
+              onScheduleMeeting={onScheduleMeeting}
+              onSendStageEmail={onSendStageEmail}
+              onDeleteFromPipeline={onDeleteFromPipeline}
+              actionLabel={actionLabels[column.stage] ?? "Approve"}
+              role={role}
+              canMoveForward={movableStages.includes(column.stage)}
+              isActiveDropTarget={activeCandidate?.stage !== column.stage && activeCandidate !== null}
+              activeCandidateId={activeCandidateId}
+              busyApplicationId={busyApplicationId}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+
+      <DragOverlay dropAnimation={null}>
+        {activeCandidate ? (
+          <div className="w-[320px] rounded-[20px] border border-[#63e7ff]/25 bg-[#20283a] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.35)] opacity-95">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[1.05rem] font-semibold text-white">{activeCandidate.name}</p>
+                <p className="mt-1 text-sm text-white/72">{activeCandidate.role}</p>
+              </div>
+              <div className="rounded-[10px] border border-white/10 bg-[#2b3748] px-2.5 py-1 text-xs font-semibold text-white/85">
+                {activeCandidate.matchScore}% match
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }
