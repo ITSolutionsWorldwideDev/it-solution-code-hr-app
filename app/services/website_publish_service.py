@@ -246,8 +246,11 @@ def _build_mapped_fields(
     parsed_data = vacancy.parsed_data or {}
     location = str(parsed_data.get("location") or "").strip() or "Location not set"
     employment_type = str(parsed_data.get("employment_type") or "").strip() or "Full-time"
+    content = str(vacancy.description or "").strip()
     pdf_filename = build_website_pdf_filename(vacancy)
     resolved_pdf_url = pdf_url or build_website_pdf_url(filename=pdf_filename, public_base_url=public_base_url)
+    apply_url = f"{settings.public_apply_base_url.rstrip('/')}/{vacancy.id}"
+    slug = _build_website_job_slug(title)
 
     created_by = settings.website_publisher_user_id
     if created_by is None:
@@ -260,11 +263,20 @@ def _build_mapped_fields(
         "title": title,
         "location": location,
         "type": employment_type,
+        "content": content,
+        "slug": slug,
+        "apply_url": apply_url,
+        "summary": str(vacancy.ai_summary or "").strip(),
         "pdf_filename": pdf_filename,
         "pdf_url": resolved_pdf_url,
         "published": 1,
         "created_by": created_by,
     }
+
+
+def _build_website_job_slug(title: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-").lower()
+    return slug or "vacancy"
 
 
 def _get_website_engine() -> Engine:
