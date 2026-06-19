@@ -6,10 +6,13 @@ import { FileUp, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/api/client";
-import type { PublicApplicationSubmitResponse, VacancyApiRecord } from "@/lib/recruitment-types";
+import type { PublicApplicationSubmitResponse } from "@/lib/recruitment-types";
 
 type PublicApplyFormProps = {
-  vacancy: VacancyApiRecord;
+  vacancy: {
+    id: number;
+    title: string;
+  };
   compact?: boolean;
 };
 

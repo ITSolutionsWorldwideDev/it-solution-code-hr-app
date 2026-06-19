@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, Building2, ShieldCheck, Sparkles, Users } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, Building2, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { useRole } from "@/components/providers/role-provider";
@@ -109,6 +110,16 @@ export function LoginHome() {
                 technical approvals, management decisions, onboarding, and organizational
                 visibility in one intelligent recruitment environment.
               </p>
+
+              <div className="mt-7 flex flex-wrap gap-4">
+                <Link
+                  href="/jobs"
+                  className="inline-flex h-[58px] items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.05] px-7 text-[1rem] font-semibold text-white transition hover:border-[#93efff]/40 hover:bg-white/[0.08]"
+                >
+                  <BriefcaseBusiness className="h-5 w-5 text-[#93efff]" />
+                  View Open Jobs
+                </Link>
+              </div>
 
               <div
                 id="employee-login"

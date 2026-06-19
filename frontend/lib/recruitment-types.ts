@@ -427,6 +427,25 @@ export type PublicApplicationSubmitResponse = {
   message: string;
 };
 
+export type PublishedWebsiteJobApiRecord = {
+  vacancy_id: number;
+  job_info_id: number;
+  title: string;
+  description: string;
+  required_skills: string[];
+  experience_level?: string | null;
+  department_id: number;
+  hiring_request_id?: number | null;
+  ai_summary?: string | null;
+  match_score?: number | null;
+  parsed_data: Record<string, unknown>;
+  created_at: string;
+  published_at: string;
+  location?: string | null;
+  employment_type?: string | null;
+  pdf_url?: string | null;
+};
+
 export type JobDescriptionGenerateResponse = {
   generated_job_description: string;
   generated_required_skills: string[];

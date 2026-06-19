@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.routes import applications, candidates, dashboard, departments, employees, hiring_requests, integrations, interviews, users, vacancies, webhooks, website_integrations
+from app.routes import applications, candidates, dashboard, departments, employees, hiring_requests, integrations, interviews, users, vacancies, webhooks, website_integrations, website_public
 
 
 router = APIRouter()
@@ -26,5 +26,6 @@ router.include_router(applications.router)
 router.include_router(interviews.router)
 router.include_router(integrations.router)
 router.include_router(website_integrations.router)
+router.include_router(website_public.router)
 router.include_router(webhooks.router)
 router.include_router(dashboard.router)

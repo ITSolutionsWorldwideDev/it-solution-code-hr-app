@@ -4,7 +4,7 @@ import { BriefcaseBusiness, CircleDollarSign, Clock3, MapPin, UserRound } from "
 import type { ReactNode } from "react";
 
 import { PublicApplyForm } from "@/components/recruitment/public-apply-form";
-import type { VacancyApiRecord } from "@/lib/recruitment-types";
+import type { PublishedWebsiteJobApiRecord } from "@/lib/recruitment-types";
 
 type ApplyPageProps = {
   params: Promise<{
@@ -23,7 +23,7 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
   const { id } = await params;
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://it-solution-code-hr-app-backend.vercel.app/api";
 
-  const response = await fetch(`${apiBaseUrl}/vacancies/${id}`, {
+  const response = await fetch(`${apiBaseUrl}/website/jobs/${id}`, {
     cache: "no-store",
   });
 
@@ -31,7 +31,7 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
     notFound();
   }
 
-  const vacancy = (await response.json()) as VacancyApiRecord;
+  const vacancy = (await response.json()) as PublishedWebsiteJobApiRecord;
   const content = buildCandidateFacingContent(vacancy);
 
   return (
@@ -125,7 +125,7 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
             </section>
 
             <aside className="space-y-5">
-              <PublicApplyForm vacancy={vacancy} compact />
+              <PublicApplyForm vacancy={{ id: vacancy.vacancy_id, title: vacancy.title }} compact />
 
               <div className="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.03] shadow-[0_18px_36px_rgba(0,0,0,0.24)]">
                 <div className="relative h-40 w-full">
@@ -167,13 +167,13 @@ function SectionBlock({
   );
 }
 
-function buildCandidateFacingContent(vacancy: VacancyApiRecord): CandidateFacingContent {
+function buildCandidateFacingContent(vacancy: PublishedWebsiteJobApiRecord): CandidateFacingContent {
   const parsedData = asRecord(vacancy.parsed_data);
   const rawDescription = typeof vacancy.description === "string" ? vacancy.description.trim() : "";
   const normalizedDescription = normalizeDescription(rawDescription);
   const department = readString(parsedData, "department") ?? "Product";
-  const employmentType = readString(parsedData, "employment_type") ?? "Full-time";
-  const location = readString(parsedData, "location") ?? "London / Remote Hybrid";
+  const employmentType = vacancy.employment_type ?? readString(parsedData, "employment_type") ?? "Full-time";
+  const location = vacancy.location ?? readString(parsedData, "location") ?? "London / Remote Hybrid";
   const compensation =
     readString(parsedData, "compensation") ?? readString(parsedData, "budget") ?? "Up to 50,000 annually (DOE)";
   const reportsTo = readString(parsedData, "reports_to") ?? "Hiring Manager";
