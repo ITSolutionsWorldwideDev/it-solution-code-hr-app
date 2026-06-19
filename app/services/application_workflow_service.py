@@ -24,7 +24,7 @@ from app.models.enums import (
 )
 from app.models.user import User
 from app.models.vacancy import Vacancy
-from app.services.calendar_availability_service import validate_public_hr_interview_slot
+from app.services.calendar_availability_service import book_public_interview_slot
 from app.services.crud import get_or_404
 
 
@@ -65,13 +65,31 @@ def rank_applications_for_vacancy(session: Session, vacancy_id: int) -> list[App
 
 
 def generate_shortlist(session: Session, vacancy_id: int, changed_by_id: int | None = None) -> list[Application]:
-    _ensure_shortlist_candidates(session, vacancy_id)
-    applications = rank_applications_for_vacancy(session, vacancy_id)
+    all_applications = list_vacancy_applications(session, vacancy_id)
+    applications = [application for application in all_applications if _is_direct_vacancy_application(session, application)]
+    talent_pool_applications = [
+        application for application in all_applications if _is_talent_pool_shortlist_application(application)
+    ]
+    non_direct_generated = [
+        application
+        for application in all_applications
+        if application not in applications and application not in talent_pool_applications
+    ]
     changer = get_or_404(session, User, changed_by_id) if changed_by_id else None
 
-    for index, application in enumerate(applications, start=1):
+    ranked = sorted(
+        applications,
+        key=lambda item: item.ranking_score if item.ranking_score is not None else (item.match_score or 0.0),
+        reverse=True,
+    )
+
+    for index, application in enumerate(ranked, start=1):
         previous_stage = application.stage
         has_confirmed_invite = application.invite_sent_at is not None
+
+        application.ranking_position = index
+        if application.ranking_score is None:
+            application.ranking_score = application.match_score
 
         if index <= PRIMARY_SHORTLIST_SIZE:
             application.shortlist_bucket = ShortlistBucket.PRIMARY
@@ -108,9 +126,19 @@ def generate_shortlist(session: Session, vacancy_id: int, changed_by_id: int | N
                 notes="Shortlist generated automatically from ranking.",
             )
 
+    for application in non_direct_generated:
+        if application.invite_sent_at is not None:
+            continue
+        application.shortlist_bucket = ShortlistBucket.NONE
+        application.invite_selected = False
+        application.ranking_position = None
+        application.stage = ApplicationStage.PARSED
+        application.current_owner_role = UserRole.HR
+        session.add(application)
+
     session.commit()
-    _refresh_many(session, applications)
-    return applications
+    _refresh_many(session, ranked)
+    return ranked
 
 
 def _ensure_shortlist_candidates(session: Session, vacancy_id: int) -> None:
@@ -164,6 +192,27 @@ def _ensure_shortlist_candidates(session: Session, vacancy_id: int) -> None:
         session.commit()
 
 
+def _is_talent_pool_shortlist_application(application: Application) -> bool:
+    parsed_data = application.parsed_data or {}
+    return parsed_data.get("shortlist_source") == "talent_pool"
+
+
+def _is_direct_vacancy_application(session: Session, application: Application) -> bool:
+    if _is_talent_pool_shortlist_application(application):
+        return False
+
+    candidate = session.get(Candidate, application.candidate_id)
+    if candidate is None:
+        return False
+
+    parsed_data = candidate.parsed_data or {}
+    if parsed_data.get("source") != "job_application":
+        return False
+
+    source_reference_id = parsed_data.get("source_reference_id")
+    return str(source_reference_id) == str(application.id)
+
+
 def update_shortlist_bucket(
     session: Session,
     application_id: int,
@@ -193,6 +242,102 @@ def update_shortlist_bucket(
         user.role,
         notes=f"Shortlist bucket changed to {shortlist_bucket.value}.",
     )
+    session.commit()
+    session.refresh(application)
+    return application
+
+
+def add_candidate_from_talent_pool_to_shortlist(
+    session: Session,
+    *,
+    vacancy_id: int,
+    candidate_id: int,
+    changed_by_id: int,
+    shortlist_bucket: ShortlistBucket = ShortlistBucket.RESERVE,
+    potential_score: float | None = None,
+    reason: str | None = None,
+) -> Application:
+    get_or_404(session, Vacancy, vacancy_id)
+    candidate = get_or_404(session, Candidate, candidate_id)
+    user = get_or_404(session, User, changed_by_id)
+
+    application = session.exec(
+        select(Application).where(
+            Application.vacancy_id == vacancy_id,
+            Application.candidate_id == candidate_id,
+        )
+    ).first()
+
+    target_stage = (
+        ApplicationStage.PRIMARY_SHORTLIST
+        if shortlist_bucket == ShortlistBucket.PRIMARY
+        else ApplicationStage.RESERVE_SHORTLIST
+    )
+    source_flag = "talent_pool"
+
+    if application is None:
+        parsed_data = {
+            **(candidate.parsed_data or {}),
+            "shortlist_source": source_flag,
+        }
+        if reason:
+            parsed_data["talent_pool_reason"] = reason
+
+        application = Application(
+            candidate_id=candidate.id,
+            vacancy_id=vacancy_id,
+            ai_summary=reason or candidate.ai_summary,
+            match_score=potential_score,
+            ranking_score=potential_score,
+            parsed_data=parsed_data,
+            stage=target_stage,
+            current_owner_role=UserRole.HR,
+            shortlist_bucket=shortlist_bucket,
+            invite_selected=False,
+            notes="Added to shortlist from talent pool.",
+        )
+        session.add(application)
+        session.flush()
+        _create_stage_event(
+            session=session,
+            application=application,
+            from_stage=ApplicationStage.PARSED,
+            to_stage=target_stage,
+            changed_by_id=user.id,
+            changed_by_role=user.role,
+            notes="Candidate added to shortlist from talent pool.",
+        )
+    else:
+        previous_stage = application.stage
+        next_parsed_data = {**(application.parsed_data or {})}
+        next_parsed_data["shortlist_source"] = source_flag
+        if reason:
+            next_parsed_data["talent_pool_reason"] = reason
+
+        application.parsed_data = next_parsed_data
+        application.shortlist_bucket = shortlist_bucket
+        application.stage = target_stage
+        application.current_owner_role = UserRole.HR
+        if reason and not application.ai_summary:
+            application.ai_summary = reason
+        if potential_score is not None and application.match_score is None:
+            application.match_score = potential_score
+        if potential_score is not None and application.ranking_score is None:
+            application.ranking_score = potential_score
+        application.notes = "Added to shortlist from talent pool."
+        session.add(application)
+
+        if previous_stage != target_stage:
+            _create_stage_event(
+                session=session,
+                application=application,
+                from_stage=previous_stage,
+                to_stage=target_stage,
+                changed_by_id=user.id,
+                changed_by_role=user.role,
+                notes="Candidate re-added to shortlist from talent pool.",
+            )
+
     session.commit()
     session.refresh(application)
     return application
@@ -551,19 +696,20 @@ def record_interview_decision(
     return interview
 
 
-def schedule_hr_interview_from_candidate(
+def schedule_public_interview_from_candidate(
     session: Session,
     application_id: int,
     scheduled_at: datetime,
 ) -> Application:
     application = get_or_404(session, Application, application_id)
-    validate_public_hr_interview_slot(session, application_id, scheduled_at)
+    schedule_context = book_public_interview_slot(session, application_id, scheduled_at)
+    stage_type = schedule_context["stage_type"]
 
     interview = session.exec(
         select(ApplicationInterview)
         .where(
             ApplicationInterview.application_id == application.id,
-            ApplicationInterview.stage_type == InterviewStageType.HR,
+            ApplicationInterview.stage_type == stage_type,
         )
         .order_by(ApplicationInterview.created_at.desc())
     ).first()
@@ -574,7 +720,7 @@ def schedule_hr_interview_from_candidate(
     else:
         interview = ApplicationInterview(
             application_id=application.id,
-            stage_type=InterviewStageType.HR,
+            stage_type=stage_type,
             scheduled_at=scheduled_at,
             interviewer_user_id=None,
             status=InterviewStatus.SCHEDULED,
@@ -582,9 +728,19 @@ def schedule_hr_interview_from_candidate(
         )
         session.add(interview)
 
-    application.hr_interview_at = scheduled_at
-    application.stage = ApplicationStage.HR_INTERVIEW_SCHEDULED
-    application.current_owner_role = UserRole.HR
+    if stage_type == InterviewStageType.HR:
+        application.hr_interview_at = scheduled_at
+        application.stage = ApplicationStage.HR_INTERVIEW_SCHEDULED
+        application.current_owner_role = UserRole.HR
+    elif stage_type == InterviewStageType.TECHNICAL:
+        application.technical_interview_at = scheduled_at
+        application.stage = ApplicationStage.TECHNICAL_INTERVIEW_SCHEDULED
+        application.current_owner_role = UserRole.TECHNICAL
+    else:
+        application.management_interview_at = scheduled_at
+        application.stage = ApplicationStage.MANAGEMENT_INTERVIEW_SCHEDULED
+        application.current_owner_role = UserRole.MANAGER
+
     session.add(application)
     session.commit()
     session.refresh(application)

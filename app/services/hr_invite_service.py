@@ -11,7 +11,7 @@ from sqlmodel import Session
 from app.config import settings
 from app.models.application import Application
 from app.models.candidate import Candidate
-from app.models.enums import ApplicationStage, EmailStatus, EmailType, ShortlistBucket
+from app.models.enums import ApplicationStage, EmailStatus, EmailType, ShortlistBucket, UserRole
 from app.models.user import User
 from app.models.vacancy import Vacancy
 from app.schemas.application import ApplicationSendInviteResponse
@@ -57,7 +57,15 @@ def dispatch_application_email(
     vacancy = get_or_404(session, Vacancy, application.vacancy_id)
     is_shortlist_approval_email = _is_shortlist_approval_email(application, email_type)
     normalized_template_variant = _normalize_template_variant(email_type, template_variant)
-    _validate_application_email_dispatch(session, application, candidate, email_type, allow_resend)
+    _validate_application_email_dispatch(
+        session,
+        application,
+        candidate,
+        sender,
+        email_type,
+        allow_resend,
+        normalized_template_variant,
+    )
 
     callback_url = _build_callback_url(request)
     payload = _build_n8n_email_payload(
@@ -236,8 +244,10 @@ def _validate_application_email_dispatch(
     session: Session,
     application: Application,
     candidate: Candidate,
+    sender: User,
     email_type: EmailType,
     allow_resend: bool,
+    template_variant: str | None,
 ) -> None:
     latest_event = _get_latest_email_event(session, application.id, email_type)
 
@@ -264,6 +274,16 @@ def _validate_application_email_dispatch(
             detail="Approve the candidate in the HR pipeline before sending the approval email.",
         )
 
+    if (
+        email_type == EmailType.HR_PASSED
+        and template_variant == "technical_interview_invite"
+        and sender.role not in {UserRole.TECHNICAL, UserRole.ADMIN}
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Technical or Admin users can send the technical interview invite.",
+        )
+
     if email_type == EmailType.HR_REJECTION and application.stage != ApplicationStage.HR_REJECTED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -274,6 +294,12 @@ def _validate_application_email_dispatch(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Approve the candidate in the technical pipeline before sending the management-stage email.",
+        )
+
+    if email_type == EmailType.TECHNICAL_PASSED and sender.role not in {UserRole.MANAGER, UserRole.ADMIN}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Management or Admin users can send the management interview invite.",
         )
 
     if email_type == EmailType.TECHNICAL_REJECTION and application.stage != ApplicationStage.TECHNICAL_REJECTED:

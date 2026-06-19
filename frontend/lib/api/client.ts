@@ -1,5 +1,18 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
+const configuredApiBaseUrl =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://it-solution-code-hr-app-backend.vercel.app/api";
+
+function resolveApiBaseUrl() {
+  if (
+    typeof window !== "undefined" &&
+    /https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/api$/i.test(configuredApiBaseUrl)
+  ) {
+    // Route browser traffic through Next.js so local backend access keeps working
+    // even when the frontend is opened through a LAN/dev hostname.
+    return "/backend-api";
+  }
+
+  return configuredApiBaseUrl;
+}
 
 type RequestOptions = RequestInit & {
   path: string;
@@ -27,9 +40,10 @@ function extractErrorMessage(payload: unknown): string | null {
 export async function apiRequest<T>({ path, ...options }: RequestOptions): Promise<T> {
   const isFormData = options.body instanceof FormData;
   let response: Response;
+  const apiBaseUrl = resolveApiBaseUrl();
 
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    response = await fetch(`${apiBaseUrl}${path}`, {
       ...options,
       headers: {
         ...(isFormData ? {} : { "Content-Type": "application/json" }),

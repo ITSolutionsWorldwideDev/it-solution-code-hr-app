@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -13,6 +14,9 @@ from app.config import settings
 from app.services.ai_service import parse_candidate_text, sanitize_text
 
 logger = logging.getLogger(__name__)
+
+GEMINI_RETRYABLE_STATUS_CODES = {429, 500, 503}
+GEMINI_MAX_RETRIES = 3
 
 
 class RoleSuggestionResult(BaseModel):
@@ -33,9 +37,30 @@ class CandidateParseResult(BaseModel):
     fit_explanation: str | None = None
     role_suggestions: list[RoleSuggestionResult] = Field(default_factory=list)
     matched_skills: list[str] = Field(default_factory=list)
-    match_score: float = 0.0
+    match_score: float | None = None
     matching_result: "CandidateMatchingResult | None" = None
     vacancy_matches: list["VacancyPortfolioMatchResult"] = Field(default_factory=list)
+    pros: list[str] = Field(default_factory=list)
+    cons: list[str] = Field(default_factory=list)
+    experience_years: int = 0
+    selected_vacancy_id: int | None = None
+    selected_vacancy_title: str | None = None
+
+
+class ConsolidatedParserResponse(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    skills: list[str] = Field(default_factory=list)
+    experience: str | None = None
+    education: str | None = None
+    experience_years: int = 0
+    executive_summary: str
+    fit_score: float | None = None
+    pros: list[str] = Field(default_factory=list)
+    cons: list[str] = Field(default_factory=list)
+    selected_vacancy_id: int | None = None
+    selected_vacancy_title: str | None = None
 
 
 class VacancyPortfolioMatchResult(BaseModel):
@@ -71,19 +96,6 @@ class CandidateMatchingResult(BaseModel):
     applied_match: AppliedMatchResult | None = None
     potential_match: PotentialMatchResult | None = None
     talent_insights: TalentInsightsResult
-
-
-class CandidateExtractionResult(BaseModel):
-    name: str | None = None
-    email: str | None = None
-    phone: str | None = None
-    skills: list[str] = Field(default_factory=list)
-    experience: str | None = None
-    education: str | None = None
-
-
-class ResumeFormattingResult(BaseModel):
-    formatted_cv: str
 
 
 class JobDescriptionGenerationResult(BaseModel):
@@ -177,6 +189,20 @@ def _extract_json_object(raw_text: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _normalize_matching_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return payload
+
+    normalized = dict(payload)
+    for key in ("applied_match", "potential_match"):
+        match = normalized.get(key)
+        if isinstance(match, dict) and "vacancy_id" in match and match["vacancy_id"] is not None:
+            match = dict(match)
+            match["vacancy_id"] = str(match["vacancy_id"])
+            normalized[key] = match
+    return normalized
+
+
 def _generate_vertex_text(prompt: str) -> str:
     if settings.gemini_api_key:
         return _generate_gemini_text(prompt)
@@ -222,7 +248,20 @@ def _generate_vertex_text(prompt: str) -> str:
     )
 
 
-def _generate_gemini_text(prompt: str) -> str:
+def _generate_gemini_text(
+    prompt: str | None = None,
+    *,
+    system_prompt: str | None = None,
+    user_prompt: str | None = None,
+) -> str:
+    if prompt is None:
+        prompt = "\n\n".join(part for part in [system_prompt, user_prompt] if part)
+    if not prompt:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Gemini prompt content was empty.",
+        )
+
     attempted_models: list[str] = []
     errors: list[str] = []
 
@@ -230,60 +269,68 @@ def _generate_gemini_text(prompt: str) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
         attempted_models.append(model_name)
 
-        try:
-            response = requests.post(
-                url,
-                params={"key": settings.gemini_api_key},
-                json={
-                    "contents": [
-                        {
-                            "parts": [
-                                {
-                                    "text": prompt,
-                                }
-                            ]
-                        }
-                    ]
-                },
-                timeout=60,
-            )
-        except requests.RequestException as exc:
-            message = sanitize_text(str(exc)) or repr(exc)
-            errors.append(f"{model_name}: {message}")
-            continue
-
-        if not response.ok:
-            detail = sanitize_text(response.text) or f"status {response.status_code}"
-            errors.append(f"{model_name}: {detail}")
-            continue
-
-        payload = response.json()
-        candidates = payload.get("candidates")
-        if not isinstance(candidates, list):
-            errors.append(f"{model_name}: invalid candidates payload")
-            continue
-
-        for candidate in candidates:
-            content = candidate.get("content") if isinstance(candidate, dict) else None
-            parts = content.get("parts") if isinstance(content, dict) else None
-            if not isinstance(parts, list):
+        for attempt in range(1, GEMINI_MAX_RETRIES + 1):
+            try:
+                response = requests.post(
+                    url,
+                    params={"key": settings.gemini_api_key},
+                    json={
+                        "contents": [
+                            {
+                                "parts": [
+                                    {
+                                        "text": prompt,
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    timeout=60,
+                )
+            except requests.RequestException as exc:
+                message = sanitize_text(str(exc)) or repr(exc)
+                if attempt < GEMINI_MAX_RETRIES:
+                    time.sleep(1.5 * attempt)
+                    continue
+                errors.append(f"{model_name}: {message}")
                 continue
-            text = "".join(
-                part.get("text", "")
-                for part in parts
-                if isinstance(part, dict) and isinstance(part.get("text"), str)
-            ).strip()
-            if text:
-                return text
 
-        errors.append(f"{model_name}: no text content returned")
+            if not response.ok:
+                detail = sanitize_text(response.text) or f"status {response.status_code}"
+                if response.status_code in GEMINI_RETRYABLE_STATUS_CODES and attempt < GEMINI_MAX_RETRIES:
+                    time.sleep(1.5 * attempt)
+                    continue
+                errors.append(f"{model_name}: {detail}")
+                break
+
+            payload = response.json()
+            candidates = payload.get("candidates")
+            if not isinstance(candidates, list):
+                errors.append(f"{model_name}: invalid candidates payload")
+                break
+
+            for candidate in candidates:
+                content = candidate.get("content") if isinstance(candidate, dict) else None
+                parts = content.get("parts") if isinstance(content, dict) else None
+                if not isinstance(parts, list):
+                    continue
+                text = "".join(
+                    part.get("text", "")
+                    for part in parts
+                    if isinstance(part, dict) and isinstance(part.get("text"), str)
+                ).strip()
+                if text:
+                    return text
+
+            errors.append(f"{model_name}: no text content returned")
+            break
 
     diagnostic = "; ".join(errors[-3:]) or "unknown Gemini error"
     logger.warning("Gemini text generation failed. Attempted models: %s. Errors: %s", attempted_models, diagnostic)
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail=(
-            f"Gemini API request failed for all configured models. "
+            f"Gemini API request failed for all configured models due to provider capacity or availability. "
             f"Attempted models: {', '.join(attempted_models)}. Last errors: {diagnostic}"
         ),
     )
@@ -611,6 +658,7 @@ def _generate_matching_result_with_openai(
     applied_match: VacancyPortfolioMatchResult | None,
     potential_match: VacancyPortfolioMatchResult | None,
     vacancy_matches: list[VacancyPortfolioMatchResult],
+    require_ai: bool = False,
 ) -> CandidateMatchingResult:
     fallback = _build_fallback_matching_result(
         parsed_candidate=parsed_candidate,
@@ -662,13 +710,23 @@ def _generate_matching_result_with_openai(
 
     try:
         raw_text = _generate_vertex_text(f"{system_prompt}\n\n{user_prompt}")
-        payload = _extract_json_object(raw_text)
+        payload = _normalize_matching_payload(_extract_json_object(raw_text))
         parsed = CandidateMatchingResult.model_validate(payload) if payload else None
     except Exception as exc:
-        logger.warning("Job description AI generation failed; using fallback. Reason: %s", exc)
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Candidate matching AI failed: {sanitize_text(str(exc)) or repr(exc)}",
+            ) from exc
+        logger.warning("Candidate matching AI failed; using fallback. Reason: %s", exc)
         return fallback
 
     if not parsed:
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Candidate matching AI returned an invalid response.",
+            )
         return fallback
 
     if parsed.applied_match and fallback.applied_match:
@@ -733,7 +791,7 @@ def _build_role_suggestions(
                 department=_guess_department(vacancy_title, vacancy_context),
                 confidence_score=round(selected_vacancy_score if selected_vacancy_score is not None else 0.0, 2),
                 reason=_trim_text(
-                    selected_vacancy_reason or "This candidate was parsed directly against the selected vacancy.",
+                    selected_vacancy_reason or "This candidate was parsed directly against the chosen vacancy.",
                     max_length=160,
                 ),
             ),
@@ -764,105 +822,358 @@ def _guess_department(role_title: str, vacancy_context: dict[str, Any] | None) -
     return None
 
 
+def _compact_vacancy_context(vacancy: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(vacancy["id"]),
+        "title": sanitize_text(str(vacancy.get("title") or "")) or f"Vacancy #{vacancy['id']}",
+        "experience_level": sanitize_text(str(vacancy.get("experience_level") or "")) or None,
+        "required_skills": [
+            sanitize_text(str(skill).lower())
+            for skill in (vacancy.get("required_skills") or [])
+            if sanitize_text(str(skill).lower())
+        ][:10],
+        "description": _trim_text(sanitize_text(str(vacancy.get("description") or "")), max_length=500),
+    }
+
+
+def _build_vacancy_context_text(
+    vacancy_context: dict[str, Any] | None,
+    active_vacancies: list[dict[str, Any]] | None,
+) -> tuple[str | None, list[dict[str, Any]]]:
+    if vacancy_context is not None:
+        compact = _compact_vacancy_context(vacancy_context)
+        return (
+            "One explicit vacancy was selected. Score only against this role and return its id/title.\n"
+            f"{json.dumps(compact, ensure_ascii=True)}",
+            [compact],
+        )
+
+    normalized_vacancies = [_compact_vacancy_context(item) for item in (active_vacancies or []) if item.get("id") is not None]
+    if not normalized_vacancies:
+        return None, []
+
+    return (
+        "No explicit vacancy was selected. Review these open vacancies, choose the single best fit, "
+        "and return its id/title only if there is a credible match.\n"
+        f"{json.dumps(normalized_vacancies, ensure_ascii=True)}",
+        normalized_vacancies,
+    ), normalized_vacancies
+
+
+def _normalize_bullet_items(values: list[str] | None, *, limit: int) -> list[str]:
+    normalized: list[str] = []
+    for value in values or []:
+        cleaned = sanitize_text(value)
+        if not cleaned:
+            continue
+        normalized.append(cleaned.lstrip("- ").strip())
+        if len(normalized) == limit:
+            break
+    return normalized
+
+
+def _coerce_fit_score(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(100.0, round(numeric, 2)))
+
+
+def _build_fit_explanation(summary: str, pros: list[str], cons: list[str]) -> str:
+    parts = [sanitize_text(summary) or ""]
+    if pros:
+        parts.append(f"Key strengths: {'; '.join(pros[:3])}.")
+    if cons:
+        parts.append(f"Attention points: {'; '.join(cons[:2])}.")
+    return sanitize_text(" ".join(part for part in parts if part).strip()) or "No fit explanation available."
+
+
+def fallback_non_ai_parser(
+    cv_text: str,
+    *,
+    vacancy_context: dict[str, Any] | None = None,
+    active_vacancies: list[dict[str, Any]] | None = None,
+) -> ConsolidatedParserResponse:
+    parsed = parse_candidate_text(cv_text)
+    selected_vacancy = vacancy_context
+    fit_score: float | None = None
+
+    if selected_vacancy is None and active_vacancies:
+        best_score = -1.0
+        best_vacancy: dict[str, Any] | None = None
+        for vacancy_item in active_vacancies:
+            score, _, _ = _score_candidate_against_vacancy(parsed, cv_text, vacancy_item)
+            if score > best_score:
+                best_score = score
+                best_vacancy = vacancy_item
+        selected_vacancy = best_vacancy
+        fit_score = best_score if best_vacancy is not None else None
+    elif selected_vacancy is not None:
+        fit_score, _, _ = _score_candidate_against_vacancy(parsed, cv_text, selected_vacancy)
+
+    title = sanitize_text(str(selected_vacancy.get("title") or "")) if selected_vacancy else None
+    summary = (
+        f"{parsed.get('name') or 'This candidate'} could be partially parsed from the CV, "
+        "but the AI parser was temporarily unavailable."
+    )
+    if title:
+        summary += f" Initial fallback matching suggests possible alignment with {title}."
+
+    pros = _normalize_bullet_items(parsed.get("skills", [])[:3], limit=3)
+    return ConsolidatedParserResponse(
+        name=sanitize_text(parsed.get("name")),
+        email=sanitize_text(parsed.get("email")),
+        phone=sanitize_text(parsed.get("phone")),
+        skills=[skill for skill in parsed.get("skills", []) if isinstance(skill, str)][:8],
+        experience=sanitize_text(parsed.get("experience")),
+        education=sanitize_text(parsed.get("education")),
+        experience_years=_candidate_years(cv_text),
+        executive_summary=sanitize_text(summary) or "The AI parser was temporarily unavailable, so only a limited fallback profile was generated.",
+        fit_score=fit_score,
+        pros=pros,
+        cons=["The AI parser is currently offline"],
+        selected_vacancy_id=int(selected_vacancy["id"]) if selected_vacancy and selected_vacancy.get("id") is not None else None,
+        selected_vacancy_title=title,
+    )
+
+
 def parse_candidate_with_openai(
     *,
     cv_text: str,
     vacancy_context: dict[str, Any] | None = None,
     active_vacancies: list[dict[str, Any]] | None = None,
+    require_ai: bool = True,
 ) -> CandidateParseResult:
-    parsed_candidate = _extract_candidate_details(cv_text)
-    candidate_signals = _collect_candidate_signals(parsed_candidate, cv_text)
-    scoring_pool = list(active_vacancies or [])
-    if vacancy_context and not any(item.get("id") == vacancy_context.get("id") for item in scoring_pool):
-        scoring_pool.append(vacancy_context)
+    vacancy_context_text, normalized_vacancies = _build_vacancy_context_text(vacancy_context, active_vacancies)
 
-    vacancy_matches: list[VacancyPortfolioMatchResult] = []
-    for vacancy_item in scoring_pool:
-        score, matched_skills, fit_explanation = _score_candidate_against_vacancy(
-            parsed_candidate,
+    system_prompt = """You are an elite, enterprise-grade AI Resume Parser and Recruitment Match Analyst. Your goal is to extract structured information from raw CV text, generate a lightning-fast "Executive Summary" for recruiters, and perform a smart, context-aware match score against provided job openings.
+
+CRITICAL RULES:
+1. Strict Factuality: Extract ONLY facts explicitly stated or strongly supported. Never hallucinate or guess fields.
+2. Tone & Conciseness: Write like a sharp, top-tier executive recruiter. Keep text blocks extremely brief and punchy for a "quick check" UI (maximum 2-3 sentences for summaries).
+3. Strict JSON output: You must ONLY return a valid JSON object matching the exact schema provided. Do not wrap it in markdown code blocks, and do not add trailing text.
+4. Flexible Matching (No Keyword Penalties): Do not score rigidly based on exact keyword overlap. Understand synonyms and adjacent expertise.
+5. Vacancy Selection: If one explicit vacancy is provided, score only that vacancy. If several open vacancies are provided, always choose the single best fit from that list and return its id/title plus the best score, even if the score is modest.
+
+SCORING CRITERIA (0 - 100):
+- 85-100: Exceptional fit; possesses all core skills, required seniority, and contextually aligns perfectly.
+- 70-84: Solid fit; missing minor nice-to-haves but highly capable of performing the role effectively.
+- 50-69: Potential fit; transferable skills or adjacent experience, but requires upskilling or lacks direct domain authority.
+- 0-49: Poor fit; no alignment with the open role.
+- If NO vacancy context is provided but open vacancies are listed, you must still return the single best matching vacancy and its score.
+"""
+
+    user_prompt = f"""Analyze the following candidate information and execute the parse, summary, and match scoring.
+
+--- OPEN VACANCY CONTEXT (IF APPLICABLE) ---
+{vacancy_context_text if vacancy_context_text else "No specific vacancy provided. Parse for general Talent Pool."}
+
+--- RAW CV TEXT ---
+{cv_text}
+
+--- REQUIRED JSON OUTPUT SCHEMA ---
+{{
+  "name": "Extract full name or null",
+  "email": "Extract email or null",
+  "phone": "Extract clean phone number or null",
+  "skills": ["List of top 8 core hard skills max"],
+  "experience": "Maximum 2 short sentences on relevant work experience or null",
+  "education": "Maximum 2 short sentences on relevant education or null",
+  "experience_years": 0,
+  "executive_summary": "A punchy, maximum 2-to-3 sentence summary in English explaining exactly who this candidate is, their seniority, and why they fit (or don't fit) the vacancy context.",
+  "fit_score": 0,
+  "selected_vacancy_id": 0,
+  "selected_vacancy_title": "Best matching vacancy title or null",
+  "pros": [
+    "Maximum 3 bullet-points in English highlighting key strengths matching the vacancy or general expertise"
+  ],
+  "cons": [
+    "Maximum 2 bullet-points in English highlighting critical gaps, missing tech stacks, or red flags. If none, leave empty"
+  ]
+}}
+
+Return JSON only."""
+
+    try:
+        raw_response = _generate_gemini_text(system_prompt=system_prompt, user_prompt=user_prompt)
+        cleaned_response = raw_response.strip()
+        if cleaned_response.startswith("```"):
+            cleaned_response = re.sub(r"^```(?:json)?\s*", "", cleaned_response)
+            cleaned_response = re.sub(r"\s*```$", "", cleaned_response)
+        payload = _extract_json_object(cleaned_response)
+        parsed_payload = ConsolidatedParserResponse.model_validate(payload) if payload else None
+        if not parsed_payload:
+            raise ValueError("Consolidated parser returned invalid JSON.")
+    except Exception as exc:
+        logger.error("Gemini single-prompt parsing failed: %s", exc)
+        if require_ai:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Candidate parsing AI failed: {sanitize_text(str(exc)) or repr(exc)}",
+            ) from exc
+        parsed_payload = fallback_non_ai_parser(
             cv_text,
-            vacancy_item,
-        )
-        vacancy_matches.append(
-            VacancyPortfolioMatchResult(
-                vacancy_id=int(vacancy_item["id"]),
-                role_name=str(vacancy_item.get("title") or f"Vacancy #{vacancy_item['id']}"),
-                score=score,
-                ai_summary=_build_candidate_summary(
-                    parsed_candidate=parsed_candidate,
-                    vacancy_context=vacancy_item,
-                    match_score=score,
-                    matched_skills=matched_skills,
-                    fit_explanation=fit_explanation,
-                ),
-                fit_explanation=fit_explanation,
-                matched_skills=matched_skills[:10],
-            )
+            vacancy_context=vacancy_context,
+            active_vacancies=normalized_vacancies,
         )
 
-    applied_portfolio_match = None
-    if vacancy_context:
-        applied_portfolio_match = next(
-            (match for match in vacancy_matches if match.vacancy_id == int(vacancy_context["id"])),
+    if parsed_payload is None:
+        parsed_payload = fallback_non_ai_parser(
+            cv_text,
+            vacancy_context=vacancy_context,
+            active_vacancies=normalized_vacancies,
+        )
+
+    selected_vacancy: dict[str, Any] | None = None
+    if vacancy_context is not None:
+        selected_vacancy = vacancy_context
+    elif parsed_payload.selected_vacancy_id is not None:
+        selected_vacancy = next(
+            (item for item in normalized_vacancies if int(item["id"]) == int(parsed_payload.selected_vacancy_id)),
             None,
         )
+    elif parsed_payload.selected_vacancy_title:
+        normalized_title = sanitize_text(parsed_payload.selected_vacancy_title or "")
+        if normalized_title:
+            selected_vacancy = next(
+                (
+                    item
+                    for item in normalized_vacancies
+                    if sanitize_text(str(item.get("title") or "")).lower() == normalized_title.lower()
+                ),
+                None,
+            )
 
-    potential_portfolio_match = next(
-        (
-            match
-            for match in sorted(vacancy_matches, key=lambda item: item.score, reverse=True)
-            if not vacancy_context or match.vacancy_id != int(vacancy_context["id"])
-        ),
-        None,
+    fit_score = _coerce_fit_score(parsed_payload.fit_score)
+    is_talent_pool_parse = vacancy_context is None
+
+    heuristic_candidate = {
+        "name": sanitize_text(parsed_payload.name),
+        "email": sanitize_text(parsed_payload.email),
+        "phone": sanitize_text(parsed_payload.phone),
+        "skills": [
+            sanitize_text(skill.lower()) if isinstance(skill, str) else None
+            for skill in parsed_payload.skills[:8]
+        ],
+        "experience": sanitize_text(parsed_payload.experience),
+        "education": sanitize_text(parsed_payload.education),
+    }
+    heuristic_candidate["skills"] = [skill for skill in heuristic_candidate["skills"] if skill]
+
+    heuristic_best_vacancy: dict[str, Any] | None = None
+    heuristic_best_score: float | None = None
+    if is_talent_pool_parse and normalized_vacancies:
+        best_score = -1.0
+        for vacancy_item in normalized_vacancies:
+            score, _, _ = _score_candidate_against_vacancy(heuristic_candidate, cv_text, vacancy_item)
+            if score > best_score:
+                best_score = score
+                heuristic_best_vacancy = vacancy_item
+        if heuristic_best_vacancy is not None:
+            heuristic_best_score = round(best_score, 2)
+
+    if selected_vacancy is None and not normalized_vacancies:
+        fit_score = None
+    elif is_talent_pool_parse and heuristic_best_vacancy is not None:
+        if selected_vacancy is None:
+            selected_vacancy = heuristic_best_vacancy
+        if fit_score is None or fit_score <= 0:
+            if (
+                selected_vacancy is not None
+                and selected_vacancy.get("id") == heuristic_best_vacancy.get("id")
+                and heuristic_best_score is not None
+            ):
+                fit_score = heuristic_best_score
+            else:
+                selected_score, _, _ = _score_candidate_against_vacancy(
+                    heuristic_candidate,
+                    cv_text,
+                    selected_vacancy,
+                )
+                fit_score = round(selected_score, 2)
+
+    selected_vacancy_title = (
+        sanitize_text(str(selected_vacancy.get("title") or ""))
+        if selected_vacancy is not None
+        else sanitize_text(parsed_payload.selected_vacancy_title)
+    )
+    selected_vacancy_id = int(selected_vacancy["id"]) if selected_vacancy is not None else None
+    matched_skills = [skill for skill in parsed_payload.skills[:8] if isinstance(skill, str)]
+    fit_explanation = _build_fit_explanation(
+        sanitize_text(parsed_payload.executive_summary) or "",
+        _normalize_bullet_items(parsed_payload.pros, limit=3),
+        _normalize_bullet_items(parsed_payload.cons, limit=2),
     )
 
-    if applied_portfolio_match is None and vacancy_context:
-        match_score = 0.0
-        matched_skills = []
-        fit_explanation = "No applied vacancy match could be computed."
-    elif applied_portfolio_match is None and vacancy_matches:
-        applied_portfolio_match = max(vacancy_matches, key=lambda item: item.score)
-        match_score = applied_portfolio_match.score
-        matched_skills = applied_portfolio_match.matched_skills
-        fit_explanation = applied_portfolio_match.fit_explanation
-    else:
-        match_score = applied_portfolio_match.score if applied_portfolio_match else 0.0
-        matched_skills = applied_portfolio_match.matched_skills if applied_portfolio_match else []
-        fit_explanation = applied_portfolio_match.fit_explanation if applied_portfolio_match else "No vacancy selected for vacancy-fit scoring."
-
-    ai_summary = _build_candidate_summary(
-        parsed_candidate=parsed_candidate,
-        vacancy_context=vacancy_context,
-        match_score=match_score,
-        matched_skills=matched_skills,
-        fit_explanation=fit_explanation,
-    )
-    matching_result = _generate_matching_result_with_openai(
-        parsed_candidate=parsed_candidate,
-        applied_match=applied_portfolio_match,
-        potential_match=potential_portfolio_match,
-        vacancy_matches=vacancy_matches,
-    )
+    vacancy_matches: list[VacancyPortfolioMatchResult] = []
+    matching_result: CandidateMatchingResult | None = None
+    if selected_vacancy_id is not None and fit_score is not None:
+        vacancy_match = VacancyPortfolioMatchResult(
+            vacancy_id=selected_vacancy_id,
+            role_name=selected_vacancy_title or f"Vacancy #{selected_vacancy_id}",
+            score=fit_score,
+            ai_summary=sanitize_text(parsed_payload.executive_summary) or "",
+            fit_explanation=fit_explanation,
+            matched_skills=matched_skills,
+        )
+        vacancy_matches.append(vacancy_match)
+        matching_result = CandidateMatchingResult(
+            applied_match=(
+                None
+                if is_talent_pool_parse
+                else AppliedMatchResult(
+                    vacancy_id=str(selected_vacancy_id),
+                    role_name=vacancy_match.role_name,
+                    score=fit_score,
+                    analysis=fit_explanation,
+                )
+            ),
+            potential_match=(
+                PotentialMatchResult(
+                    vacancy_id=str(selected_vacancy_id),
+                    role_name=vacancy_match.role_name,
+                    score=fit_score,
+                    discovery_reason=fit_explanation,
+                )
+                if is_talent_pool_parse
+                else None
+            ),
+            talent_insights=TalentInsightsResult(
+                overall_score=fit_score,
+                top_skills_identified=matched_skills[:5],
+                seniority_level=_infer_seniority_level(max(0, int(parsed_payload.experience_years))),
+            ),
+        )
 
     return CandidateParseResult(
-        name=parsed_candidate.get("name"),
-        email=parsed_candidate.get("email"),
-        phone=parsed_candidate.get("phone"),
-        skills=parsed_candidate.get("skills", [])[:10],
-        experience=sanitize_text(parsed_candidate.get("experience")),
-        education=sanitize_text(parsed_candidate.get("education")),
-        ai_summary=ai_summary,
+        name=sanitize_text(parsed_payload.name),
+        email=sanitize_text(parsed_payload.email),
+        phone=sanitize_text(parsed_payload.phone),
+        skills=[
+            skill
+            for skill in {
+                sanitize_text(skill.lower()) if isinstance(skill, str) else None
+                for skill in parsed_payload.skills[:8]
+            }
+            if skill
+        ],
+        experience=sanitize_text(parsed_payload.experience),
+        education=sanitize_text(parsed_payload.education),
+        ai_summary=sanitize_text(parsed_payload.executive_summary) or "No executive summary available.",
         fit_explanation=fit_explanation,
-        role_suggestions=_build_role_suggestions(
-            candidate_signals,
-            vacancy_context,
-            selected_vacancy_score=match_score,
-            selected_vacancy_reason=fit_explanation,
-        ),
-        matched_skills=matched_skills[:10],
-        match_score=match_score,
+        role_suggestions=[],
+        matched_skills=matched_skills,
+        match_score=fit_score,
         matching_result=matching_result,
         vacancy_matches=vacancy_matches,
+        pros=_normalize_bullet_items(parsed_payload.pros, limit=3),
+        cons=_normalize_bullet_items(parsed_payload.cons, limit=2),
+        experience_years=max(0, int(parsed_payload.experience_years)),
+        selected_vacancy_id=selected_vacancy_id,
+        selected_vacancy_title=selected_vacancy_title,
     )
 
 
@@ -875,19 +1186,20 @@ def _build_candidate_summary(
     fit_explanation: str,
 ) -> str:
     candidate_name = parsed_candidate.get("name") or "Candidate"
-    vacancy_title = (vacancy_context.get("title") if vacancy_context else None) or "the selected vacancy"
+    vacancy_title = (vacancy_context.get("title") if vacancy_context else None)
+    target_label = vacancy_title or "the best matching open vacancy"
     skill_text = ", ".join(parsed_candidate.get("skills", [])[:6]) or "general professional experience"
     experience_text = parsed_candidate.get("experience") or "limited experience could be clearly extracted from the CV"
     education_text = parsed_candidate.get("education") or "no strong education signal was identified"
 
     if match_score >= 75:
-        opener = f"{candidate_name} appears to be a strong fit for {vacancy_title}."
+        opener = f"{candidate_name} appears to be a strong fit for {target_label}."
     elif match_score >= 55:
-        opener = f"{candidate_name} appears to be a relevant candidate for {vacancy_title}, with several useful overlaps."
+        opener = f"{candidate_name} appears to be a relevant candidate for {target_label}, with several useful overlaps."
     elif match_score >= 35:
-        opener = f"{candidate_name} shows partial alignment with {vacancy_title}, although the fit is mixed."
+        opener = f"{candidate_name} shows partial alignment with {target_label}, although the fit is mixed."
     else:
-        opener = f"{candidate_name} does not currently look like a strong direct fit for {vacancy_title}, but there may still be some transferable value."
+        opener = f"{candidate_name} does not currently look like a strong direct fit for {target_label}, but there may still be some transferable value."
 
     if matched_skills:
         skills_sentence = f"The clearest matching skills are {', '.join(matched_skills[:5])}."
@@ -903,128 +1215,6 @@ def _build_candidate_summary(
     )
 
     return sanitize_text(summary) or ""
-
-
-def _extract_candidate_details(cv_text: str) -> dict[str, Any]:
-    fallback = parse_candidate_text(cv_text)
-    if not settings.vertex_project_id:
-        return fallback
-
-    system_prompt = (
-        "You are an expert recruitment CV parser.\n\n"
-        "Extract structured candidate information from raw resume text.\n"
-        "Return only facts that are explicitly present in the CV or strongly supported by the CV text.\n"
-        "Do not invent, infer, or guess missing information.\n\n"
-        "Field rules:\n"
-        "- name: return only the candidate's full personal name, without labels like 'Name:' or 'Candidate Name:'.\n"
-        "- email: return the best real candidate email address.\n"
-        "- phone: return only a real phone number. Never return dates, year ranges, scores, IDs, or section numbers.\n"
-        "- skills: return a concise list of real professional or technical skills explicitly mentioned in the CV. Use lowercase tokens.\n"
-        "- experience: summarize the candidate's relevant work experience in 1 to 3 short sentences.\n"
-        "- education: summarize the most relevant education in 1 to 2 short sentences.\n\n"
-        "Extraction constraints:\n"
-        "- Ignore headers, footers, page numbers, duplicated labels, OCR/PDF noise, and decorative text.\n"
-        "- Ignore vacancy text, job posting text, legal boilerplate, and non-candidate content.\n"
-        "- Do not include prefixes such as 'name:', 'phone:', or 'email:' inside values.\n"
-        "- Do not return placeholder emails unless there is no real email in the CV.\n"
-        "- Do not treat year ranges such as '2022-2024' as phone numbers.\n"
-        "- Exclude soft skills like 'hardworking', 'team player', or 'communication' unless they are clearly framed as a concrete professional skill.\n"
-        "- If a field is missing, return null for that field.\n\n"
-        "Prioritize accuracy and cleanliness over completeness."
-    )
-    user_prompt = (
-        "Extract the candidate profile from the following raw CV text.\n\n"
-        "Return structured candidate details only.\n\n"
-        f"CV TEXT:\n{cv_text}"
-    )
-
-    try:
-        raw_text = _generate_vertex_text(
-            f"{system_prompt}\n\nReturn JSON only with keys: name, email, phone, skills, experience, education.\n\n{user_prompt}"
-        )
-        payload = _extract_json_object(raw_text)
-        extraction = CandidateExtractionResult.model_validate(payload) if payload else None
-    except Exception:
-        return fallback
-
-    if not extraction:
-        return fallback
-
-    return {
-        "name": sanitize_text(extraction.name) or fallback.get("name"),
-        "email": sanitize_text(extraction.email) or fallback.get("email"),
-        "phone": sanitize_text(extraction.phone) or fallback.get("phone"),
-        "skills": [
-            skill
-            for skill in {
-                sanitize_text(skill.lower()) if skill else None
-                for skill in (extraction.skills or [])
-            }
-            if skill
-        ] or fallback.get("skills", []),
-        "experience": sanitize_text(extraction.experience) or fallback.get("experience"),
-        "education": sanitize_text(extraction.education) or fallback.get("education"),
-    }
-
-
-def format_resume_preview(cv_text: str) -> str:
-    fallback = _fallback_resume_preview(cv_text)
-    if not settings.vertex_project_id:
-        return fallback
-
-    system_prompt = (
-        "You are an expert CV editor.\n\n"
-        "Restructure raw extracted resume text into a readable CV format.\n"
-        "Use clear section headings and bullet points.\n"
-        "For each work experience item, use this structure when possible:\n"
-        "- Date\n"
-        "- Company\n"
-        "- Role\n"
-        "- Responsibilities\n\n"
-        "Rules:\n"
-        "- Preserve the original chronology from the source text.\n"
-        "- Do not invent missing details.\n"
-        "- Clean up PDF noise, duplicated labels, and broken spacing.\n"
-        "- Keep the output concise, readable, and professional.\n"
-        "- Return plain text only.\n"
-    )
-    user_prompt = (
-        "Restructure the following raw CV text into a readable CV layout.\n\n"
-        f"CV TEXT:\n{cv_text}"
-    )
-
-    try:
-        formatted = _generate_vertex_text(
-            f"{system_prompt}\n\nReturn plain text only. Do not return JSON, markdown fences, or commentary.\n\n{user_prompt}"
-        )
-        return formatted or fallback
-    except Exception:
-        return fallback
-
-
-def _fallback_resume_preview(cv_text: str) -> str:
-    cleaned = " ".join(cv_text.split())
-    if not cleaned:
-        return "No extracted text stored yet."
-
-    cleaned = cleaned.replace("PERSONAL INFORMATION", "\nPERSONAL INFORMATION\n")
-    cleaned = cleaned.replace("WORK EXPERIENCE", "\nWORK EXPERIENCE\n")
-    cleaned = cleaned.replace("Date ", "\nDate: ")
-    cleaned = cleaned.replace("Name/address of company", "\nCompany: ")
-    cleaned = cleaned.replace("Type of job", "\nRole: ")
-    cleaned = cleaned.replace("Principal responsibilities", "\nResponsibilities: ")
-    cleaned = cleaned.replace("Email ", "\nEmail: ")
-    cleaned = cleaned.replace("Telephone No ", "\nTelephone: ")
-
-    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
-    normalized_lines: list[str] = []
-    for line in lines:
-        if line.startswith(("Date:", "Company:", "Role:", "Responsibilities:", "Email:", "Telephone:")):
-            normalized_lines.append(f"- {line}")
-        else:
-            normalized_lines.append(line)
-
-    return "\n".join(normalized_lines)
 
 
 def _infer_required_skills_from_text(*values: str) -> list[str]:
@@ -1203,7 +1393,7 @@ def generate_job_description_with_openai(
         seniority=seniority,
     )
 
-    if not settings.vertex_project_id:
+    if not settings.vertex_project_id and not settings.gemini_api_key:
         return fallback
 
     system_prompt = (
@@ -1240,7 +1430,8 @@ def generate_job_description_with_openai(
         )
         payload = _extract_json_object(raw_text)
         result = JobDescriptionGenerationResult.model_validate(payload) if payload else None
-    except Exception:
+    except Exception as exc:
+        logger.warning("Job description AI generation failed; using fallback. Reason: %s", exc)
         return fallback
 
     if not result:

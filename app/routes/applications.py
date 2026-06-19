@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, Request, Response, status
-from sqlmodel import Session
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
+from sqlmodel import Session, select
 
 from app.config import settings
 from app.db import get_session
@@ -15,6 +15,7 @@ from app.schemas.application import (
     ApplicationPublicScheduleRead,
     ApplicationPublicScheduleResponse,
     ApplicationRead,
+    PublicApplicationSubmitResponse,
     ApplicationRejectRequest,
     ApplicationSendInviteResponse,
     ApplicationShortlistUpdate,
@@ -24,15 +25,21 @@ from app.schemas.application import (
 )
 from app.services import crud
 from app.services.application_service import create_application
-from app.services.calendar_availability_service import list_public_hr_interview_slots
 from app.services.application_workflow_service import (
     advance_stage,
     delete_application_from_pipeline,
     get_application_timeline,
     reject_application,
-    schedule_hr_interview_from_candidate,
+    schedule_public_interview_from_candidate,
     select_hr_invite,
     update_shortlist_bucket,
+)
+from app.services.calendar_availability_service import get_public_schedule_context, list_public_interview_slots
+from app.services.cv_pipeline_service import (
+    create_parse_job_for_application,
+    process_candidate_file,
+    store_resume_upload,
+    upsert_placeholder_candidate,
 )
 from app.services.hr_invite_service import dispatch_application_email, dispatch_hr_invite
 
@@ -54,15 +61,17 @@ def get_public_schedule_details(application_id: int, session: Session = Depends(
     application = crud.get_or_404(session, Application, application_id)
     candidate = crud.get_or_404(session, Candidate, application.candidate_id)
     vacancy = crud.get_or_404(session, Vacancy, application.vacancy_id)
-    available_slots = list_public_hr_interview_slots(session, application_id)
+    schedule_context = get_public_schedule_context(session, application_id)
+    available_slots = list_public_interview_slots(session, application_id)
     return ApplicationPublicScheduleRead(
         application_id=application.id,
         candidate_name=candidate.name,
         candidate_email=candidate.email,
         vacancy_title=vacancy.title,
         stage=application.stage,
+        stage_type=schedule_context["stage_type"],
         invite_sent_at=application.invite_sent_at,
-        hr_interview_at=application.hr_interview_at,
+        scheduled_at=schedule_context["scheduled_at"],
         available_slots=available_slots,
         schedule_timezone=settings.public_schedule_timezone,
     )
@@ -78,16 +87,18 @@ def post_public_schedule_details(
     payload: ApplicationPublicScheduleCreate,
     session: Session = Depends(get_session),
 ):
-    application = schedule_hr_interview_from_candidate(
+    application = schedule_public_interview_from_candidate(
         session=session,
         application_id=application_id,
         scheduled_at=payload.scheduled_at,
     )
+    schedule_context = get_public_schedule_context(session, application_id)
     return ApplicationPublicScheduleResponse(
         application_id=application.id,
         stage=application.stage,
-        hr_interview_at=application.hr_interview_at,
-        message="Your HR interview time has been saved successfully.",
+        stage_type=schedule_context["stage_type"],
+        scheduled_at=schedule_context["scheduled_at"],
+        message=f"Your {schedule_context['stage_type'].value} interview time has been saved successfully.",
     )
 
 
@@ -99,6 +110,93 @@ def get_application(application_id: int, session: Session = Depends(get_session)
 @router.post("/", response_model=ApplicationRead, status_code=status.HTTP_201_CREATED, summary="Create application", description="Create an application linking a candidate to a vacancy.")
 def create_application_route(payload: ApplicationCreate, session: Session = Depends(get_session)):
     return create_application(session, payload)
+
+
+@router.post(
+    "/public-submit",
+    response_model=PublicApplicationSubmitResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit a public job application with CV parsing",
+    description="Store the application intake first, then run the shared CV parse pipeline without blocking the submission.",
+)
+async def submit_public_application(
+    file: UploadFile = File(...),
+    vacancy_id: int = Form(...),
+    candidate_email: str = Form(...),
+    location: str | None = Form(default=None),
+    work_authorization: str | None = Form(default=None),
+    notice_period: str | None = Form(default=None),
+    session: Session = Depends(get_session),
+):
+    vacancy = crud.get_or_404(session, Vacancy, vacancy_id)
+    stored_resume = await store_resume_upload(file)
+    submitted_email = candidate_email.strip()
+    intake_metadata = {
+        "candidate_email": submitted_email,
+        "location": location,
+        "work_authorization": work_authorization,
+        "notice_period": notice_period,
+    }
+
+    candidate = upsert_placeholder_candidate(
+        session,
+        email=submitted_email,
+        original_filename=stored_resume.original_filename,
+        source="job_application",
+        source_reference_id=vacancy.id,
+        intake_metadata=intake_metadata,
+    )
+    existing_application = session.exec(
+        select(Application).where(
+            Application.candidate_id == candidate.id,
+            Application.vacancy_id == vacancy.id,
+        )
+    ).first()
+    if existing_application is not None:
+        existing_application.parsed_data = {
+            **(existing_application.parsed_data or {}),
+            "parse_status": "pending",
+            "match_status": "pending",
+            "intake_metadata": intake_metadata,
+        }
+        session.add(existing_application)
+        session.commit()
+        session.refresh(existing_application)
+        application = existing_application
+    else:
+        application = create_application(
+            session,
+            ApplicationCreate(
+                candidate_id=candidate.id,
+                vacancy_id=vacancy.id,
+                parsed_data={"parse_status": "pending", "match_status": "pending"},
+            ),
+        )
+    parse_job = create_parse_job_for_application(
+        session=session,
+        application=application,
+        stored_resume=stored_resume,
+        uploaded_by="public_apply_page",
+    )
+    result = process_candidate_file(
+        session=session,
+        stored_resume=stored_resume,
+        source="job_application",
+        source_reference_id=application.id,
+        candidate_id=candidate.id,
+        application_id=application.id,
+        vacancy_id=vacancy.id,
+        submitted_email=submitted_email,
+        intake_metadata=intake_metadata,
+        parse_job=parse_job,
+    )
+    return PublicApplicationSubmitResponse(
+        application_id=application.id,
+        candidate_id=result.candidate.id,
+        parse_status=result.parse_status,
+        match_status=result.match_status,
+        message="Application submitted successfully.",
+    )
 
 
 @router.put("/{application_id}", response_model=ApplicationRead, summary="Update application", description="Update an existing application.")

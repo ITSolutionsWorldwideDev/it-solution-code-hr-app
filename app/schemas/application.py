@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import Field
 
-from app.models.enums import ApplicationStage, EmailType, ShortlistBucket, UserRole
+from app.models.enums import ApplicationStage, EmailType, InterviewStageType, ShortlistBucket, UserRole
 from app.schemas.application_email_event import ApplicationEmailEventRead
 from app.schemas.application_interview import ApplicationInterviewRead
 from app.schemas.application_stage_event import ApplicationStageEventRead
@@ -29,6 +29,14 @@ class ApplicationBase(BaseSchema):
 
 class ApplicationCreate(ApplicationBase):
     pass
+
+
+class PublicApplicationSubmitResponse(BaseSchema):
+    application_id: int
+    candidate_id: int
+    parse_status: str
+    match_status: str
+    message: str
 
 
 class ApplicationUpdate(BaseSchema):
@@ -66,6 +74,14 @@ class ApplicationShortlistUpdate(BaseSchema):
     changed_by_id: int
 
 
+class ApplicationTalentPoolShortlistCreate(BaseSchema):
+    candidate_id: int
+    changed_by_id: int
+    shortlist_bucket: ShortlistBucket = ShortlistBucket.RESERVE
+    potential_score: Optional[float] = None
+    reason: Optional[str] = None
+
+
 class ApplicationInviteSelectionUpdate(BaseSchema):
     invite_selected: bool
     changed_by_id: int
@@ -97,8 +113,9 @@ class ApplicationPublicScheduleRead(BaseSchema):
     candidate_email: str
     vacancy_title: str
     stage: ApplicationStage
+    stage_type: InterviewStageType
     invite_sent_at: Optional[datetime] = None
-    hr_interview_at: Optional[datetime] = None
+    scheduled_at: Optional[datetime] = None
     available_slots: list[datetime] = Field(default_factory=list)
     schedule_timezone: str
 
@@ -110,7 +127,8 @@ class ApplicationPublicScheduleCreate(BaseSchema):
 class ApplicationPublicScheduleResponse(BaseSchema):
     application_id: int
     stage: ApplicationStage
-    hr_interview_at: datetime
+    stage_type: InterviewStageType
+    scheduled_at: datetime
     message: str
 
 

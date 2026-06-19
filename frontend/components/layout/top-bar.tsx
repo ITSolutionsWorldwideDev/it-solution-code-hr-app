@@ -1,63 +1,81 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bell, MessageSquareMore, Search } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Search } from "lucide-react";
 
 import { useRole } from "@/components/providers/role-provider";
-import { roleProfiles, roleWorkspaceLabels } from "@/lib/session";
+import { getInitialsFromName, roleProfiles } from "@/lib/session";
 
 export function TopBar() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { role, name } = useRole();
   const profile = roleProfiles[role];
-  const workspaceLabel = roleWorkspaceLabels[role];
+  const [searchValue, setSearchValue] = useState("");
+
+  useEffect(() => {
+    if (pathname?.startsWith("/candidates")) {
+      setSearchValue(searchParams.get("q") ?? "");
+      return;
+    }
+
+    setSearchValue("");
+  }, [pathname, searchParams]);
+
+  const handleSearch = () => {
+    const query = searchValue.trim();
+    if (!query) {
+      router.push("/candidates");
+      return;
+    }
+
+    router.push(`/candidates?q=${encodeURIComponent(query)}`);
+  };
 
   return (
-    <div className="border-b border-white/8 bg-[#161d24] px-5 lg:px-10 xl:px-12">
-      <div className="flex h-[122px] flex-col justify-center gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <p className="text-[2rem] font-semibold tracking-[-0.05em] text-[#eef2ff]">Recruitment Command Center</p>
-          <p className="mt-1 text-sm text-[#95a199]">
-            {name} / {profile.title}
-          </p>
+    <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0b141e] px-6 lg:px-8 xl:px-10">
+      <div className="flex min-h-16 flex-col gap-4 py-4 xl:flex-row xl:items-center xl:justify-between xl:py-0">
+        <div className="flex min-w-0 flex-1 items-center">
+          <div className="flex h-11 w-full max-w-[580px] items-center rounded-full bg-[#222b36] px-5 text-[#dae3f2]">
+            <Search className="mr-3 h-5 w-5 shrink-0 text-[#bacac7]" />
+            <input
+              type="search"
+              value={searchValue}
+              onChange={(event) => setSearchValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  handleSearch();
+                }
+              }}
+              placeholder="Search candidates, skills, or roles..."
+              className="h-full w-full bg-transparent text-[0.98rem] text-[#dae3f2] outline-none placeholder:text-[#859491]"
+              aria-label="Search candidates, skills, or roles"
+            />
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 xl:justify-end">
-          <div className="inline-flex h-[52px] items-center gap-3 rounded-[18px] border border-white/10 bg-[#10161c] px-5 text-[0.98rem] text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)]">
-            <Search className="h-5 w-5 text-[#63e7ff]" />
-            <span className="text-white/62">Search candidates</span>
-          </div>
-          <button
-            type="button"
-            className="inline-flex h-[52px] w-[52px] items-center justify-center rounded-[18px] border border-white/10 bg-[#10161c] text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)]"
-          >
-            <MessageSquareMore className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            className="relative inline-flex h-[52px] w-[52px] items-center justify-center rounded-[18px] border border-white/10 bg-[#10161c] text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)]"
-          >
-            <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-[#63e7ff]" />
-            <Bell className="h-5 w-5" />
-          </button>
-          <div className="hidden h-12 w-px bg-white/8 xl:block" />
-          <div className="hidden min-w-[140px] text-right xl:block">
-            <div className="text-[1.05rem] font-semibold text-[#eef2ff]">{name}</div>
-            <div className="text-sm text-[#95a199]">{profile.title}</div>
-          </div>
-          <div className="inline-flex h-[44px] items-center gap-3 rounded-full border border-white/10 bg-[#10161c] px-4 text-sm font-medium text-white">
-            <span className="text-white/60">Workspace</span>
-            <span className="rounded-full bg-[#182633] px-3 py-1 text-sm font-semibold text-[#c9f6ff]">
-              {workspaceLabel}
-            </span>
-          </div>
+        <div className="ml-6 flex flex-wrap items-center gap-5">
           <Link
-            href="/#employee-login"
-            className="inline-flex h-[52px] items-center rounded-[16px] bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-6 text-[1rem] font-semibold text-[#06141c] shadow-[0_18px_34px_rgba(0,0,0,0.18)]"
+            href="/candidates?tab=bulk_parse"
+            className="inline-flex items-center rounded-xl bg-[#222b36] px-6 py-2.5 text-[0.98rem] font-bold text-[#dae3f2] transition hover:brightness-110"
           >
-            Change workspace
+            Bulk Import
           </Link>
+
+          <div className="flex items-center gap-3 pl-2">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-[#17202b] text-sm font-semibold text-[#dae3f2]">
+              {getInitialsFromName(name)}
+            </div>
+            <div className="hidden min-w-0 lg:block">
+              <p className="truncate text-sm font-semibold text-[#dae3f2]">{name}</p>
+              <p className="truncate text-xs text-[#8ea2b3]">{profile.title}</p>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </header>
   );
 }

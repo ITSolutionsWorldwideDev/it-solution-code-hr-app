@@ -13,6 +13,7 @@ from app.models.hiring_request import HiringRequest
 from app.models.parse_job import ParseJob
 from app.models.user import User
 from app.models.vacancy import Vacancy
+from app.models.website_publication import WebsitePublication
 
 __all__ = [
     "Base",
@@ -30,4 +31,5 @@ __all__ = [
     "ParseJob",
     "User",
     "Vacancy",
+    "WebsitePublication",
 ]

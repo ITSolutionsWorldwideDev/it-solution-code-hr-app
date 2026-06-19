@@ -1,5 +1,7 @@
+import { useDraggable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
-import { memo, useMemo, useState } from "react";
+import { memo, useState } from "react";
 import { CalendarDays, FileText, GripVertical, LoaderCircle } from "lucide-react";
 
 import type { AppRole } from "@/lib/session";
@@ -29,10 +31,6 @@ type PipelineCardProps = {
   actionLabel: string;
   role: AppRole;
   owner: string;
-  onCardDragStart: (candidateId: string, stage: PipelineCandidateRecord["stage"]) => void;
-  onCardDragEnd: () => void;
-  isSelected: boolean;
-  onCardSelect: (candidateId: string) => void;
   busy: boolean;
 };
 
@@ -72,38 +70,41 @@ function PipelineCardComponent({
   actionLabel,
   role,
   owner,
-  onCardDragStart,
-  onCardDragEnd,
-  isSelected,
-  onCardSelect,
   busy,
 }: PipelineCardProps) {
-  const defaultScheduleValue = useMemo(() => {
-    if (candidate.hrInterviewAt) {
-      return toLocalDateTimeInputValue(candidate.hrInterviewAt);
-    }
-
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(10, 30, 0, 0);
-    return toLocalDateTimeInputValue(tomorrow.toISOString());
-  }, [candidate.hrInterviewAt]);
-  const [scheduledAt, setScheduledAt] = useState(defaultScheduleValue);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const formattedInterviewAt = formatLocalInterviewDate(candidate.hrInterviewAt);
+  const formattedInterviewAt = formatLocalInterviewDate(candidate.interviewAt);
 
   const detailCopy =
     candidate.stage === "hr_invite_sent"
-      ? "Waiting for candidate approval before planning the HR interview."
+      ? "Invitation sent. The candidate can now choose an open interview slot from the scheduling email."
       : candidate.stage === "hr_interview_scheduled"
-        ? formattedInterviewAt ?? "Meeting scheduled"
+        ? `Interview scheduled for ${formattedInterviewAt}` 
         : candidate.stage === "hr_in_progress"
-          ? formattedInterviewAt ?? "Interview is now in progress"
+        ? formattedInterviewAt
+          ? `Interview scheduled for ${formattedInterviewAt}. Record the outcome here after the meeting.`
+          : "Waiting for the candidate to choose an interview slot."
           : candidate.stage === "hr_passed"
-            ? "Candidate was sent by HR to Technical. Plan the technical interview and send the invite when you are ready."
+            ? role === "HR"
+              ? "Candidate was approved by HR and is now waiting for the technical invitation."
+              : "Candidate was sent by HR to Technical. Send the technical scheduling invite when you are ready."
+            : candidate.stage === "technical_interview_scheduled"
+              ? `Interview scheduled for ${formattedInterviewAt}`
+            : candidate.stage === "technical_in_progress"
+              ? formattedInterviewAt
+                ? `Interview scheduled for ${formattedInterviewAt}. Record the outcome here after the meeting.`
+                : "Waiting for the candidate to choose a technical interview slot."
             : candidate.stage === "technical_passed"
-              ? "Candidate passed the technical stage. You can now send the management-stage email."
+              ? role === "Technical"
+                ? "Candidate was approved by Technical and is now waiting for the management invitation."
+                : "Candidate passed the technical stage. Send the management interview invite when you are ready."
+              : candidate.stage === "management_interview_scheduled"
+                ? `Interview scheduled for ${formattedInterviewAt}`
+              : candidate.stage === "management_in_progress"
+                ? formattedInterviewAt
+                  ? `Interview scheduled for ${formattedInterviewAt}. Record the outcome here after the meeting.`
+                  : "Waiting for the candidate to choose a management interview slot."
               : candidate.stage === "selected"
                 ? "Candidate was approved by management. You can now send the onboarding email."
             : candidate.applicationStage === "hr_rejected"
@@ -121,37 +122,33 @@ function PipelineCardComponent({
               : `Owned by ${owner}`;
 
   const accentClass =
-    candidate.stage === "hr_in_progress"
+    candidate.stage === "hr_in_progress" || candidate.stage === "technical_in_progress" || candidate.stage === "management_in_progress"
       ? "border-l-[#63e7ff]"
-      : candidate.stage === "hr_interview_scheduled"
+      : candidate.interviewAt
         ? "border-l-[#93efff]"
         : "border-l-white/16";
-  const canDragForward = !busy;
+  const canDragForward =
+    !busy &&
+    candidate.stage !== "hired" &&
+    candidate.stage !== "offer_declined";
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: candidate.id,
+    disabled: !canDragForward,
+    data: {
+      stage: candidate.stage,
+    },
+  });
+  const dragStyle = transform
+    ? {
+        transform: CSS.Translate.toString(transform),
+      }
+    : undefined;
 
   const renderActions = () => {
     if (candidate.stage === "hr_invite_sent") {
       return (
-        <div className="mt-5 space-y-2">
-          <input
-            type="datetime-local"
-            value={scheduledAt}
-            onChange={(event) => setScheduledAt(event.target.value)}
-            className="h-10 w-full rounded-[12px] border border-white/10 bg-[#10161c] px-3 text-sm text-white outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => onScheduleMeeting(candidate.id, scheduledAt)}
-            disabled={busy || !scheduledAt}
-            className="w-full rounded-[12px] bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#06141c] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="inline-flex items-center gap-2">
-              {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-              {busy ? "Saving..." : "Next Stage"}
-            </span>
-          </button>
-          <p className="text-[0.68rem] uppercase tracking-[0.14em] text-white/38">
-            This moves the candidate to schedule meeting with the selected date and time.
-          </p>
+        <div className="mt-5 rounded-[12px] border border-white/10 bg-[#10161c] px-4 py-3 text-sm text-white/72">
+          Waiting for the candidate to confirm an open slot from the scheduling link.
         </div>
       );
     }
@@ -193,7 +190,33 @@ function PipelineCardComponent({
           >
             <span className="inline-flex items-center gap-2">
               {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-              {busy ? "Saving..." : "Next Stage"}
+              {busy ? "Saving..." : actionLabel}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onReject(candidate.id)}
+            disabled={busy}
+            className="rounded-[12px] border border-white/10 bg-[#10161c] px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-white/82 transition hover:bg-[#182028]"
+          >
+            Reject
+          </button>
+        </div>
+      );
+    }
+
+    if (candidate.stage === "technical_in_progress") {
+      return (
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onApprove(candidate.id)}
+            disabled={!canMoveForward || busy}
+            className="rounded-[12px] bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#06141c] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="inline-flex items-center gap-2">
+              {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
+              {busy ? "Saving..." : actionLabel}
             </span>
           </button>
           <button
@@ -237,7 +260,7 @@ function PipelineCardComponent({
           >
             <span className="inline-flex items-center gap-2">
               {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-              {busy ? "Sending..." : "Send Management Stage Email"}
+              {busy ? "Sending..." : "Send Management Invite"}
             </span>
           </button>
         </div>
@@ -265,17 +288,6 @@ function PipelineCardComponent({
     if (candidate.applicationStage === "hr_rejected") {
       return (
         <div className="mt-5 space-y-3">
-          <button
-            type="button"
-            onClick={() => onApprove(candidate.id)}
-            disabled={busy}
-            className="w-full rounded-[12px] bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#06141c] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="inline-flex items-center gap-2">
-              {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-              {busy ? "Saving..." : "Approve Candidate"}
-            </span>
-          </button>
           {candidate.rejectionEmailSent ? (
             <div className="mb-3 rounded-[10px] border border-[#315545] bg-[#15271d] px-3 py-2 text-[0.72rem] font-medium uppercase tracking-[0.12em] text-[#cdeed8]">
               Rejection email sent
@@ -303,17 +315,6 @@ function PipelineCardComponent({
     if (candidate.applicationStage === "technical_rejected") {
       return (
         <div className="mt-5 space-y-3">
-          <button
-            type="button"
-            onClick={() => onApprove(candidate.id)}
-            disabled={busy}
-            className="w-full rounded-[12px] bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#06141c] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="inline-flex items-center gap-2">
-              {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-              {busy ? "Saving..." : "Approve Candidate"}
-            </span>
-          </button>
           {candidate.rejectionEmailSent ? (
             <div className="mb-3 rounded-[10px] border border-[#315545] bg-[#15271d] px-3 py-2 text-[0.72rem] font-medium uppercase tracking-[0.12em] text-[#cdeed8]">
               Rejection email sent
@@ -341,17 +342,6 @@ function PipelineCardComponent({
     if (candidate.applicationStage === "management_rejected") {
       return (
         <div className="mt-5 space-y-3">
-          <button
-            type="button"
-            onClick={() => onApprove(candidate.id)}
-            disabled={busy}
-            className="w-full rounded-[12px] bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#06141c] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="inline-flex items-center gap-2">
-              {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-              {busy ? "Saving..." : "Approve Candidate"}
-            </span>
-          </button>
           {candidate.rejectionEmailSent ? (
             <div className="mb-3 rounded-[10px] border border-[#315545] bg-[#15271d] px-3 py-2 text-[0.72rem] font-medium uppercase tracking-[0.12em] text-[#cdeed8]">
               Rejection email sent
@@ -386,7 +376,7 @@ function PipelineCardComponent({
         >
           <span className="inline-flex items-center gap-2">
             {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-            {busy ? "Saving..." : "Next Stage"}
+            {busy ? "Saving..." : actionLabel}
           </span>
         </button>
         <button
@@ -402,60 +392,42 @@ function PipelineCardComponent({
   };
 
   return (
-    <article
-      className={cn(
-        "rounded-[20px] border border-white/8 border-l-[3px] bg-[#1d211f] p-4 shadow-[0_16px_28px_rgba(0,0,0,0.28)]",
-        isSelected && "border-[#63e7ff]/28 ring-1 ring-[#63e7ff]/18",
-        accentClass,
-      )}
-    >
+      <article
+        ref={setNodeRef}
+        style={dragStyle}
+        className={cn(
+          "h-[486px] rounded-xl border border-white/10 bg-[rgba(30,41,59,0.4)] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.18)] backdrop-blur-sm transition",
+          isDragging && "opacity-50 shadow-[0_20px_44px_rgba(0,0,0,0.30)]",
+          !isDragging && "hover:border-[#8aebff]/30",
+        )}
+      >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <button
             type="button"
-            draggable={canDragForward && !busy}
-            onClick={() => onCardSelect(candidate.id)}
-            onDragStart={(event) => {
-              if (!canDragForward || busy) {
-                event.preventDefault();
-                return;
-              }
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", candidate.id);
-              onCardDragStart(candidate.id, candidate.stage);
-            }}
-            onDragEnd={onCardDragEnd}
+            {...listeners}
+            {...attributes}
             className={cn(
-              "mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-[10px] border border-white/8 bg-[#131716] text-white/48",
-              isSelected && "border-[#63e7ff]/25 text-white",
+              "mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#273647] text-[#859397]",
               canDragForward && !busy && "cursor-grab text-white/75 active:cursor-grabbing",
             )}
-            aria-label="Select or drag candidate to another stage"
-            title="Click to select this card for moving, or drag it to another stage"
+            aria-label="Drag candidate to another stage"
+            title="Drag candidate to another stage"
           >
             <GripVertical className="h-4 w-4" />
           </button>
           <div>
-            <h3 className="text-[1.08rem] font-semibold text-white">{candidate.name}</h3>
-            <p className="mt-1 text-sm text-white/70">{candidate.role}</p>
+            <h3 className="text-[1.08rem] font-bold text-white">{candidate.name}</h3>
+            <p className="mt-1 text-[12px] text-[#bbc9cd]">{candidate.role}</p>
           </div>
         </div>
-        <div className="rounded-[10px] border border-white/10 bg-[#252a28] px-2.5 py-1 text-xs font-semibold text-white/85">
+        <div className="rounded-md border border-[#22d3ee]/20 bg-[#22d3ee]/10 px-2.5 py-1 text-[10px] font-bold text-[#8aebff]">
           {candidate.matchScore}% match
         </div>
       </div>
 
-      {canDragForward ? (
-        <p className="mt-3 text-[0.68rem] uppercase tracking-[0.18em] text-white/38">
-          Click the grip to select this card for moving, or drag it to another stage.
-        </p>
-      ) : null}
-
-      <div className="mt-5 flex min-h-8 items-center gap-2 text-sm text-white/72">
-        {candidate.stage === "hr_interview_scheduled" || candidate.stage === "hr_in_progress" ? (
-          <CalendarDays className="h-4 w-4" />
-        ) : null}
-        <span>{detailCopy}</span>
+      <div className="mt-5">
+        <p className="text-[14px] leading-8 text-[#d4e4fa]/80">{detailCopy}</p>
       </div>
 
       {renderActions()}
@@ -497,36 +469,27 @@ function PipelineCardComponent({
             type="button"
             onClick={() => setShowDeleteConfirm(true)}
             disabled={busy}
-            className="w-full rounded-[12px] border border-[#5a2934] bg-transparent px-3 py-2 text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#ffb9c7] transition hover:bg-[#2a171c] disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-lg border border-[#ffb4ab]/30 bg-transparent px-3 py-2 text-[14px] font-semibold uppercase tracking-tight text-[#ffb4ab] transition hover:bg-[#93000a]/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Delete Candidate
           </button>
         )}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
         <Link
           href={`/pipeline/${candidate.id}`}
-          className="inline-flex items-center gap-2 text-sm font-medium text-white/72 transition hover:text-white"
+          className="inline-flex items-center gap-2 text-[14px] font-medium text-[#8aebff] transition hover:underline"
         >
           <FileText className="h-4 w-4" />
           View Details
         </Link>
-        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-white/40">
+        <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.16em] text-white/45">
           <span>{role === "Manager" ? "Management" : role}</span>
         </div>
       </div>
 
-      <div className="mt-4 h-[3px] rounded-full bg-white/8">
-        <div
-          className={cn(
-            "h-full rounded-full",
-            candidate.stage === "hr_in_progress" ? "bg-[#63e7ff] w-2/3" : "bg-white/18 w-1/3",
-          )}
-        />
-      </div>
-
-      <div className="mt-3 flex items-center justify-between text-xs text-white/45">
+      <div className="mt-3 flex items-center justify-between text-[10px] text-white/40">
         <span>Vacancy {candidate.vacancyId}</span>
         <span>{owner}</span>
       </div>

@@ -1,24 +1,25 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Manrope } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 
+import { AppScaleProvider } from "@/components/providers/app-scale-provider";
 import { RoleProvider } from "@/components/providers/role-provider";
 
 import "./globals.css";
 
-const manrope = Manrope({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-manrope",
+  variable: "--font-inter",
 });
 
-const ibmPlexMono = IBM_Plex_Mono({
+const jetBrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
-  variable: "--font-ibm-plex-mono",
+  variable: "--font-jetbrains-mono",
 });
 
 export const metadata: Metadata = {
-  title: "RecruitFlow AI",
-  description: "Modern recruitment dashboard for AI-assisted hiring operations.",
+  title: "Talent Genie",
+  description: "AI-powered recruitment workspace for modern hiring operations.",
 };
 
 export default function RootLayout({
@@ -28,8 +29,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${manrope.variable} ${ibmPlexMono.variable}`}>
-        <RoleProvider>{children}</RoleProvider>
+      <body className={`${inter.variable} ${jetBrainsMono.variable}`}>
+        <RoleProvider>
+          <AppScaleProvider>{children}</AppScaleProvider>
+        </RoleProvider>
       </body>
     </html>
   );

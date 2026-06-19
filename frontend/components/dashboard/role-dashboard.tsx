@@ -27,6 +27,14 @@ export function RoleDashboard() {
   const isHr = role === "HR";
   const isTechnical = role === "Technical";
   const data = getDashboardData(role);
+  const hrDashboardShell = {
+    title: "Dashboard",
+    description: "Track intake, vacancy readiness, shortlist quality, and the next HR decisions across the recruitment flow.",
+    kpis: [],
+    recentActivity: [],
+    quickActions: data.quickActions,
+    vacancyHighlights: data.vacancyHighlights,
+  };
   const roleFocus =
     role === "Technical"
       ? "Technical users focus on interview execution, feedback quality, scoring, and approval into management review."
@@ -120,42 +128,20 @@ export function RoleDashboard() {
   }, [hrApplications, hrCandidates, hrVacancies, isTechnical]);
 
   const displayData = useMemo(() => {
-    if (!isHr || !hrSummary) {
+    if (!isHr) {
       return data;
     }
 
-    const kpis = data.kpis.map((item) => {
-      const liveKpi = hrSummary.kpis.find((kpi) => kpi.label === item.label);
-      if (!liveKpi) {
-        return item;
-      }
-
-      return {
-        ...item,
-        value: liveKpi.value,
-        delta: liveKpi.delta,
-      };
-    });
+    if (!hrSummary) {
+      return hrDashboardShell;
+    }
 
     return {
-      ...data,
+      ...hrDashboardShell,
       title: hrSummary.title,
       description: hrSummary.description,
-      kpis,
-      recentActivity:
-        hrActivity && hrActivity.length > 0
-          ? hrActivity.map((item) => ({
-              id: item.id,
-              title: item.title,
-              status: item.status,
-              timestamp: item.timestamp,
-              candidateName: item.candidate_name,
-              candidateRole: item.candidate_role,
-              candidateInitials: item.candidate_initials,
-            }))
-          : data.recentActivity,
     };
-  }, [data, hrActivity, hrSummary, isHr]);
+  }, [data, hrDashboardShell, hrSummary, isHr]);
 
   return (
     <DashboardShell>

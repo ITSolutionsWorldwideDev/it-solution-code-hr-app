@@ -1,4 +1,5 @@
 from typing import Optional
+from typing import Literal
 
 from pydantic import Field
 
@@ -64,6 +65,46 @@ class CandidateUpdate(BaseSchema):
 
 class CandidateRead(CandidateBase):
     id: int
+
+
+class CandidateDatabaseVacancyOptionRead(BaseSchema):
+    id: int
+    title: str
+    status: str
+
+
+class CandidateDatabaseRecordRead(BaseSchema):
+    id: int
+    initials: str
+    name: str
+    email: str
+    phone: str | None = None
+    raw_added_at: str | None = None
+    added_at: str
+    vacancy_ids: list[int] = Field(default_factory=list)
+    role_title: str
+    vacancy_title: str
+    vacancy_label: str
+    potential_role: str | None = None
+    experience_years: int | None = None
+    applied_match_score: float | None = None
+    overall_talent_score: float | None = None
+    stage: str
+    parse_status: str | None = None
+    search_blob: str
+    ai_summary: str
+    skills: list[str] = Field(default_factory=list)
+    experience: str
+    education: str
+    parsed_data: dict = Field(default_factory=dict)
+    readiness_status: Literal["strong_match", "potential_fit", "needs_review", "low_fit"]
+
+
+class CandidateDatabaseResponseRead(BaseSchema):
+    records: list[CandidateDatabaseRecordRead] = Field(default_factory=list)
+    vacancy_options: list[CandidateDatabaseVacancyOptionRead] = Field(default_factory=list)
+    open_vacancy_count: int
+    total_candidate_count: int
 
 
 class CandidateUploadUrlRequest(BaseSchema):
@@ -139,4 +180,29 @@ class CandidateCVQueueBatchResponse(BaseSchema):
     jobs: list[CandidateCVQueueJobRead] = Field(
         default_factory=list,
         description="Queued parse jobs.",
+    )
+
+
+class CandidateManualImportItem(BaseSchema):
+    filename: str = Field(description="Original uploaded file name.")
+    parse_status: str = Field(description="Final parse status for this file.")
+    match_status: str = Field(description="Final match status for this file.")
+    candidate_id: int | None = Field(default=None, description="Created or updated candidate id.")
+    candidate_name: str | None = Field(default=None, description="Candidate name for immediate UI rendering.")
+    candidate_email: str | None = Field(default=None, description="Candidate email for immediate UI rendering.")
+    ai_summary: str | None = Field(default=None, description="Parsed AI summary for immediate UI rendering.")
+    skills: list[str] = Field(default_factory=list, description="Parsed skills for immediate UI rendering.")
+    experience: str | None = Field(default=None, description="Parsed experience for immediate UI rendering.")
+    education: str | None = Field(default=None, description="Parsed education for immediate UI rendering.")
+    parsed_data: dict = Field(default_factory=dict, description="Stored parsed data for immediate UI rendering.")
+    matched_job_id: int | None = Field(default=None, description="Matched vacancy id when applicable.")
+    score: float | None = Field(default=None, description="Stored score when a clear vacancy match exists.")
+    error_message: str | None = Field(default=None, description="Failure or review message for this file.")
+
+
+class CandidateManualImportResponse(BaseSchema):
+    total_files: int = Field(description="Number of uploaded files received.")
+    results: list[CandidateManualImportItem] = Field(
+        default_factory=list,
+        description="Per-file import results.",
     )

@@ -112,7 +112,7 @@ const hrDashboard: DashboardData = {
       {
         title: "View Candidates",
         description: "Inspect parsed resumes, rankings, and shortlist decisions.",
-        buttonLabel: "Open Candidates",
+        buttonLabel: "Open Candidate Database",
         icon: Users,
         href: "/candidates",
       },

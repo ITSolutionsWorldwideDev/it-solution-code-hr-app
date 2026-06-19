@@ -9,13 +9,9 @@ import type {
 
 export const pipelineStageOrder: PipelineStage[] = [
   "hr_invite_sent",
-  "hr_interview_scheduled",
   "hr_in_progress",
-  "hr_passed",
-  "technical_interview_scheduled",
   "technical_in_progress",
   "technical_passed",
-  "management_interview_scheduled",
   "management_in_progress",
   "selected",
   "offer_sent",
@@ -30,19 +26,19 @@ export const pipelineStageLabels: Record<PipelineStage, string> = {
   ranked: "Ranked",
   shortlisted: "Shortlisted",
   hr_review: "HR Review",
-  hr_invite_sent: "Waiting For Candidate Approval",
-  hr_interview_scheduled: "Schedule Meeting",
-  hr_in_progress: "HR In Progress",
+  hr_invite_sent: "Waiting For Approval",
+  hr_interview_scheduled: "HR Interview",
+  hr_in_progress: "HR Interview",
   hr_approved: "HR Approved",
-  hr_passed: "HR Passed",
+  hr_passed: "Technical Pipeline",
   technical_review: "Technical Review",
-  technical_interview_scheduled: "Technical Interview Scheduled",
-  technical_in_progress: "Technical In Progress",
+  technical_interview_scheduled: "Technical Interview",
+  technical_in_progress: "Technical Interview",
   technical_approved: "Technical Approved",
   technical_passed: "Technical Passed",
   management_review: "Management Review",
-  management_interview_scheduled: "Management Interview Scheduled",
-  management_in_progress: "Management In Progress",
+  management_interview_scheduled: "Management Interview",
+  management_in_progress: "Management Interview",
   selected: "Selected",
   offer_sent: "Offer Sent",
   offer_accepted: "Offer Accepted",
@@ -66,19 +62,15 @@ export function mapApplicationStageToPipelineStage(application: ApplicationApiRe
     case "hr_invite_sent":
       return "hr_invite_sent";
     case "hr_interview_scheduled":
-      return "hr_interview_scheduled";
     case "hr_in_progress":
       return "hr_in_progress";
     case "hr_passed":
-      return "hr_passed";
     case "technical_interview_scheduled":
-      return "technical_interview_scheduled";
     case "technical_in_progress":
       return "technical_in_progress";
     case "technical_passed":
       return "technical_passed";
     case "management_interview_scheduled":
-      return "management_interview_scheduled";
     case "management_in_progress":
       return "management_in_progress";
     case "selected":
@@ -122,7 +114,25 @@ export function mapApplicationToPipelineCandidate(
     matchScore: application.ranking_score ?? application.match_score ?? candidate?.match_score ?? 0,
     stage,
     applicationStage: application.stage,
-    hrInterviewAt: application.hr_interview_at,
+    interviewAt:
+      application.hr_interview_at ??
+      application.technical_interview_at ??
+      application.management_interview_at ??
+      null,
+    interviewStageType:
+      application.stage === "hr_invite_sent" ||
+      application.stage === "hr_interview_scheduled" ||
+      application.stage === "hr_in_progress"
+        ? "hr"
+        : application.stage === "hr_passed" ||
+            application.stage === "technical_interview_scheduled" ||
+            application.stage === "technical_in_progress"
+          ? "technical"
+          : application.stage === "technical_passed" ||
+              application.stage === "management_interview_scheduled" ||
+              application.stage === "management_in_progress"
+            ? "management"
+            : null,
     aiSummary:
       candidate?.ai_summary ??
       application.ai_summary ??
@@ -159,6 +169,13 @@ export function mapApplicationToPipelineCandidate(
         asString(asRecord(parsedData.intake_metadata).notice_period) ??
         asString(parsedData.notice_period) ??
         undefined,
+      executiveSummary:
+        candidate?.ai_summary ??
+        asString(parsedData.executive_summary) ??
+        undefined,
+      pros: asStringArray(parsedData.pros),
+      cons: asStringArray(parsedData.cons),
+      experienceYears: asNumber(parsedData.experience_years) ?? asNumber(parsedData.years_experience) ?? undefined,
       fitExplanation: asString(parsedData.fit_explanation) ?? undefined,
     },
   };
@@ -168,15 +185,23 @@ function resolveParsedData(
   application: ApplicationApiRecord,
   candidate: CandidateApiRecord | null,
 ): Record<string, unknown> {
-  if (application.parsed_data && typeof application.parsed_data === "object") {
-    return application.parsed_data;
+  const applicationParsedData =
+    application.parsed_data && typeof application.parsed_data === "object"
+      ? application.parsed_data
+      : {};
+  const candidateParsedData =
+    candidate?.parsed_data && typeof candidate.parsed_data === "object"
+      ? candidate.parsed_data
+      : {};
+
+  if (Object.keys(candidateParsedData).length > 0) {
+    return {
+      ...applicationParsedData,
+      ...candidateParsedData,
+    };
   }
 
-  if (candidate?.parsed_data && typeof candidate.parsed_data === "object") {
-    return candidate.parsed_data;
-  }
-
-  return {};
+  return applicationParsedData;
 }
 
 function asString(value: unknown): string | null {
@@ -191,6 +216,19 @@ function asStringArray(value: unknown): string[] {
   return value
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter(Boolean);
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  return null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

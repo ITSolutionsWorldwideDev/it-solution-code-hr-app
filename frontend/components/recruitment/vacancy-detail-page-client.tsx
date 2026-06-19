@@ -6,9 +6,7 @@ import { notFound } from "next/navigation";
 import { apiRequest } from "@/lib/api/client";
 import type {
   DepartmentOption,
-  HiddenPotentialRecord,
   VacancyApiRecord,
-  VacancyDiscoverySummaryApiRecord,
   VacancyRecord,
 } from "@/lib/recruitment-types";
 import { VacancyDetail } from "@/components/recruitment/vacancy-detail";
@@ -56,31 +54,8 @@ function mapVacancyToRecord(
 export function VacancyDetailPageClient({ id }: { id: string }) {
   const [vacancy, setVacancy] = useState<VacancyApiRecord | null>(null);
   const [departments, setDepartments] = useState<DepartmentOption[]>(fallbackDepartments);
-  const [hiddenPotentials, setHiddenPotentials] = useState<HiddenPotentialRecord[]>([]);
-  const [discoveryLoading, setDiscoveryLoading] = useState(true);
-  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const loadDiscovery = async () => {
-    setDiscoveryLoading(true);
-    try {
-      const discovery = await apiRequest<VacancyDiscoverySummaryApiRecord>({
-        path: `/vacancies/${id}/trigger-discovery`,
-        method: "POST",
-      });
-      setHiddenPotentials(
-        discovery.new_discoveries.length > 0 ? discovery.new_discoveries : discovery.top_candidates
-      );
-      setDiscoveryError(null);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load hidden potentials.";
-      setDiscoveryError(message);
-      setHiddenPotentials([]);
-    } finally {
-      setDiscoveryLoading(false);
-    }
-  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -93,7 +68,6 @@ export function VacancyDetailPageClient({ id }: { id: string }) {
         setVacancy(vacancyResponse);
         setDepartments(departmentResponse.length > 0 ? departmentResponse : fallbackDepartments);
         setErrorMessage(null);
-        void loadDiscovery();
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to load vacancy.";
         if (message.includes("404")) {
@@ -132,13 +106,5 @@ export function VacancyDetailPageClient({ id }: { id: string }) {
     );
   }
 
-  return (
-    <VacancyDetail
-      vacancy={vacancyRecord}
-      hiddenPotentials={hiddenPotentials}
-      discoveryLoading={discoveryLoading}
-      discoveryError={discoveryError}
-      onRefreshHiddenPotentials={() => void loadDiscovery()}
-    />
-  );
+  return <VacancyDetail vacancy={vacancyRecord} />;
 }

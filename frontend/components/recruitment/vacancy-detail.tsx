@@ -1,29 +1,25 @@
-import { BriefcaseBusiness, CircleDollarSign, Clock3, MapPin, RotateCw, Sparkles, UserRound } from "lucide-react";
+import {
+  BadgeCheck,
+  BriefcaseBusiness,
+  CircleDollarSign,
+  Clock3,
+  MapPin,
+  UserRound,
+} from "lucide-react";
 
 import { LinkedInPreviewCard } from "@/components/recruitment/linkedin-preview-card";
-import { StatusPill } from "@/components/ui/status-pill";
-import type { HiddenPotentialRecord, VacancyRecord } from "@/lib/recruitment-types";
+import { WebsitePublishCard } from "@/components/recruitment/website-publish-card";
+import type { VacancyRecord } from "@/lib/recruitment-types";
 
 type VacancyDetailProps = {
   vacancy: VacancyRecord;
-  hiddenPotentials: HiddenPotentialRecord[];
-  discoveryLoading: boolean;
-  discoveryError: string | null;
-  onRefreshHiddenPotentials: () => void;
 };
 
 type VacancyDetailContent = {
-  shortSummary: string;
   overview: Array<{ label: string; value: string; icon: React.ReactNode }>;
   aboutRole: string[];
   responsibilities: string[];
 };
-
-const toneMap = {
-  open: "green",
-  on_hold: "blue",
-  closed: "slate",
-} as const;
 
 function formatUploadedDate(value: string) {
   const date = new Date(value);
@@ -50,180 +46,128 @@ function normalizeWorkspaceDescription(description: string) {
   return description;
 }
 
-export function VacancyDetail({
-  vacancy,
-  hiddenPotentials,
-  discoveryLoading,
-  discoveryError,
-  onRefreshHiddenPotentials,
-}: VacancyDetailProps) {
+export function VacancyDetail({ vacancy }: VacancyDetailProps) {
   const content = buildVacancyDetailContent(vacancy);
+  const normalizedDescription = normalizeDescription(normalizeWorkspaceDescription(vacancy.description));
+  const compensation =
+    extractOverviewValue(normalizedDescription, "Salary Indication") ??
+    extractOverviewValue(normalizedDescription, "Compensation") ??
+    "Not specified";
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.45fr_0.75fr]">
-      <section className="space-y-6">
-        <div className="rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.025)_0%,rgba(255,255,255,0.015)_100%)] p-8 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-[3rem] font-semibold tracking-[-0.05em] text-white">{vacancy.title}</h1>
-            <StatusPill status={vacancy.status} tone={toneMap[vacancy.status]} />
+    <div className="relative mx-auto max-w-[1440px]">
+      <div className="pointer-events-none fixed right-[-100px] top-[20%] h-[500px] w-[500px] rounded-full bg-[#62f9ee]/[0.05] blur-[120px]" />
+      <div className="pointer-events-none fixed bottom-[-100px] left-[17rem] h-[400px] w-[400px] rounded-full bg-[#62f9ee]/[0.05] blur-[120px]" />
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="space-y-6">
+          <div className="relative overflow-hidden rounded-2xl border border-[#3c4948]/40 bg-[#17202b] p-9 shadow-[0_16px_30px_rgba(0,0,0,0.18)]">
+            <div className="absolute left-0 top-0 h-full w-1.5 bg-[#3cdcd1]" />
+
+            <div className="relative z-10 flex flex-col gap-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex flex-col gap-2">
+                  <nav className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.24em] text-[#859491]">
+                    <span>Vacancies</span>
+                    <span className="text-[#5b6773]">›</span>
+                    <span className="text-[#dae3f2]">Active Postings</span>
+                  </nav>
+                  <h1 className="text-[32px] font-bold leading-[1.15] tracking-[-0.02em] text-white">
+                    {vacancy.title}
+                  </h1>
+                </div>
+
+                <div className="flex flex-col items-start gap-3 lg:items-end">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-[#3cdcd1]/30 bg-[#62f9ee]/10 px-4 py-2 text-[12px] font-bold text-[#62f9ee]">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#3cdcd1]" />
+                    Open
+                  </span>
+                  <p className="font-mono text-[12px] text-[#859491]">Uploaded on {formatUploadedDate(vacancy.createdAt)}</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-x-10 gap-y-4 border-t border-[#3c4948]/30 pt-6 text-[14px] text-[#dae3f2]">
+                <div className="flex items-center gap-2.5">
+                  <BriefcaseBusiness className="h-4 w-4 text-[#3cdcd1]" />
+                  <span>{vacancy.department}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <MapPin className="h-4 w-4 text-[#3cdcd1]" />
+                  <span>{vacancy.location}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Clock3 className="h-4 w-4 text-[#3cdcd1]" />
+                  <span>{vacancy.employmentType}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <CircleDollarSign className="h-4 w-4 text-[#3cdcd1]" />
+                  <span>{compensation}</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-x-7 gap-y-3 text-[1.02rem] text-[#b8c5d2]">
-            <div className="flex items-center gap-2">
-              <BriefcaseBusiness className="h-4 w-4 text-[#8ea4b7]" />
-              <span>{vacancy.department}</span>
+          <div className="rounded-2xl border border-[#3c4948]/40 bg-[#17202b] p-7 shadow-[0_16px_30px_rgba(0,0,0,0.14)]">
+            <div className="mb-7 flex items-center gap-3">
+              <div className="h-7 w-1.5 rounded-full bg-[#3cdcd1]" />
+              <h2 className="text-[18px] font-semibold text-white">Overview</h2>
             </div>
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-[#8ea4b7]" />
-              <span>{vacancy.location}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock3 className="h-4 w-4 text-[#8ea4b7]" />
-              <span>{vacancy.employmentType}</span>
-            </div>
-          </div>
 
-          <p className="mt-3 text-[1rem] text-[#8fa1b2]">| Uploaded on {formatUploadedDate(vacancy.createdAt)}</p>
-        </div>
-
-        <div className="rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03)_0%,rgba(255,255,255,0.015)_100%)] p-8 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-          <SectionHeading title="Short Summary" />
-          <p className="mt-5 max-w-4xl text-[1.15rem] leading-10 text-[#d6dee6]">{content.shortSummary}</p>
-
-          <div className="mt-10">
-            <SectionHeading title="Overview" />
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {content.overview.map((item) => (
-                <div key={item.label} className="border-b border-white/10 pb-4">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 text-[#3f86ff]">{item.icon}</div>
-                    <div className="min-w-0">
-                      <p className="text-[0.76rem] font-semibold uppercase tracking-[0.18em] text-[#7d8da0]">
-                        {item.label}
-                      </p>
-                      <p className="mt-2 text-[1.02rem] leading-7 text-white">{item.value}</p>
-                    </div>
+            <div className="grid gap-x-10 gap-y-10 md:grid-cols-2">
+              {content.overview.slice(0, 4).map((item) => (
+                <div key={item.label} className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2 text-[#859491]">
+                    <span className="text-[#859491]">{item.icon}</span>
+                    <span className="text-[12px] font-bold uppercase tracking-[0.16em]">{item.label}</span>
                   </div>
+                  <p className="text-[16px] font-semibold text-[#dae3f2]">{item.value}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="mt-12">
-            <h3 className="text-[1.8rem] font-semibold text-[#3f86ff]">About the Role</h3>
-            <div className="mt-5 space-y-4">
+          <div className="rounded-2xl border border-[#3c4948]/40 bg-[#17202b] p-7 shadow-[0_16px_30px_rgba(0,0,0,0.14)]">
+            <h2 className="text-[18px] font-semibold text-[#3cdcd1]">About the Role</h2>
+            <div className="mt-5 space-y-5 text-[16px] leading-10 text-[#bacac7]">
               {content.aboutRole.map((paragraph, index) => (
-                <p key={`about-role-${index}`} className="max-w-4xl text-[1.1rem] leading-10 text-[#d6dee6]">
-                  {paragraph}
-                </p>
+                <p key={`about-role-${index}`}>{paragraph}</p>
               ))}
             </div>
           </div>
 
-          <div className="mt-12">
-            <h3 className="text-[1.8rem] font-semibold text-[#3f86ff]">Key Responsibilities</h3>
-            <ul className="mt-5 space-y-4">
-              {content.responsibilities.map((item, index) => (
-                <li key={`${item}-${index}`} className="flex gap-4 text-[1.1rem] leading-10 text-[#d6dee6]">
-                  <span className="mt-4 h-2 w-2 shrink-0 rounded-full bg-[#3f86ff]" />
-                  <span>{item}</span>
-                </li>
-              ))}
+          <div className="rounded-2xl border border-[#3c4948]/40 bg-[#17202b] p-7 shadow-[0_16px_30px_rgba(0,0,0,0.14)]">
+            <h2 className="text-[18px] font-semibold text-[#3cdcd1]">Key Responsibilities</h2>
+            <ul className="mt-5 space-y-5">
+              {content.responsibilities.map((item, index) => {
+                const [title, ...rest] = item.split(":");
+                const description = rest.join(":").trim();
+                return (
+                  <li key={`${item}-${index}`} className="group flex items-start gap-4">
+                    <span className="mt-[9px] h-2 w-2 shrink-0 rounded-full bg-[#3cdcd1] transition-transform group-hover:scale-125" />
+                    <div className="flex flex-col">
+                      <span className="text-[15px] font-semibold text-[#dae3f2]">
+                        {description ? `${title.trim()}: ${description.split(".")[0].trim()}` : item}
+                      </span>
+                      {description ? (
+                        <span className="text-[12px] text-[#859491]">
+                          {description.includes(".")
+                            ? description.substring(description.indexOf(".") + 1).trim() || "Execution aligned with role expectations."
+                            : "Execution aligned with role expectations."}
+                        </span>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <aside className="space-y-6">
-        <div className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03)_0%,rgba(255,255,255,0.015)_100%)] p-7 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-          <h2 className="text-[1.65rem] font-semibold uppercase tracking-[0.04em] text-white">Vacancy Snapshot</h2>
-          <dl className="mt-8 space-y-8 text-sm text-[#eef5fb]">
-            <div>
-              <dt className="text-[0.82rem] font-semibold uppercase tracking-[0.18em] text-[#8ea1b4]">Status</dt>
-              <dd className="mt-3 flex items-center gap-3 text-[1.6rem] font-medium text-white">
-                <span className="h-3 w-3 rounded-full bg-[#1ad05e]" />
-                <span className="capitalize">{vacancy.status.replace("_", " ")}</span>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[0.82rem] font-semibold uppercase tracking-[0.18em] text-[#8ea1b4]">Department</dt>
-              <dd className="mt-3 text-[1.6rem] font-medium text-white">{vacancy.department}</dd>
-            </div>
-            <div>
-              <dt className="text-[0.82rem] font-semibold uppercase tracking-[0.18em] text-[#8ea1b4]">Uploaded</dt>
-              <dd className="mt-3 text-[1.6rem] font-medium text-white">{formatUploadedDate(vacancy.createdAt)}</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03)_0%,rgba(255,255,255,0.015)_100%)] p-7 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="flex items-center gap-3 text-[1.65rem] font-semibold uppercase tracking-[0.04em] text-white">
-                <Sparkles className="h-5 w-5 text-[#79a8ff]" />
-                Hidden Potentials
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-[#8ea1b4]">
-                Existing database candidates re-matched against this vacancy.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onRefreshHiddenPotentials}
-              disabled={discoveryLoading}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-[#d8e1ea] transition hover:border-[#79a8ff]/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <RotateCw className={`h-4 w-4 ${discoveryLoading ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-          </div>
-
-          {discoveryLoading ? (
-            <div className="mt-6 rounded-[24px] border border-white/10 bg-black/20 px-5 py-4 text-sm text-[#9db0c1]">
-              Recomputing hidden potentials for this vacancy...
-            </div>
-          ) : discoveryError ? (
-            <div className="mt-6 rounded-[24px] border border-[#b85b68]/35 bg-[rgba(184,91,104,0.12)] px-5 py-4 text-sm text-[#f0b6bf]">
-              {discoveryError}
-            </div>
-          ) : hiddenPotentials.length === 0 ? (
-            <div className="mt-6 rounded-[24px] border border-white/10 bg-black/20 px-5 py-4 text-sm text-[#9db0c1]">
-              No strong hidden potentials were found for this vacancy yet.
-            </div>
-          ) : (
-            <div className="mt-6 space-y-4">
-              {hiddenPotentials.map((candidate, index) => (
-                <div
-                  key={`${candidate.candidate_name}-${index}`}
-                  className="rounded-[24px] border border-white/10 bg-[rgba(255,255,255,0.02)] px-5 py-5"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">{candidate.candidate_name}</h3>
-                      <p className="mt-1 text-sm text-[#8ea1b4]">Original role: {candidate.original_role}</p>
-                    </div>
-                    <div className="rounded-full border border-[#79a8ff]/30 bg-[#79a8ff]/10 px-4 py-1.5 text-sm font-semibold text-[#b8ceff]">
-                      {candidate.potential_score}%
-                    </div>
-                  </div>
-                  <p className="mt-4 text-sm leading-7 text-[#d6dee6]">{candidate.reason}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <LinkedInPreviewCard vacancyId={vacancy.id} vacancy={vacancy} />
-      </aside>
-    </div>
-  );
-}
-
-function SectionHeading({ title }: { title: string }) {
-  return (
-    <div className="flex items-center gap-4">
-      <span className="h-8 w-2 rounded-full bg-[#3f86ff]" />
-      <h2 className="text-[2rem] font-semibold text-white">{title}</h2>
+        <aside className="space-y-6">
+          <WebsitePublishCard vacancyId={vacancy.id} vacancy={vacancy} />
+          <LinkedInPreviewCard vacancyId={vacancy.id} vacancy={vacancy} />
+        </aside>
+      </div>
     </div>
   );
 }
@@ -231,54 +175,55 @@ function SectionHeading({ title }: { title: string }) {
 function buildVacancyDetailContent(vacancy: VacancyRecord): VacancyDetailContent {
   const normalizedDescription = normalizeDescription(normalizeWorkspaceDescription(vacancy.description));
   const aboutRole =
-    extractParagraphSection(normalizedDescription, ["About the Role"], [
+    extractParagraphSection(normalizedDescription, ["About the Role", "Position Overview"], [
       "Key Responsibilities",
-      "What You’ll Bring",
+      "What Youâ€™ll Bring",
       "What You'll Bring",
       "Nice to Have",
       "Working Arrangements and Benefits",
+      "What We Offer",
     ]) ?? ["No detailed role overview has been added yet."];
 
   const responsibilities =
     extractBulletSection(normalizedDescription, ["Key Responsibilities"], [
-      "What You’ll Bring",
+      "What Youâ€™ll Bring",
       "What You'll Bring",
       "Nice to Have",
       "Working Arrangements and Benefits",
+      "What We Offer",
     ]) ?? vacancy.requirements;
 
   return {
-    shortSummary: vacancy.summary,
     overview: [
       {
         label: "Job Title",
         value: vacancy.title,
-        icon: <BriefcaseBusiness className="h-4 w-4" />,
+        icon: <BadgeCheck className="h-3.5 w-3.5" />,
       },
       {
         label: "Department",
         value: vacancy.department,
-        icon: <UserRound className="h-4 w-4" />,
+        icon: <BriefcaseBusiness className="h-3.5 w-3.5" />,
       },
       {
         label: "Employment Type",
         value: vacancy.employmentType,
-        icon: <Clock3 className="h-4 w-4" />,
+        icon: <Clock3 className="h-3.5 w-3.5" />,
       },
       {
         label: "Location",
         value: vacancy.location,
-        icon: <MapPin className="h-4 w-4" />,
+        icon: <MapPin className="h-3.5 w-3.5" />,
       },
       {
         label: "Compensation",
-        value: extractOverviewValue(normalizedDescription, "Compensation") ?? "Not specified",
-        icon: <CircleDollarSign className="h-4 w-4" />,
+        value: extractOverviewValue(normalizedDescription, "Salary Indication") ?? extractOverviewValue(normalizedDescription, "Compensation") ?? "Not specified",
+        icon: <CircleDollarSign className="h-3.5 w-3.5" />,
       },
       {
         label: "Reports To",
         value: extractOverviewValue(normalizedDescription, "Reports To") ?? "Not specified",
-        icon: <UserRound className="h-4 w-4" />,
+        icon: <UserRound className="h-3.5 w-3.5" />,
       },
     ],
     aboutRole,
@@ -290,7 +235,7 @@ function normalizeDescription(description: string) {
   return description
     .replace(/\r\n/g, "\n")
     .replace(
-      /(Short Summary|Overview|About the Role|Key Responsibilities|What You’ll Bring|What You'll Bring|Nice to Have|Working Arrangements and Benefits|How to Apply)/gi,
+      /(Short Summary|Overview|About the Role|Position Overview|Key Responsibilities|What Youâ€™ll Bring|What You'll Bring|Nice to Have|Working Arrangements and Benefits|What We Offer|How to Apply)/gi,
       "\n$1\n",
     )
     .replace(/\n{3,}/g, "\n\n")
@@ -311,7 +256,9 @@ function extractParagraphSection(
     .split(/\n+/)
     .map((item) => item.trim())
     .filter(Boolean)
-    .filter((item) => !item.includes(":"));
+    .filter((item) => !item.startsWith("-"))
+    .filter((item) => !item.startsWith("•"))
+    .filter((item) => !/^[A-Za-z ]+:\s.+/.test(item));
 
   return paragraphs.length > 0 ? paragraphs : null;
 }
@@ -330,7 +277,7 @@ function extractBulletSection(
     .split(/\n+/)
     .map((item) => item.trim())
     .filter(Boolean)
-    .map((item) => item.replace(/^[\-•]\s*/, "").trim())
+    .map((item) => item.replace(/^[\-â€¢•]\s*/, "").trim())
     .filter(Boolean);
 
   return items.length > 0 ? items : null;

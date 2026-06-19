@@ -1,18 +1,49 @@
+"use client";
+
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
+import { useAppScale } from "@/components/providers/app-scale-provider";
+import { useRole } from "@/components/providers/role-provider";
 
 type DashboardShellProps = {
   children: React.ReactNode;
+  showTopBar?: boolean;
 };
 
-export function DashboardShell({ children }: DashboardShellProps) {
+export function DashboardShell({ children, showTopBar = true }: DashboardShellProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { scale } = useAppScale();
+  const { isAuthenticated, isHydrated } = useRole();
+
+  useEffect(() => {
+    if (isHydrated && !isAuthenticated) {
+      router.replace(`/login?next=${encodeURIComponent(pathname || "/dashboard")}`);
+    }
+  }, [isAuthenticated, isHydrated, pathname, router]);
+
+  if (!isHydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#0b141e] px-6 text-[#95a8b8]">
+        Loading secure workspace...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
   return (
-    <div className="min-h-screen bg-transparent px-3 py-3 text-slate-200 lg:px-4 lg:py-4">
-      <div className="flex min-h-[calc(100vh-1.5rem)] w-full overflow-hidden rounded-[34px] border border-white/8 bg-[#11161b] shadow-[0_34px_90px_rgba(0,0,0,0.42)] lg:min-h-[calc(100vh-2rem)]">
+    <div data-app-scale={scale} className="app-scale-shell min-h-screen bg-[#0b141e] text-[#dae3f2]">
+      <div className="flex min-h-screen w-full overflow-hidden bg-[#0b141e]">
         <Sidebar />
-        <main className="min-w-0 flex-1 bg-[#161d24] text-slate-200">
-          <TopBar />
-          <div className="px-5 py-6 lg:px-10 lg:py-8 xl:px-12">{children}</div>
+        <main className="min-w-0 flex-1 bg-[#0b141e] text-[#dae3f2]">
+          {showTopBar ? <TopBar /> : null}
+          <div className="px-6 py-6 lg:px-8 lg:py-8 xl:px-10">{children}</div>
         </main>
       </div>
     </div>

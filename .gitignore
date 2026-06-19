@@ -18,7 +18,13 @@ design-sandbox/.next/
 *.sql
 
 storage/resumes/
+storage/website-job-pdfs/
 resumes/
+frontend/tsconfig.tsbuildinfo
 
 .DS_Store
 Thumbs.db
+
+.vercel
+.env*
+itww-admin/env*

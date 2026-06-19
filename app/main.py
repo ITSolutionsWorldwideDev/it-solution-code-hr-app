@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.db import init_db
@@ -23,6 +24,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+settings.website_pdf_output_dir.mkdir(parents=True, exist_ok=True)
+app.mount(
+    "/website-assets/job-pdfs",
+    StaticFiles(directory=settings.website_pdf_output_dir),
+    name="website-job-pdfs",
 )
 
 

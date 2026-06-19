@@ -19,11 +19,10 @@ import type {
 } from "@/lib/recruitment-types";
 
 const stageSets: Record<string, PipelineStage[]> = {
-  HR: ["hr_invite_sent", "hr_interview_scheduled", "hr_in_progress", "hr_passed", "rejected"],
-  Technical: ["hr_passed", "technical_interview_scheduled", "technical_in_progress", "technical_passed", "rejected"],
+  HR: ["hr_invite_sent", "hr_in_progress", "rejected"],
+  Technical: ["technical_in_progress", "technical_passed", "rejected"],
   Manager: [
     "technical_passed",
-    "management_interview_scheduled",
     "management_in_progress",
     "selected",
     "offer_sent",
@@ -34,13 +33,9 @@ const stageSets: Record<string, PipelineStage[]> = {
   ],
   Admin: [
     "hr_invite_sent",
-    "hr_interview_scheduled",
     "hr_in_progress",
-    "hr_passed",
-    "technical_interview_scheduled",
     "technical_in_progress",
     "technical_passed",
-    "management_interview_scheduled",
     "management_in_progress",
     "selected",
     "offer_sent",
@@ -77,11 +72,36 @@ const roleToUserRole = {
   Admin: "Admin",
 } as const;
 
+function canRoleViewApplication(role: AppRole, application: ApplicationApiRecord): boolean {
+  if (role === "Admin") {
+    return true;
+  }
+
+  const ownerRole = application.current_owner_role;
+  if (ownerRole === roleToUserRole[role]) {
+    return true;
+  }
+
+  if (role === "HR" && application.stage === "hr_rejected") {
+    return true;
+  }
+
+  if (role === "Technical" && application.stage === "technical_rejected") {
+    return true;
+  }
+
+  if (role === "Manager" && application.stage === "management_rejected") {
+    return true;
+  }
+
+  return false;
+}
+
 const nextStageByRole: Record<AppRole, Partial<Record<ApplicationStageApi, ApplicationStageApi>>> = {
   HR: {
     hr_invite_sent: "hr_interview_scheduled",
     hr_interview_scheduled: "hr_in_progress",
-    hr_in_progress: "hr_passed",
+    hr_in_progress: "technical_interview_scheduled",
   },
   Technical: {
     hr_passed: "technical_interview_scheduled",
@@ -99,7 +119,7 @@ const nextStageByRole: Record<AppRole, Partial<Record<ApplicationStageApi, Appli
   Admin: {
     hr_invite_sent: "hr_interview_scheduled",
     hr_interview_scheduled: "hr_in_progress",
-    hr_in_progress: "hr_passed",
+    hr_in_progress: "technical_interview_scheduled",
     hr_passed: "technical_interview_scheduled",
     technical_interview_scheduled: "technical_in_progress",
     technical_in_progress: "technical_passed",
@@ -151,7 +171,7 @@ function rejectionStageForApplication(applicationStage: ApplicationStageApi): Ap
 
 function approvalStageForApplication(applicationStage: ApplicationStageApi): ApplicationStageApi | null {
   if (applicationStage === "hr_in_progress" || applicationStage === "hr_rejected") {
-    return "hr_passed";
+    return "technical_interview_scheduled";
   }
 
   if (applicationStage === "technical_in_progress" || applicationStage === "technical_rejected") {
@@ -228,6 +248,48 @@ function applicationStageForPipelineStage(targetStage: PipelineStage, role: AppR
   }
 }
 
+function targetApplicationStageForPipelineDrop(
+  application: ApplicationApiRecord,
+  targetStage: PipelineStage,
+  role: AppRole,
+): ApplicationStageApi | null {
+  if (targetStage === "rejected") {
+    return rejectionStageForApplication(application.stage);
+  }
+
+  if (targetStage === "hr_in_progress") {
+    if (application.stage === "hr_rejected") {
+      return "hr_interview_scheduled";
+    }
+    if (application.stage === "hr_invite_sent") {
+      return "hr_interview_scheduled";
+    }
+    return "hr_in_progress";
+  }
+
+  if (targetStage === "technical_in_progress") {
+    if (application.stage === "technical_rejected") {
+      return "technical_interview_scheduled";
+    }
+    if (application.stage === "hr_rejected" || application.stage === "hr_in_progress" || application.stage === "hr_passed") {
+      return "technical_interview_scheduled";
+    }
+    return "technical_in_progress";
+  }
+
+  if (targetStage === "management_in_progress") {
+    if (application.stage === "management_rejected") {
+      return "management_interview_scheduled";
+    }
+    if (application.stage === "technical_in_progress" || application.stage === "technical_passed") {
+      return "management_interview_scheduled";
+    }
+    return "management_in_progress";
+  }
+
+  return applicationStageForPipelineStage(targetStage, role);
+}
+
 export function RolePipelineView() {
   const { role, name } = useRole();
   const content = roleCopy[role];
@@ -284,12 +346,16 @@ export function RolePipelineView() {
   };
 
   useEffect(() => {
+    setCurrentUser(null);
+  }, [role, name]);
+
+  useEffect(() => {
     const load = async () => {
       setLoading(true);
       setErrorMessage(null);
 
       try {
-        await Promise.all([loadPipeline(), ensureCurrentUser()]);
+        await loadPipeline();
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Failed to load the pipeline.");
       } finally {
@@ -298,10 +364,17 @@ export function RolePipelineView() {
     };
 
     void load();
-  }, []);
+  }, [role]);
+
+  useEffect(() => {
+    void ensureCurrentUser().catch(() => {
+      // Keep the pipeline usable even if the demo-user bootstrap is temporarily unavailable.
+    });
+  }, [role, name]);
 
   const pipelineCandidates = useMemo<PipelineCandidateRecord[]>(() => {
     return applications
+      .filter((application) => canRoleViewApplication(role, application))
       .map((application) =>
         mapApplicationToPipelineCandidate(
           application,
@@ -314,7 +387,7 @@ export function RolePipelineView() {
         ...item,
         rejectionEmailSent: rejectionEmailSentIds.includes(item.id),
       }));
-  }, [applications, candidateRecords, rejectionEmailSentIds, vacancies]);
+  }, [applications, candidateRecords, rejectionEmailSentIds, role, vacancies]);
 
   const filteredCandidates = useMemo(() => {
     const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
@@ -494,7 +567,7 @@ export function RolePipelineView() {
       return;
     }
 
-    const targetApplicationStage = applicationStageForPipelineStage(targetStage, role);
+    const targetApplicationStage = targetApplicationStageForPipelineDrop(application, targetStage, role);
     if (!targetApplicationStage) {
       return;
     }
@@ -664,62 +737,62 @@ export function RolePipelineView() {
   };
 
   return (
-    <div className="-mx-5 min-h-[calc(100vh-122px)] bg-transparent lg:-mx-10 xl:-mx-12">
-      <div className="border-b border-white/8 px-5 py-6 lg:px-10 xl:px-12">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+    <div className="-mx-5 min-h-[calc(100vh-122px)] bg-[#0b141e] lg:-mx-10 xl:-mx-12">
+      <div className="w-full space-y-8 px-5 py-8 lg:px-10 xl:px-12">
+        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="text-[2.4rem] font-semibold tracking-[-0.05em] text-white">{content.title}</h1>
-          </div>
-
-          <div className="flex w-full max-w-[360px] items-center gap-3 rounded-[18px] border border-white/10 bg-[#10161c] px-4 py-3 text-white/65 shadow-[0_12px_28px_rgba(0,0,0,0.16)]">
-            <Search className="h-4 w-4 text-[#63e7ff]" />
-            <input
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search candidates..."
-              className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#79847e]"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-5 px-5 py-5 lg:px-10 xl:px-12">
-        <div className="flex flex-col gap-3 border-b border-white/8 pb-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-lg text-white/78">Vacancy:</span>
-            <div className="w-full max-w-[300px] rounded-[18px] border border-white/10 bg-[#10161c] shadow-[0_12px_24px_rgba(0,0,0,0.14)]">
-              <select
-                value={selectedVacancyId}
-                onChange={(event) => setSelectedVacancyId(event.target.value)}
-                className="h-11 w-full rounded-[18px] bg-transparent px-4 text-base text-white outline-none"
-              >
-                <option value="all">All vacancies</option>
-                {vacancies.map((vacancy) => (
-                  <option key={vacancy.id} value={vacancy.id}>
-                    {vacancy.title}
-                  </option>
-                ))}
-              </select>
+            <h1 className="font-['Hanken_Grotesk'] text-[2.75rem] font-semibold tracking-[-0.04em] text-[#d4e4fa]">
+              {content.title}
+            </h1>
+            <div className="mt-4 flex items-center gap-4 text-[1rem] text-[#bbc9cd]">
+              <span>Vacancy:</span>
+              <div className="relative">
+                <select
+                  value={selectedVacancyId}
+                  onChange={(event) => setSelectedVacancyId(event.target.value)}
+                  className="h-11 min-w-[232px] appearance-none rounded-lg border border-[#3c494c] bg-[#122131] px-4 pr-10 text-[1rem] font-medium text-[#d4e4fa] outline-none transition focus:border-[#8aebff] focus:ring-1 focus:ring-[#8aebff]"
+                >
+                  <option value="all">All vacancies</option>
+                  {vacancies.map((vacancy) => (
+                    <option key={vacancy.id} value={vacancy.id}>
+                      {vacancy.title}
+                    </option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#859397]">⌄</span>
+              </div>
             </div>
           </div>
 
-          <p className="text-sm text-[#8fa2b5]">{content.description}</p>
+          <div className="flex flex-col items-end gap-2">
+            <p className="max-w-xs text-right text-[1rem] italic text-[#bbc9cd]/70">{content.description}</p>
+            <div className="relative flex items-center gap-2">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#859397]" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search candidates..."
+                className="w-64 rounded-lg border border-[#3c494c] bg-[#010f1f] py-2 pl-10 pr-4 text-[1rem] text-[#d4e4fa] outline-none transition focus:border-[#8aebff] focus:ring-1 focus:ring-[#8aebff] placeholder:text-[#859397]"
+              />
+            </div>
+          </div>
         </div>
 
         {errorMessage ? (
-          <div className="rounded-[18px] border border-[#5d2a33] bg-[#2b171c] px-4 py-3 text-sm text-[#ffb9c7]">
+          <div className="rounded-lg border border-[#93000a]/30 bg-[#2b171c] px-4 py-3 text-sm text-[#ffb4ab]">
             {errorMessage}
           </div>
         ) : null}
 
         {successMessage ? (
-          <div className="rounded-[18px] border border-[#2b4f39] bg-[#17241b] px-4 py-3 text-sm text-[#cfeedd]">
+          <div className="flex items-center gap-3 rounded-lg border border-green-500/30 bg-green-900/20 px-4 py-3 text-sm text-green-400">
+            <span className="text-lg">◉</span>
             {successMessage}
           </div>
         ) : null}
 
         {busyMessage ? (
-          <div className="flex items-center gap-3 rounded-[18px] border border-white/10 bg-[#10161c] px-4 py-3 text-sm text-white/82">
+          <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-[#10161c] px-4 py-3 text-sm text-white/82">
             <LoaderCircle className="h-4 w-4 animate-spin text-[#63e7ff]" />
             <span>{busyMessage}</span>
           </div>

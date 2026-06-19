@@ -9,9 +9,16 @@ from app.models.user import User
 from app.models.vacancy import Vacancy
 from app.schemas.hiring_request import HiringRequestDecision
 from app.services.crud import get_or_404
+from app.services.website_publish_service import auto_publish_vacancy_to_website
 
 
-def approve_hiring_request(session: Session, hiring_request_id: int, decision: HiringRequestDecision) -> HiringRequest:
+def approve_hiring_request(
+    session: Session,
+    hiring_request_id: int,
+    decision: HiringRequestDecision,
+    *,
+    public_base_url: str,
+) -> HiringRequest:
     hiring_request = get_or_404(session, HiringRequest, hiring_request_id)
     reviewer = get_or_404(session, User, decision.reviewed_by_id)
 
@@ -42,6 +49,8 @@ def approve_hiring_request(session: Session, hiring_request_id: int, decision: H
     session.add(hiring_request)
     session.add(vacancy)
     session.commit()
+    session.refresh(vacancy)
+    auto_publish_vacancy_to_website(session, vacancy, public_base_url=public_base_url)
     session.refresh(hiring_request)
     return hiring_request
 

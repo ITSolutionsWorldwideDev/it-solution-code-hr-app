@@ -52,6 +52,7 @@ export type VacancyRecord = {
 };
 
 export type HiddenPotentialRecord = {
+  candidate_id: number;
   candidate_name: string;
   original_role: string;
   potential_score: number;
@@ -71,11 +72,17 @@ export type ParsedCandidateData = {
   skills: string[];
   experience: string;
   education: string;
+  executiveSummary?: string;
+  pros?: string[];
+  cons?: string[];
+  experienceYears?: number;
   location?: string;
   workAuthorization?: string;
   noticePeriod?: string;
   fitExplanation?: string;
 };
+
+export type InterviewStageTypeApi = "hr" | "technical" | "management";
 
 export type PipelineCandidateRecord = {
   id: string;
@@ -85,7 +92,8 @@ export type PipelineCandidateRecord = {
   matchScore: number;
   stage: PipelineStage;
   applicationStage?: ApplicationStageApi;
-  hrInterviewAt?: string | null;
+  interviewAt?: string | null;
+  interviewStageType?: InterviewStageTypeApi | null;
   rejectionEmailSent?: boolean;
   aiSummary: string;
   cvReference: string;
@@ -157,6 +165,46 @@ export type CandidateApiRecord = {
   ai_summary?: string | null;
   match_score?: number | null;
   parsed_data: Record<string, unknown>;
+};
+
+export type CandidateDatabaseRecordApi = {
+  id: number;
+  initials: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  raw_added_at?: string | null;
+  added_at: string;
+  vacancy_ids: number[];
+  role_title: string;
+  vacancy_title: string;
+  vacancy_label: string;
+  potential_role?: string | null;
+  experience_years?: number | null;
+  applied_match_score?: number | null;
+  overall_talent_score?: number | null;
+  stage: string;
+  parse_status?: string | null;
+  search_blob: string;
+  ai_summary: string;
+  skills: string[];
+  experience: string;
+  education: string;
+  parsed_data: Record<string, unknown>;
+  readiness_status: "strong_match" | "potential_fit" | "needs_review" | "low_fit";
+};
+
+export type CandidateDatabaseVacancyOptionApi = {
+  id: number;
+  title: string;
+  status: VacancyStatus;
+};
+
+export type CandidateDatabaseResponseApi = {
+  records: CandidateDatabaseRecordApi[];
+  vacancy_options: CandidateDatabaseVacancyOptionApi[];
+  open_vacancy_count: number;
+  total_candidate_count: number;
 };
 
 export type AppliedMatchInsightsApiRecord = {
@@ -255,6 +303,7 @@ export type ApplicationSendInviteResponse = {
 };
 
 export type StoredCandidateRecord = {
+  rowKey: string;
   id: string;
   name: string;
   email: string;
@@ -264,6 +313,7 @@ export type StoredCandidateRecord = {
   education: string;
   linkedVacancyId: string | null;
   linkedVacancyTitle: string;
+  vacancyLabel: string;
   matchScore: number | null;
   fitExplanation: string;
   matchedSkills: string[];
@@ -347,6 +397,55 @@ export type CandidateQueueParseBatchResponse = {
   jobs: CandidateQueueParseJobResponse[];
 };
 
+export type CandidateManualImportItem = {
+  filename: string;
+  parse_status: string;
+  match_status: string;
+  candidate_id?: number | null;
+  candidate_name?: string | null;
+  candidate_email?: string | null;
+  ai_summary?: string | null;
+  skills: string[];
+  experience?: string | null;
+  education?: string | null;
+  parsed_data: Record<string, unknown>;
+  matched_job_id?: number | null;
+  score?: number | null;
+  error_message?: string | null;
+};
+
+export type CandidateManualImportResponse = {
+  total_files: number;
+  results: CandidateManualImportItem[];
+};
+
+export type PublicApplicationSubmitResponse = {
+  application_id: number;
+  candidate_id: number;
+  parse_status: string;
+  match_status: string;
+  message: string;
+};
+
+export type PublishedWebsiteJobApiRecord = {
+  vacancy_id: number;
+  job_info_id: number;
+  title: string;
+  description: string;
+  required_skills: string[];
+  experience_level?: string | null;
+  department_id: number;
+  hiring_request_id?: number | null;
+  ai_summary?: string | null;
+  match_score?: number | null;
+  parsed_data: Record<string, unknown>;
+  created_at: string;
+  published_at: string;
+  location?: string | null;
+  employment_type?: string | null;
+  pdf_url?: string | null;
+};
+
 export type JobDescriptionGenerateResponse = {
   generated_job_description: string;
   generated_required_skills: string[];
@@ -386,4 +485,17 @@ export type LinkedInPreviewApiRecord = {
   message: string;
   post_text: string;
   apply_url: string;
+};
+
+export type WebsitePublishApiRecord = {
+  success: boolean;
+  dry_run: boolean;
+  message: string;
+  published: boolean;
+  action: "preview" | "created" | "updated" | "deleted" | string;
+  job_info_id?: number | null;
+  pdf_generated: boolean;
+  pdf_filename?: string | null;
+  pdf_url?: string | null;
+  mapped_fields: Record<string, unknown>;
 };

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Linkedin, Send } from "lucide-react";
+import { Edit3, Send } from "lucide-react";
+import { useMemo, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/api/client";
 import type { LinkedInPreviewApiRecord, VacancyRecord } from "@/lib/recruitment-types";
 
@@ -64,15 +63,7 @@ function ensureApplyUrlInPostText(postText: string, applyUrl: string) {
     return cleanedPost.replace(placeholderPattern, applyUrl).trim();
   }
 
-  const howToApplyPattern = /(How to Apply\s*\n(?:.*\n?)*)/i;
-  const match = cleanedPost.match(howToApplyPattern);
-
-  if (match?.[1]) {
-    const section = match[1].trimEnd();
-    return cleanedPost.replace(section, `${section}\n\nApply here:\n${applyUrl}`).trim();
-  }
-
-  return `${cleanedPost}\n\nHow to Apply\nApply here:\n${applyUrl}`.trim();
+  return `${cleanedPost}\n\nApply here:\n${applyUrl}`.trim();
 }
 
 function renderLinkedInPreviewText(postText: string) {
@@ -85,7 +76,7 @@ function renderLinkedInPreviewText(postText: string) {
     return (
       <span key={`line-${lineIndex}`}>
         {parts.map((part, partIndex) => {
-          if (urlPattern.test(part)) {
+          if (/^https?:\/\/[^\s]+$/i.test(part)) {
             return (
               <a
                 key={`part-${lineIndex}-${partIndex}`}
@@ -107,38 +98,58 @@ function renderLinkedInPreviewText(postText: string) {
   });
 }
 
+function truncateLinkedInText(postText: string, maxLength: number) {
+  if (postText.length <= maxLength) {
+    return postText;
+  }
+
+  return `${postText.slice(0, maxLength).trimEnd()}...`;
+}
+
+function extractCompensation(vacancy: VacancyRecord) {
+  const lines = vacancy.description.split("\n");
+  const line = lines.find((item) => /salary indication|compensation/i.test(item));
+  return line?.split(":").slice(1).join(":").trim() || "Compensation on request";
+}
+
 export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardProps) {
   const [preview, setPreview] = useState<LinkedInPreviewApiRecord | null>(null);
   const [loadingAction, setLoadingAction] = useState<"preview" | "publish" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showFullText, setShowFullText] = useState(false);
 
-  const buildLocalPreview = () => {
+  const localPreview = useMemo(() => {
     const applyUrl =
       typeof window === "undefined"
         ? `/apply/${vacancyId}`
         : new URL(`/apply/${vacancyId}`, window.location.origin).toString();
     const postText = ensureApplyUrlInPostText(vacancy.description, applyUrl);
 
-    setPreview({
+    return {
       success: true,
       dry_run: true,
       message: "LinkedIn preview generated.",
       post_text: postText,
       apply_url: applyUrl,
-    });
-  };
+    } satisfies LinkedInPreviewApiRecord;
+  }, [vacancy.description, vacancyId]);
+
+  const currentPreview = preview ?? localPreview;
+  const salary = extractCompensation(vacancy);
+  const fullPreviewText = currentPreview.post_text.trim();
+  const previewText = showFullText ? fullPreviewText : truncateLinkedInText(fullPreviewText, 220);
+  const canExpand = fullPreviewText.length > 220;
 
   const handlePreview = () => {
     setLoadingAction("preview");
     setErrorMessage(null);
-    buildLocalPreview();
+    setPreview(localPreview);
     setLoadingAction(null);
   };
 
   const handlePublish = async () => {
     setLoadingAction("publish");
     setErrorMessage(null);
-    setPreview(null);
 
     try {
       const response = await apiRequest<LinkedInPreviewApiRecord>({
@@ -159,79 +170,94 @@ export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardP
         post_text: normalizeLocalPostText(response.post_text, response.apply_url, applyUrl),
       });
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Failed to process the LinkedIn action."
-      );
+      setErrorMessage(error instanceof Error ? error.message : "Failed to process the LinkedIn action.");
     } finally {
       setLoadingAction(null);
     }
   };
 
   return (
-    <div className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03)_0%,rgba(255,255,255,0.015)_100%)] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7f93a5]">
-            LinkedIn Preview
-          </p>
-          <h2 className="mt-2 text-lg font-semibold text-white">Preview exact LinkedIn post</h2>
-          <p className="mt-2 text-sm leading-6 text-[#95a8b8]">
-            Preview the exact text content that will be sent to LinkedIn, including the external apply link.
-          </p>
+    <div className="rounded-2xl border border-[#3c4948]/40 bg-[#17202b] p-7 shadow-[0_16px_30px_rgba(0,0,0,0.14)]">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0077b5] text-white">
+            <span className="text-sm font-bold">in</span>
+          </div>
+          <div>
+            <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-[#859491]">
+              Social Connect
+            </span>
+            <h3 className="text-[16px] font-bold text-[#dae3f2]">LinkedIn Post</h3>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handlePreview}
-            disabled={loadingAction !== null}
-            icon={Linkedin}
-          >
-            {loadingAction === "preview" ? "Generating..." : "Preview LinkedIn Post"}
-          </Button>
-
-          <Button
-            type="button"
-            onClick={handlePublish}
-            disabled={loadingAction !== null}
-            icon={Send}
-          >
-            {loadingAction === "publish" ? "Publishing..." : "Publish to LinkedIn"}
-          </Button>
-        </div>
+        <button
+          type="button"
+          onClick={handlePreview}
+          className="group inline-flex items-center gap-1 text-xs font-bold text-[#3cdcd1]"
+        >
+          Edit Post
+          <Edit3 className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+        </button>
       </div>
 
       {errorMessage ? (
-        <div className="mt-4 rounded-[18px] border border-[#b85b68]/35 bg-[rgba(184,91,104,0.12)] px-4 py-3 text-sm text-[#f0b6bf]">
+        <div className="mt-4 rounded-lg border border-[#93000a] bg-[#93000a]/20 px-4 py-3 text-sm text-[#ffdad6]">
           {errorMessage}
         </div>
       ) : null}
 
-      {preview ? (
-        <div className="mt-5 space-y-4">
-          <div className="rounded-[20px] border border-[#7eb9df]/16 bg-[#466d8a]/10 px-4 py-3 text-sm text-[#dbe8f2]">
-            <p className="font-semibold text-white">{preview.message}</p>
-            <p className="mt-1 text-[#bcd3e4]">Dry run: {preview.dry_run ? "Yes" : "No"}</p>
+      <div className="mt-5 rounded-xl border border-[#3c4948]/30 bg-[#060f19] p-4">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#3c4948]/30 bg-[#222b36] text-white">
+            <span className="text-sm font-bold">IT</span>
           </div>
-
-          <div className="overflow-hidden rounded-[24px] border border-white/8 bg-[#0f1319]">
-            <div className="border-b border-white/8 px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f93aa]">
-                LinkedIn post preview
-              </p>
-            </div>
-
-            <div className="space-y-6 px-5 py-5">
-              <div className="space-y-3">
-                <p className="text-[1rem] leading-8 text-[#eef5fb]">
-                  {renderLinkedInPreviewText(preview.post_text)}
-                </p>
-              </div>
-            </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-[#dae3f2]">Recruitment Pro IT</span>
+            <span className="text-[10px] text-[#859491]">Promoted • Worldwide</span>
           </div>
         </div>
-      ) : null}
+
+        <div className="space-y-3 font-mono text-[12px] leading-relaxed text-[#bacac7]">
+          <p className="font-semibold text-white">{vacancy.title} | IT Solutions Worldwide</p>
+          <p>
+            📍 Location: {vacancy.location}
+            <br />💼 Job Type: {vacancy.employmentType}
+            <br />💰 Salary: {salary}
+          </p>
+          <p>{renderLinkedInPreviewText(previewText)}</p>
+          {canExpand ? (
+            <button
+              type="button"
+              onClick={() => setShowFullText((current) => !current)}
+              className="text-left text-[10px] font-bold text-[#62f9ee]"
+            >
+              {showFullText ? "show less" : "...see more"}
+            </button>
+          ) : null}
+        </div>
+
+        <div className="mt-4 flex items-center justify-between border-t border-[#3c4948]/20 pt-4">
+          <div className="flex gap-4 text-[#859491]">
+            <span>👍</span>
+            <span>💬</span>
+            <span>↗</span>
+          </div>
+          <button type="button" className="rounded-full bg-[#0077b5] px-3 py-1.5 text-[10px] font-bold text-white">
+            Apply Now
+          </button>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => void handlePublish()}
+        disabled={loadingAction !== null}
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-[#62f9ee] px-4 py-2.5 text-xs font-bold text-[#62f9ee] transition hover:bg-[#62f9ee]/5 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <Send className="h-3.5 w-3.5" />
+        {loadingAction === "publish" ? "Posting..." : "Post to LinkedIn"}
+      </button>
     </div>
   );
 }

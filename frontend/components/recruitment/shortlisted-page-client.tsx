@@ -1,25 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
-  Check,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   LoaderCircle,
   Mail,
-  Search,
-  SlidersHorizontal,
   Sparkles,
-  UserRound,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { useRole } from "@/components/providers/role-provider";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
-import { Select } from "@/components/ui/select";
 import { apiRequest } from "@/lib/api/client";
+import { isPlaceholderCandidate } from "@/lib/candidate-utils";
 import type {
   ApplicationApiRecord,
   ApplicationStageApi,
@@ -30,7 +26,6 @@ import type {
   VacancyDiscoverySummaryApiRecord,
   VacancyApiRecord,
 } from "@/lib/recruitment-types";
-import { cn } from "@/lib/utils";
 
 const roleToUserRole = {
   HR: "HR",
@@ -81,6 +76,7 @@ type ShortlistedCandidateRecord = {
 };
 
 type PotentialTalentRecord = {
+  candidate_id: number;
   candidate_name: string;
   original_role: string;
   potential_score: number;
@@ -323,6 +319,52 @@ function experienceLabel(candidate: CandidateApiRecord | null) {
   return source.length > 30 ? `${source.slice(0, 27)}...` : source;
 }
 
+function formatShortDate(value?: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalizedValue = /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`;
+  const parsed = new Date(normalizedValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(parsed);
+}
+
+function isFromTalentPool(application: ApplicationApiRecord) {
+  const parsedData =
+    application.parsed_data && typeof application.parsed_data === "object"
+      ? (application.parsed_data as Record<string, unknown>)
+      : null;
+  return parsedData?.shortlist_source === "talent_pool";
+}
+
+function isDirectVacancyApplication(
+  application: ApplicationApiRecord,
+  candidate: CandidateApiRecord | null,
+) {
+  if (isFromTalentPool(application)) {
+    return false;
+  }
+
+  const parsedData =
+    candidate?.parsed_data && typeof candidate.parsed_data === "object"
+      ? (candidate.parsed_data as Record<string, unknown>)
+      : null;
+
+  if (parsedData?.source !== "job_application") {
+    return false;
+  }
+
+  return String(parsedData?.source_reference_id ?? "") === String(application.id);
+}
+
 function roleLabel(
   candidate: CandidateApiRecord | null,
   vacancyTitle: string | undefined,
@@ -344,6 +386,26 @@ function roleLabel(
   return explicitRole ?? vacancyTitle ?? "Candidate profile";
 }
 
+function locationLabel(candidate: CandidateApiRecord | null, application: ApplicationApiRecord) {
+  const candidateParsedData =
+    candidate?.parsed_data && typeof candidate.parsed_data === "object"
+      ? (candidate.parsed_data as Record<string, unknown>)
+      : {};
+  const applicationParsedData =
+    application.parsed_data && typeof application.parsed_data === "object"
+      ? (application.parsed_data as Record<string, unknown>)
+      : {};
+
+  return (
+    asString(candidateParsedData.location) ??
+    asString(candidateParsedData.city) ??
+    asString(candidateParsedData.current_location) ??
+    asString(applicationParsedData.location) ??
+    asString(applicationParsedData.city) ??
+    "Not specified"
+  );
+}
+
 function isInviteSent(application: ApplicationApiRecord) {
   return Boolean(application.invite_sent_at);
 }
@@ -358,6 +420,46 @@ function isInInvitePipeline(application: ApplicationApiRecord) {
 
 function isInApprovalPipeline(application: ApplicationApiRecord) {
   return approvalPipelineStages.has(application.stage);
+}
+
+function isTransientNetworkError(message: string | null) {
+  if (!message) {
+    return false;
+  }
+
+  return message.includes("Could not reach the API: Failed to fetch");
+}
+
+function shortlistPipelineStatusLabel(application: ApplicationApiRecord) {
+  switch (application.stage) {
+    case "hr_invite_sent":
+      return "Already Sent to Pipeline";
+    case "hr_interview_scheduled":
+    case "hr_in_progress":
+      return "In HR Pipeline";
+    case "hr_passed":
+      return "Passed to Technical";
+    case "technical_interview_scheduled":
+    case "technical_in_progress":
+      return "In Technical Pipeline";
+    case "technical_passed":
+      return "Passed to Management";
+    case "management_interview_scheduled":
+    case "management_in_progress":
+      return "In Management Pipeline";
+    case "selected":
+      return "Selected";
+    case "offer_sent":
+      return "Offer Sent";
+    case "offer_accepted":
+      return "Offer Accepted";
+    case "offer_declined":
+      return "Offer Declined";
+    case "hired":
+      return "Hired";
+    default:
+      return "Already Sent to Pipeline";
+  }
 }
 
 async function ensureDemoUser(role: keyof typeof roleToUserRole, fullName: string): Promise<UserApiRecord> {
@@ -382,7 +484,9 @@ async function ensureDemoUser(role: keyof typeof roleToUserRole, fullName: strin
 
 export function ShortlistedPageClient() {
   const { role, name } = useRole();
+  const router = useRouter();
   const [vacancies, setVacancies] = useState<VacancyApiRecord[]>([]);
+  const [vacancyApplicationCounts, setVacancyApplicationCounts] = useState<Record<number, { total: number; shortlisted: number }>>({});
   const [selectedVacancyId, setSelectedVacancyId] = useState("");
   const [applications, setApplications] = useState<ApplicationApiRecord[]>([]);
   const [candidates, setCandidates] = useState<CandidateApiRecord[]>([]);
@@ -391,18 +495,16 @@ export function ShortlistedPageClient() {
   const [selectedRoleSuggestions, setSelectedRoleSuggestions] = useState<CandidateRoleSuggestionApiRecord[]>([]);
   const [potentialTalent, setPotentialTalent] = useState<PotentialTalentRecord[]>([]);
   const [potentialTalentLoading, setPotentialTalentLoading] = useState(false);
+  const [potentialTalentRefreshing, setPotentialTalentRefreshing] = useState(false);
   const [potentialTalentError, setPotentialTalentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [shortlistLoading, setShortlistLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<"generate_top_10" | "send_selected_emails" | null>(null);
   const [cardBusyAction, setCardBusyAction] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [detailErrorMessage, setDetailErrorMessage] = useState<string | null>(null);
-  const [sortMode, setSortMode] = useState<"match" | "rank">("match");
-  const [statusFilter, setStatusFilter] = useState<"all" | "primary" | "reserve" | "send_selected" | "invite_sent">(
-    "all",
-  );
   const [vacancyMenuOpen, setVacancyMenuOpen] = useState(false);
   const [pendingInviteIds, setPendingInviteIds] = useState<number[]>([]);
   const [rejectionEmailSentIds, setRejectionEmailSentIds] = useState<number[]>([]);
@@ -412,6 +514,13 @@ export function ShortlistedPageClient() {
     () => vacancies.find((vacancy) => String(vacancy.id) === selectedVacancyId) ?? null,
     [selectedVacancyId, vacancies],
   );
+  const duplicateVacancyTitles = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const vacancy of vacancies) {
+      counts.set(vacancy.title, (counts.get(vacancy.title) ?? 0) + 1);
+    }
+    return counts;
+  }, [vacancies]);
 
   const loadVacancyShortlist = async (vacancyId: string, syncSelection: boolean) => {
     if (!vacancyId) {
@@ -427,6 +536,7 @@ export function ShortlistedPageClient() {
 
     setApplications(applicationResponse);
     setCandidates(candidateResponse);
+    setErrorMessage(null);
 
     if (syncSelection) {
       setSelectedIds(
@@ -444,11 +554,26 @@ export function ShortlistedPageClient() {
   const loadPotentialTalent = async (vacancyId: string) => {
     if (!vacancyId) {
       setPotentialTalent([]);
+      setPotentialTalentRefreshing(false);
       return;
     }
 
+    let hasCachedCandidates = false;
     setPotentialTalentLoading(true);
     try {
+      const cachedDiscovery = await apiRequest<VacancyDiscoverySummaryApiRecord>({
+        path: `/vacancies/${vacancyId}/discovery-summary`,
+      });
+      const cachedTopCandidates = (cachedDiscovery.top_candidates ?? []).slice(0, 5);
+      hasCachedCandidates = cachedTopCandidates.length > 0;
+      setPotentialTalent(cachedTopCandidates);
+      setPotentialTalentError(null);
+
+      if (hasCachedCandidates) {
+        setPotentialTalentLoading(false);
+        setPotentialTalentRefreshing(true);
+      }
+
       const discovery = await apiRequest<VacancyDiscoverySummaryApiRecord>({
         path: `/vacancies/${vacancyId}/trigger-discovery`,
         method: "POST",
@@ -456,10 +581,20 @@ export function ShortlistedPageClient() {
       setPotentialTalent((discovery.top_candidates ?? []).slice(0, 5));
       setPotentialTalentError(null);
     } catch (error) {
-      setPotentialTalent([]);
-      setPotentialTalentError(error instanceof Error ? error.message : "Failed to load potential talent.");
+      if (!hasCachedCandidates) {
+        setPotentialTalent([]);
+        const message = error instanceof Error ? error.message : "Failed to load potential talent.";
+        setPotentialTalentError(
+          message === "Internal Server Error" || isTransientNetworkError(message)
+            ? "Potential talent is temporarily unavailable for this vacancy."
+            : message,
+        );
+      } else {
+        setPotentialTalentError(null);
+      }
     } finally {
       setPotentialTalentLoading(false);
+      setPotentialTalentRefreshing(false);
     }
   };
 
@@ -467,10 +602,39 @@ export function ShortlistedPageClient() {
     const loadVacancies = async () => {
       setLoading(true);
       try {
-        const response = await apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" });
-        setVacancies(response);
-        if (response[0]) {
-          setSelectedVacancyId(String(response[0].id));
+        const [vacancyResponse, applicationResponse, candidateResponse] = await Promise.all([
+          apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" }),
+          apiRequest<ApplicationApiRecord[]>({ path: "/applications/" }),
+          apiRequest<CandidateApiRecord[]>({ path: "/candidates/" }),
+        ]);
+        setVacancies(vacancyResponse);
+
+        const visibleCandidateIds = new Set(
+          candidateResponse
+            .filter((candidate) => !isPlaceholderCandidate(candidate))
+            .map((candidate) => candidate.id),
+        );
+        const counts = applicationResponse.reduce<Record<number, { total: number; shortlisted: number }>>((acc, application) => {
+          const current = acc[application.vacancy_id] ?? { total: 0, shortlisted: 0 };
+          const isVisibleCandidate = visibleCandidateIds.has(application.candidate_id);
+          if (isVisibleCandidate) {
+            current.total += 1;
+          }
+          if (isVisibleCandidate && ["primary", "reserve"].includes(application.shortlist_bucket)) {
+            current.shortlisted += 1;
+          }
+          acc[application.vacancy_id] = current;
+          return acc;
+        }, {});
+        setVacancyApplicationCounts(counts);
+
+        const preferredVacancy =
+          vacancyResponse.find((vacancy) => (counts[vacancy.id]?.shortlisted ?? 0) > 0) ??
+          vacancyResponse.find((vacancy) => (counts[vacancy.id]?.total ?? 0) > 0) ??
+          vacancyResponse[0];
+
+        if (preferredVacancy) {
+          setSelectedVacancyId(String(preferredVacancy.id));
         }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Failed to load vacancies.");
@@ -486,26 +650,28 @@ export function ShortlistedPageClient() {
     if (!selectedVacancyId) {
       setApplications([]);
       setCandidates([]);
+      setPotentialTalent([]);
+      setShortlistLoading(false);
       return;
     }
 
     const loadApplications = async () => {
-      setLoading(true);
+      setShortlistLoading(true);
       setErrorMessage(null);
       setSuccessMessage(null);
 
       try {
-        await Promise.all([loadVacancyShortlist(selectedVacancyId, true), loadPotentialTalent(selectedVacancyId)]);
+        await loadVacancyShortlist(selectedVacancyId, true);
       } catch (error) {
         setApplications([]);
         setCandidates([]);
-        setPotentialTalent([]);
         setErrorMessage(error instanceof Error ? error.message : "Failed to load shortlisted candidates.");
       } finally {
-        setLoading(false);
+        setShortlistLoading(false);
       }
     };
 
+    void loadPotentialTalent(selectedVacancyId);
     void loadApplications();
   }, [selectedVacancyId]);
 
@@ -556,43 +722,29 @@ export function ShortlistedPageClient() {
   }, [applications, pendingInviteIds]);
 
   const shortlistedCandidates = useMemo<ShortlistedCandidateRecord[]>(() => {
-    const shortlistRecords = applications
+    return applications
       .filter((application) => ["primary", "reserve"].includes(application.shortlist_bucket))
       .map((application) => ({
         application,
         candidate: candidates.find((candidate) => candidate.id === application.candidate_id) ?? null,
-      }));
-
-    const filtered = shortlistRecords.filter(({ application }) => {
-      if (statusFilter === "all") {
-        return true;
-      }
-      if (statusFilter === "primary") {
-        return application.shortlist_bucket === "primary";
-      }
-      if (statusFilter === "reserve") {
-        return application.shortlist_bucket === "reserve";
-      }
-      if (statusFilter === "send_selected") {
-        return selectedIds.includes(application.id);
-      }
-      if (statusFilter === "invite_sent") {
-        return Boolean(application.invite_sent_at);
-      }
-      return true;
-    });
-
-    return filtered.sort((left, right) => {
-      if (sortMode === "rank") {
-        return (left.application.ranking_position ?? 999) - (right.application.ranking_position ?? 999);
-      }
-
-      return (
+      }))
+      .filter(({ candidate }) => !candidate || !isPlaceholderCandidate(candidate))
+      .sort((left, right) => {
+        return (
         (right.application.ranking_score ?? right.application.match_score ?? 0) -
         (left.application.ranking_score ?? left.application.match_score ?? 0)
-      );
-    });
-  }, [applications, candidates, selectedIds, sortMode, statusFilter]);
+        );
+      });
+  }, [applications, candidates]);
+
+  const directApplicantCount = useMemo(
+    () =>
+      applications.filter((application) => {
+        const candidate = candidates.find((item) => item.id === application.candidate_id) ?? null;
+        return isDirectVacancyApplication(application, candidate);
+      }).length,
+    [applications, candidates],
+  );
 
   const selectedRecord = useMemo(
     () => shortlistedCandidates.find(({ application }) => application.id === selectedApplicationId) ?? null,
@@ -702,6 +854,12 @@ export function ShortlistedPageClient() {
   const visibleCount = shortlistedCandidates.length;
   const allVisibleSelected =
     visibleCount > 0 && shortlistedCandidates.every(({ application }) => selectedIds.includes(application.id));
+  const isRefreshingShortlist =
+    shortlistLoading && (applications.length > 0 || candidates.length > 0 || shortlistedCandidates.length > 0);
+  const hideInlineError =
+    isTransientNetworkError(errorMessage) &&
+    !shortlistLoading &&
+    (shortlistedCandidates.length > 0 || potentialTalent.length > 0 || potentialTalentLoading);
 
   const handleGenerateShortlist = async () => {
     if (!selectedVacancyId) {
@@ -763,7 +921,7 @@ export function ShortlistedPageClient() {
 
     try {
       const user = await ensureDemoUser(role, name);
-      let queuedCount = 0;
+      let movedCount = 0;
       let skippedCount = 0;
       let failedCount = 0;
       const failedApplicationIds: number[] = [];
@@ -793,15 +951,16 @@ export function ShortlistedPageClient() {
             continue;
           }
 
-          await apiRequest<ApplicationSendInviteResponse>({
-            path: `/applications/${applicationId}/send-hr-invite`,
-            method: "POST",
+          await apiRequest<ApplicationApiRecord>({
+            path: `/applications/${applicationId}/stage`,
+            method: "PATCH",
             body: JSON.stringify({
-              sent_by_id: user.id,
-              allow_resend: true,
+              to_stage: "hr_invite_sent",
+              changed_by_id: user.id,
+              notes: "Moved into the HR pipeline from shortlisted.",
             }),
           });
-          queuedCount += 1;
+          movedCount += 1;
         } catch (error) {
           failedCount += 1;
           failedApplicationIds.push(applicationId);
@@ -820,30 +979,30 @@ export function ShortlistedPageClient() {
 
       if (failedCount === 0 && skippedCount === 0) {
         setSuccessMessage(
-          `${queuedCount} HR invitation email(s) were handed to n8n. They stay here until delivery is confirmed.`,
+          `${movedCount} candidate${movedCount === 1 ? "" : "s"} ${movedCount === 1 ? "was" : "were"} sent to the pipeline.`,
         );
-      } else if (failedCount === 0 && queuedCount === 0 && skippedCount > 0) {
+      } else if (failedCount === 0 && movedCount === 0 && skippedCount > 0) {
         setSuccessMessage(
           `${skippedCount} selected candidate${skippedCount === 1 ? " is" : "s are"} already in the pipeline, so nothing changed.`,
         );
       } else if (failedCount === 0) {
         setSuccessMessage(
-          `${queuedCount} HR invitation email(s) were handed to n8n. ${skippedCount} candidate${skippedCount === 1 ? " was" : "s were"} already in the pipeline and skipped.`,
+          `${movedCount} candidate${movedCount === 1 ? " was" : "s were"} sent to the pipeline. ${skippedCount} candidate${skippedCount === 1 ? " was" : "s were"} already in the pipeline and skipped.`,
         );
-      } else if (queuedCount === 0) {
+      } else if (movedCount === 0) {
         setErrorMessage(
-          failureMessages[0] ?? "None of the selected HR invitation emails could be queued for n8n.",
+          failureMessages[0] ?? "None of the selected candidates could be sent to the pipeline.",
         );
       } else {
         setSuccessMessage(
-          `${queuedCount} HR invitation email(s) were handed to n8n, while ${failedCount} failed to queue.${skippedCount > 0 ? ` ${skippedCount} candidate${skippedCount === 1 ? " was" : "s were"} already in the pipeline and skipped.` : ""}`,
+          `${movedCount} candidate${movedCount === 1 ? " was" : "s were"} sent to the pipeline, while ${failedCount} failed.${skippedCount > 0 ? ` ${skippedCount} candidate${skippedCount === 1 ? " was" : "s were"} already in the pipeline and skipped.` : ""}`,
         );
         setErrorMessage(
-          failureMessages[0] ?? `Queueing failed for application ids: ${failedApplicationIds.join(", ")}.`,
+          failureMessages[0] ?? `Pipeline update failed for application ids: ${failedApplicationIds.join(", ")}.`,
         );
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to send selected invitation emails.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to send selected candidates to the pipeline.");
     } finally {
       setBusy(false);
       setBusyAction(null);
@@ -893,20 +1052,60 @@ export function ShortlistedPageClient() {
           changed_by_id: user.id,
         }),
       });
-      const response = await apiRequest<ApplicationSendInviteResponse>({
-        path: `/applications/${applicationId}/send-hr-invite`,
-        method: "POST",
+      const currentApplication = applications.find((application) => application.id === applicationId);
+      if (currentApplication && isInInvitePipeline(currentApplication)) {
+        setSuccessMessage(`Candidate is already in the pipeline as ${shortlistPipelineStatusLabel(currentApplication)}.`);
+        return;
+      }
+      await apiRequest<ApplicationApiRecord>({
+        path: `/applications/${applicationId}/stage`,
+        method: "PATCH",
         body: JSON.stringify({
-          sent_by_id: user.id,
-          allow_resend: true,
+          to_stage: "hr_invite_sent",
+          changed_by_id: user.id,
+          notes: "Moved into the HR pipeline from shortlisted.",
         }),
       });
       setPendingInviteIds((current) => [...new Set([...current, applicationId])]);
       setRejectionEmailSentIds((current) => current.filter((id) => id !== applicationId));
       await loadVacancyShortlist(selectedVacancyId, false);
-      setSuccessMessage(response.message);
+      setSuccessMessage("Candidate was sent to the pipeline.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to send HR invite.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to send candidate to the pipeline.");
+    } finally {
+      setBusy(false);
+      setCardBusyAction(null);
+    }
+  };
+
+  const handleAddTalentPoolCandidate = async (candidateRecord: PotentialTalentRecord) => {
+    if (!selectedVacancyId) {
+      return;
+    }
+
+    setBusy(true);
+    setCardBusyAction(`add-talent-pool-${candidateRecord.candidate_id}`);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const user = await ensureDemoUser(role, name);
+      await apiRequest<ApplicationApiRecord>({
+        path: `/vacancies/${selectedVacancyId}/shortlist/from-talent-pool`,
+        method: "POST",
+        body: JSON.stringify({
+          candidate_id: candidateRecord.candidate_id,
+          changed_by_id: user.id,
+          shortlist_bucket: "reserve",
+          potential_score: candidateRecord.potential_score,
+          reason: candidateRecord.reason,
+        }),
+      });
+      await loadVacancyShortlist(selectedVacancyId, false);
+      await loadPotentialTalent(selectedVacancyId);
+      setSuccessMessage(`${candidateRecord.candidate_name} was added to the shortlist from the talent pool.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to add talent-pool candidate to shortlist.");
     } finally {
       setBusy(false);
       setCardBusyAction(null);
@@ -1011,595 +1210,443 @@ export function ShortlistedPageClient() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-6">
+      <section className="space-y-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <h1 className="text-[3rem] font-semibold tracking-[-0.06em] text-[#e9ecff] sm:text-[4.2rem]">
-              Shortlisted
-            </h1>
-            <p className="mt-4 max-w-3xl text-lg leading-8 text-white/70">
-              Manage and invite top-tier talent for the{" "}
-              <span className="text-white">{selectedVacancy?.title ?? "selected role"}</span> role.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-[22px] border border-white/12 bg-black px-4 py-4 text-white shadow-[0_18px_45px_rgba(0,0,0,0.18)]">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[0.68rem] uppercase tracking-[0.26em] text-white/45">Sort by</p>
-                  <div className="mt-3">
-                    <Select
-                      value={sortMode}
-                      onChange={(event) => setSortMode(event.target.value as "match" | "rank")}
-                      className="h-auto border-0 bg-transparent px-0 py-0 text-lg font-medium text-white focus:border-0"
-                    >
-                      <option value="match">Match Score</option>
-                      <option value="rank">Ranking Position</option>
-                    </Select>
-                  </div>
-                </div>
-                <ChevronDown className="h-5 w-5 text-white/55" />
-              </div>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#bacac7]">
+              <span>Recruitment Command Center</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="text-[#66fcf1]">Shortlisted</span>
             </div>
-
-            <div className="rounded-[22px] border border-white/12 bg-black px-4 py-4 text-white shadow-[0_18px_45px_rgba(0,0,0,0.18)]">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[0.68rem] uppercase tracking-[0.26em] text-white/45">Status</p>
-                  <div className="mt-3">
-                    <Select
-                      value={statusFilter}
-                      onChange={(event) =>
-                        setStatusFilter(
-                          event.target.value as "all" | "primary" | "reserve" | "send_selected" | "invite_sent",
-                        )
-                      }
-                      className="h-auto border-0 bg-transparent px-0 py-0 text-lg font-medium text-white focus:border-0"
-                    >
-                      <option value="all">All</option>
-                      <option value="primary">Qualified</option>
-                      <option value="reserve">Pending Review</option>
-                      <option value="send_selected">Send Selected</option>
-                      <option value="invite_sent">Invite Sent</option>
-                    </Select>
-                  </div>
-                </div>
-                <SlidersHorizontal className="h-5 w-5 text-white/55" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="w-full">
-          <div className="w-full rounded-[26px] border border-white/12 bg-black px-5 py-5 shadow-[0_24px_60px_rgba(0,0,0,0.22)] sm:px-7">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-                <label className="flex items-center gap-4 text-white">
-                  <input
-                    type="checkbox"
-                    className="h-6 w-6 rounded-md border border-[#415073] bg-transparent accent-[#3ef0ce]"
-                    checked={allVisibleSelected}
-                    onChange={(event) => handleToggleAll(event.target.checked)}
-                  />
-                  <span className="text-base font-medium">Select All Candidates ({visibleCount})</span>
-                </label>
-                <div className="hidden h-8 w-px bg-white/10 lg:block" />
-                <p className="text-base text-white/60">{selectedIds.length} candidates selected</p>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  icon={Sparkles}
-                  loading={busyAction === "generate_top_10"}
-                  onClick={handleGenerateShortlist}
-                  disabled={!selectedVacancyId || busy}
-                  className="justify-center rounded-[18px] border-white/20 bg-black px-5 py-3 text-base text-white hover:bg-white/5"
+            <h1 className="text-[3rem] font-bold tracking-[-0.04em] text-white sm:text-[3.5rem]">Shortlisted</h1>
+            <div className="inline-flex items-center gap-3 rounded-xl border border-white/5 bg-[#17202b]/80 px-4 py-3">
+              <BriefcaseBusiness className="h-4 w-4 text-[#66fcf1]" />
+              <div className="relative">
+                <select
+                  value={selectedVacancyId}
+                  onChange={(event) => setSelectedVacancyId(event.target.value)}
+                  className="appearance-none bg-transparent pr-8 font-mono text-[1rem] text-[#dae3f2] focus:outline-none"
                 >
-                  {busyAction === "generate_top_10" ? "Generating Top 10..." : "Generate Top 10"}
-                </Button>
-                <Button
-                  type="button"
-                  icon={Mail}
-                  loading={busyAction === "send_selected_emails"}
-                  onClick={handleSendSelectedEmails}
-                  disabled={selectedIds.length === 0 || busy}
-                  className="justify-center rounded-[18px] bg-white px-5 py-3 text-base font-semibold text-black shadow-none hover:bg-white/90"
-                >
-                  {busyAction === "send_selected_emails" ? "Sending Emails..." : "Send Selected Emails"}
-                </Button>
-              </div>
-            </div>
+                  {vacancies.map((vacancy) => {
+                    const hasDuplicateTitle = (duplicateVacancyTitles.get(vacancy.title) ?? 0) > 1;
+                    const shortlistedCount = vacancyApplicationCounts[vacancy.id]?.shortlisted ?? 0;
+                    const createdLabel = formatShortDate(vacancy.created_at);
 
-            {busyAction ? (
-              <div className="mt-5 flex items-center gap-3 rounded-[16px] border border-white/12 bg-[#141414] px-4 py-3 text-sm text-white/82">
-                <LoaderCircle className="h-4 w-4 animate-spin text-[#8fb6ff]" />
-                <span>
-                  {busyAction === "generate_top_10"
-                    ? "Generating the Top 10 shortlist. This can take a moment."
-                    : "Sending invitation emails to the selected candidates."}
+                    return (
+                      <option key={vacancy.id} value={String(vacancy.id)}>
+                        {hasDuplicateTitle ? `${vacancy.title} (#${vacancy.id})` : vacancy.title}
+                        {createdLabel ? ` · ${createdLabel}` : ""}
+                        {` · ${shortlistedCount} shortlisted`}
+                      </option>
+                    );
+                  })}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 text-[#859491]" />
+              </div>
+              {shortlistLoading ? (
+                <span className="inline-flex items-center gap-2 text-sm text-[#9ed7e2]">
+                  <LoaderCircle className="h-4 w-4 animate-spin text-[#66fcf1]" />
+                  Updating...
                 </span>
-              </div>
-            ) : null}
-
-            <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(220px,0.65fr)]">
-              <div className="rounded-[18px] border border-white/12 bg-black px-4 py-4">
-                <p className="text-[0.68rem] uppercase tracking-[0.24em] text-white/45">Vacancy</p>
-                <div className="relative mt-3 flex items-center gap-3">
-                  <BriefcaseBusiness className="h-5 w-5 text-white" />
-                  <button
-                    type="button"
-                    onClick={() => setVacancyMenuOpen((current) => !current)}
-                    className="flex h-12 w-full items-center justify-between rounded-[14px] border border-white/10 bg-[#161b22] px-4 text-left text-base font-medium text-white transition hover:border-white/20 hover:bg-[#1a2028]"
-                  >
-                    <span className="truncate">{selectedVacancy?.title ?? "Select vacancy"}</span>
-                    <ChevronDown
-                      className={`h-4 w-4 text-white/55 transition ${vacancyMenuOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-
-                  {vacancyMenuOpen ? (
-                    <div className="absolute left-8 right-0 top-[calc(100%+0.75rem)] z-30 overflow-hidden rounded-[18px] border border-white/12 bg-[#10151b] shadow-[0_28px_70px_rgba(0,0,0,0.38)]">
-                      <div className="border-b border-white/8 px-4 py-3 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-white/45">
-                        Choose vacancy
-                      </div>
-                      <div className="max-h-72 overflow-y-auto py-2">
-                        {vacancies.map((vacancy) => {
-                          const selected = String(vacancy.id) === selectedVacancyId;
-                          return (
-                            <button
-                              key={vacancy.id}
-                              type="button"
-                              onClick={() => setSelectedVacancyId(String(vacancy.id))}
-                              className={`flex w-full items-center justify-between px-4 py-3 text-left text-base transition ${
-                                selected
-                                  ? "bg-[#1c2a38] text-white"
-                                  : "text-white/78 hover:bg-white/[0.04] hover:text-white"
-                              }`}
-                            >
-                              <span className="truncate">{vacancy.title}</span>
-                              {selected ? <Check className="h-4 w-4 text-[#8fb6ff]" /> : <ChevronRight className="h-4 w-4 text-white/25" />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="rounded-[18px] border border-white/12 bg-black px-4 py-4">
-                <p className="text-[0.68rem] uppercase tracking-[0.24em] text-white/45">Search</p>
-                <div className="mt-3 flex items-center gap-3 text-white/45">
-                  <Search className="h-5 w-5" />
-                  <span className="text-base">Using shortlist data for this vacancy</span>
-                </div>
-              </div>
+              ) : null}
             </div>
+          </div>
+
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] p-5 shadow-[0_0_0_1px_rgba(197,198,199,0.04),0_18px_50px_rgba(0,0,0,0.22)] backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-3 text-[1rem] font-medium text-[#dae3f2]">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 rounded border-[#3c4948] bg-[#17202b] text-[#66fcf1] focus:ring-[#66fcf1]"
+                  checked={allVisibleSelected}
+                  onChange={(event) => handleToggleAll(event.target.checked)}
+                />
+                <span>Select All Candidates ({visibleCount})</span>
+              </label>
+              <div className="hidden h-6 w-px bg-white/10 sm:block" />
+              <button
+                type="button"
+                onClick={handleGenerateShortlist}
+                disabled={!selectedVacancyId || busy}
+                className="inline-flex items-center gap-2 text-[1rem] text-[#bacac7] transition hover:text-[#66fcf1] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busyAction === "generate_top_10" ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                <span>{busyAction === "generate_top_10" ? "Generating Top 10" : "Generate Top 10"}</span>
+              </button>
+            </div>
+
+            <Button
+              type="button"
+              icon={Mail}
+              loading={busyAction === "send_selected_emails"}
+              onClick={handleSendSelectedEmails}
+              disabled={selectedIds.length === 0 || busy}
+              className="justify-center rounded-2xl bg-[#62f9ee] px-8 py-5 text-[1rem] font-bold text-[#00716b] shadow-[0_0_15px_rgba(102,252,241,0.2)] hover:brightness-105"
+            >
+              Send Selected to Pipeline
+            </Button>
           </div>
         </div>
 
-        {errorMessage ? (
-          <div className="rounded-[20px] border border-[#6b3041] bg-[#2a1620] px-5 py-4 text-sm text-[#ffb9c7]">
+        {busyAction ? (
+          <div className="flex items-center gap-3 rounded-xl border border-[#2b4551] bg-[#13202b] px-4 py-3 text-sm text-[#c9dff1]">
+            <LoaderCircle className="h-4 w-4 animate-spin text-[#66fcf1]" />
+            {busyAction === "generate_top_10"
+              ? "Generating the shortlist for this vacancy."
+              : "Sending selected candidates to the pipeline."}
+          </div>
+        ) : null}
+
+        {errorMessage && shortlistedCandidates.length === 0 ? (
+          <div className="rounded-xl border border-[#6b3041] bg-[#2a1620] px-4 py-3 text-sm text-[#ffb9c7]">
+            {errorMessage}
+          </div>
+        ) : null}
+
+        {errorMessage && shortlistedCandidates.length > 0 && !hideInlineError ? (
+          <div className="rounded-xl border border-[#504428] bg-[#221b10] px-4 py-3 text-sm text-[#f6d7a7]">
             {errorMessage}
           </div>
         ) : null}
 
         {successMessage ? (
-          <div className="rounded-[20px] border border-white/12 bg-black px-5 py-4 text-sm text-white">
+          <div className="rounded-xl border border-[#234c45] bg-[#10211f] px-4 py-3 text-sm text-[#c8fff6]">
             {successMessage}
           </div>
         ) : null}
 
-        {loading ? (
-          <div className="rounded-[24px] border border-white/12 bg-black px-5 py-8 text-base text-white/65">
-            Loading shortlist...
-          </div>
-        ) : shortlistedCandidates.length === 0 ? (
-          <div className="rounded-[24px] border border-white/12 bg-black px-5 py-8 text-base text-white/65">
-            No shortlisted candidates yet. Generate the Top 10 shortlist for the selected vacancy first.
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {shortlistedCandidates.map(({ application, candidate }) => {
-              const checked = selectedIds.includes(application.id);
-              const alreadySent = isInviteSent(application);
-              const inPipeline = isInInvitePipeline(application);
-              const isRejected = application.stage === "hr_rejected";
-              const rejectionEmailSent = rejectionEmailSentIds.includes(application.id);
-              const expanded = selectedApplicationId === application.id;
-              const currentParsedDetail = expanded ? parsedDetail : null;
-              const roleText = roleLabel(candidate, selectedVacancy?.title, application);
-              const accentClass =
-                application.shortlist_bucket === "primary" ? "before:bg-white" : "before:bg-white/60";
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur">
+          {isRefreshingShortlist ? (
+            <div className="absolute right-5 top-5 z-10 inline-flex items-center gap-2 rounded-full border border-[#2b4551] bg-[#13202b]/95 px-3 py-2 text-xs font-medium text-[#c9dff1] shadow-[0_8px_24px_rgba(0,0,0,0.22)]">
+              <LoaderCircle className="h-4 w-4 animate-spin text-[#66fcf1]" />
+              Refreshing shortlist...
+            </div>
+          ) : null}
+          {loading || (shortlistLoading && applications.length === 0 && candidates.length === 0) ? (
+            <div className="flex min-h-[260px] items-center justify-center gap-3 text-[#bacac7]">
+              <LoaderCircle className="h-6 w-6 animate-spin text-[#66fcf1]" />
+              <span>Loading shortlist...</span>
+            </div>
+          ) : shortlistedCandidates.length === 0 ? (
+            <div className="flex min-h-[260px] items-center justify-center px-6 text-center text-[#bacac7]">
+              {directApplicantCount === 0 && potentialTalent.length > 0
+                ? "There are no direct applicants yet. Talent pool suggestions are available below."
+                : "No shortlisted candidates yet. Generate the top 10 shortlist for this vacancy first."}
+            </div>
+          ) : (
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="bg-[#222b36]/50 text-[12px] font-bold uppercase tracking-[0.08em] text-[#bacac7]">
+                  <th className="w-12 px-6 py-5">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={(event) => handleToggleAll(event.target.checked)}
+                      className="h-5 w-5 rounded border-[#3c4948] bg-[#17202b] text-[#66fcf1] focus:ring-[#66fcf1]"
+                    />
+                  </th>
+                  <th className="px-6 py-5">Candidate</th>
+                  <th className="px-6 py-5">Current Role</th>
+                  <th className="px-6 py-5">Location</th>
+                  <th className="w-72 px-6 py-5">Match Score</th>
+                  <th className="px-6 py-5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {shortlistedCandidates.map(({ application, candidate }) => {
+                  const checked = selectedIds.includes(application.id);
+                  const expanded = selectedApplicationId === application.id;
+                  const roleText = roleLabel(candidate, selectedVacancy?.title, application);
+                  const locationText = locationLabel(candidate, application);
+                  const score = Math.max(
+                    0,
+                    Math.min(100, Math.round(application.ranking_score ?? application.match_score ?? 0)),
+                  );
+                  const isRejected = application.stage === "hr_rejected";
+                  const alreadySentToPipeline = !isRejected && isInInvitePipeline(application);
 
-              return (
-                <article
-                  key={application.id}
-                  className={cn(
-                    "relative overflow-hidden rounded-[28px] border border-white/12 bg-black px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.2)] before:absolute before:inset-y-0 before:left-0 before:w-[5px] before:content-[''] sm:px-7 sm:py-7",
-                    accentClass,
-                  )}
-                >
-                  <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 flex-1 items-start gap-4">
-                        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-white/12 bg-black text-white/70">
-                            <UserRound className="h-8 w-8" />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                            <div className="min-w-0">
-                              <h2 className="text-[1.85rem] font-semibold tracking-[-0.04em] text-[#eef1ff]">
-                                {candidate?.name ?? `Candidate #${application.candidate_id}`}
-                              </h2>
-                              <p className="mt-1 text-sm uppercase tracking-[0.3em] text-white/45">
-                                {roleText} / {experienceLabel(candidate)}
-                              </p>
-                            </div>
-
-                            <div className="shrink-0 text-left xl:text-right">
-                              <p className="text-[3.25rem] font-semibold tracking-[-0.06em] text-white">
-                                {formatRawScore(application.ranking_score ?? application.match_score)}
-                              </p>
-                              <p className="text-[0.8rem] uppercase tracking-[0.24em] text-white/45">Rank score</p>
-                            </div>
-                          </div>
-
-                          <div className="mt-8">
-                            <p className="text-[0.78rem] uppercase tracking-[0.26em] text-white/45">
-                              Assessment summary
+                  return (
+                    <Fragment key={application.id}>
+                      <tr className="transition-colors hover:bg-[#62f9ee]/[0.04]">
+                        <td className="px-6 py-7 align-top">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => handleToggle(application.id, event.target.checked)}
+                            className="mt-1 h-5 w-5 rounded border-[#3c4948] bg-[#17202b] text-[#66fcf1] focus:ring-[#66fcf1]"
+                          />
+                        </td>
+                        <td className="px-6 py-7">
+                          <div>
+                            <p className="text-[1rem] font-semibold text-white">
+                              {candidate?.name ?? `Candidate #${application.candidate_id}`}
                             </p>
-                            <p className="mt-4 max-w-5xl text-lg leading-9 text-white/85">
-                              {candidate?.ai_summary ?? application.ai_summary ?? "No AI summary available yet."}
+                            <p className="mt-1 text-[10px] uppercase tracking-[0.15em] text-[#bacac7]">
+                              ID: #{application.id}
                             </p>
                           </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-8 border-t border-white/6 pt-6">
-                        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-                          <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-8">
-                            <div className="flex items-center gap-3">
-                              <span className="text-lg text-[#d4dbef]">Status:</span>
-                              <span
-                                className={cn(
-                                  "rounded-full border px-4 py-2 text-sm font-medium",
-                                  application.shortlist_bucket === "primary"
-                                    ? "border-white/25 bg-white/10 text-white"
-                                    : "border-white/20 bg-white/5 text-white/85",
-                                )}
-                              >
-                                {shortlistLabel(application.shortlist_bucket)}
-                              </span>
-                              {isRejected ? (
-                                <span className="inline-flex items-center gap-2 rounded-full border border-[#6b3041] bg-[#2a1620] px-4 py-2 text-sm font-medium text-[#ffccd6]">
-                                  Rejected
-                                </span>
-                              ) : null}
-                              {isRejected && rejectionEmailSent ? (
-                                <span className="inline-flex items-center gap-2 rounded-full border border-[#315545] bg-[#15271d] px-4 py-2 text-sm font-medium text-[#cdeed8]">
-                                  Rejection Email Sent
-                                </span>
-                              ) : null}
-                              {alreadySent ? (
-                                <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white">
-                                  <Check className="h-4 w-4" />
-                                  Sent to candidate
-                                </span>
-                              ) : null}
-                              {inPipeline ? (
-                                <span className="inline-flex items-center gap-2 rounded-full border border-[#2b4f6b] bg-[#142333] px-4 py-2 text-sm font-medium text-[#cde8ff]">
-                                  <Check className="h-4 w-4" />
-                                  Sent to pipeline
-                                </span>
-                              ) : null}
+                        </td>
+                        <td className="px-6 py-7 text-[1rem] text-[#dae3f2]">{roleText}</td>
+                        <td className="px-6 py-7 text-[1rem] text-[#dae3f2]">{locationText}</td>
+                        <td className="px-6 py-7">
+                          <div className="flex items-center gap-4">
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#131c27]">
+                              <div
+                                className="h-full rounded-full bg-[#7bd6d1] shadow-[0_0_15px_rgba(102,252,241,0.2)]"
+                                style={{ width: `${score}%` }}
+                              />
                             </div>
-
-                            <div className="flex items-center gap-4">
-                              <button
-                                type="button"
-                                onClick={() => handleToggle(application.id, !checked)}
-                                className={cn(
-                                  "relative h-9 w-16 rounded-full transition",
-                                  checked ? "bg-white" : "bg-white/25",
-                                )}
-                                aria-pressed={checked}
-                              >
-                                <span
-                                  className={cn(
-                                    "absolute top-1 h-7 w-7 rounded-full bg-white shadow-[0_8px_16px_rgba(0,0,0,0.24)] transition",
-                                    checked ? "left-8" : "left-1",
-                                  )}
-                                />
-                              </button>
-                              <span className="text-lg text-[#edf2ff]">
-                                {checked ? "Included In Invite Batch" : "Not In Invite Batch"}
-                              </span>
-                            </div>
+                            <span className="min-w-[42px] font-mono text-[13px] text-[#66fcf1]">{score}%</span>
                           </div>
-
-                          <div className="flex flex-col gap-3 sm:flex-row">
-                            {isRejected ? (
-                              <>
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  className="justify-center rounded-[16px] border-white/20 bg-black px-6 py-3 text-base text-white"
-                                  onClick={() => handleRestoreRejectedCandidate(application.id)}
-                                  disabled={busy}
-                                  loading={cardBusyAction === `restore-candidate-${application.id}`}
-                                >
-                                  Approve Candidate
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  className="justify-center rounded-[16px] border-[#8bc9ea] bg-[#10202c] px-6 py-3 text-base text-[#d7f5ff] hover:bg-[#152b3a]"
-                                  onClick={() => handleSendHrInvite(application.id)}
-                                  disabled={busy}
-                                  loading={cardBusyAction === `send-hr-invite-${application.id}`}
-                                >
-                                  Approve Invite Mail
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  className="justify-center rounded-[16px] border-[#6b3041] bg-[#2a1620] px-6 py-3 text-base text-[#ffccd6] hover:bg-[#321a24]"
-                                  onClick={() => handleSendRejectionEmail(application.id)}
-                                  disabled={busy}
-                                  loading={cardBusyAction === `rejected-email-${application.id}`}
-                                >
-                                  Rejected Email
-                                </Button>
-                              </>
-                            ) : (
-                              <>
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  className="justify-center rounded-[16px] border-[#8bc9ea] bg-[#10202c] px-6 py-3 text-base text-[#d7f5ff] hover:bg-[#152b3a]"
-                                  onClick={() => handleSendHrInvite(application.id)}
-                                  disabled={busy}
-                                  loading={cardBusyAction === `send-hr-invite-${application.id}`}
-                                >
-                                  Approve Invite Mail
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  className="justify-center rounded-[16px] border-[#6b3041] bg-[#2a1620] px-6 py-3 text-base text-[#ffccd6] hover:bg-[#321a24]"
-                                  onClick={() => handleSendRejectionEmail(application.id)}
-                                  disabled={busy}
-                                  loading={cardBusyAction === `rejected-email-${application.id}`}
-                                >
-                                  Rejected Email
-                                </Button>
-                              </>
-                            )}
+                        </td>
+                        <td className="px-6 py-7">
+                          <div className="flex flex-wrap items-center justify-end gap-3">
+                            {alreadySentToPipeline ? (
+                              <span className="inline-flex items-center gap-2 px-1 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#9be7f5]">
+                                <span className="h-2 w-2 rounded-full bg-[#9be7f5]" />
+                                {shortlistPipelineStatusLabel(application)}
+                              </span>
+                            ) : null}
                             <Button
                               type="button"
-                              className="justify-center rounded-[16px] bg-white px-6 py-3 text-base font-semibold text-black shadow-none hover:bg-white/90"
+                              variant="secondary"
+                              onClick={() =>
+                                isRejected
+                                  ? handleRestoreRejectedCandidate(application.id)
+                                  : handleSendHrInvite(application.id)
+                              }
+                              disabled={busy}
+                              loading={
+                                cardBusyAction ===
+                                `${isRejected ? "restore-candidate" : "send-hr-invite"}-${application.id}`
+                              }
+                              className="rounded-lg border border-white/10 bg-[#222b36] px-4 py-2 text-xs font-medium text-[#dae3f2] hover:bg-[#2c3541]"
+                            >
+                              {isRejected ? "Approve Candidate" : "Send to Pipeline"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() => handleSendRejectionEmail(application.id)}
+                              disabled={busy}
+                              loading={cardBusyAction === `rejected-email-${application.id}`}
+                              className="rounded-lg border-0 bg-[#93000a]/20 px-4 py-2 text-xs font-medium text-[#ffb4ab] hover:bg-[#93000a]/35"
+                            >
+                              Rejected Email
+                            </Button>
+                            <Button
+                              type="button"
                               onClick={() =>
                                 setSelectedApplicationId((current) => (current === application.id ? null : application.id))
                               }
+                              className="rounded-lg bg-[#62f9ee] px-4 py-2 text-xs font-bold text-[#00716b] hover:brightness-105"
                             >
-                              Review Details{" "}
-                              {expanded ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
+                              Review Details
                             </Button>
                           </div>
-                        </div>
-                      </div>
+                        </td>
+                      </tr>
 
-                      {expanded && currentParsedDetail ? (
-                        <div className="mt-7 grid gap-4 rounded-[24px] border border-[#303b59] bg-[#12192d] p-5">
-                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                            <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                              <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">Applied to</p>
-                              <p className="mt-3 text-lg font-medium text-[#eef2ff]">
-                                {selectedVacancy?.title ?? "Unknown vacancy"}
-                              </p>
-                            </div>
-                            <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                              <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">Parsed on</p>
-                              <p className="mt-3 text-lg font-medium text-[#eef2ff]">
-                                {formatTimestamp(application.created_at)}
-                              </p>
-                            </div>
-                            <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                              <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">Email</p>
-                              <p className="mt-3 text-lg font-medium text-[#eef2ff]">
-                                {candidate?.email ?? "No email stored"}
-                              </p>
-                            </div>
-                            <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                              <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">Vacancy fit</p>
-                              <p className="mt-3 text-lg font-medium text-[#52f1d1]">
-                                {formatMatchScore(currentParsedDetail.vacancyScore)}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-                            <div className="space-y-4">
-                              <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                                <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">Summary</p>
-                                <p className="mt-3 text-base leading-8 text-[#dce2f4]">{currentParsedDetail.summary}</p>
-                              </div>
-                              <div className="grid gap-4 md:grid-cols-2">
-                                <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                                  <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">Experience</p>
-                                  <p className="mt-3 text-base leading-8 text-[#dce2f4]">
-                                    {currentParsedDetail.experience}
+                      {expanded && parsedDetail ? (
+                        <tr className="bg-[#111923]">
+                          <td colSpan={6} className="px-6 pb-6 pt-1">
+                            <div className="grid gap-4 rounded-2xl border border-white/5 bg-[#0f171f] p-5 lg:grid-cols-[1.3fr_0.7fr]">
+                              <div className="space-y-4">
+                                <div>
+                                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#bacac7]">
+                                    Summary
                                   </p>
+                                  <p className="mt-2 text-sm leading-7 text-[#dae3f2]">{parsedDetail.summary}</p>
                                 </div>
-                                <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                                  <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">Education</p>
-                                  <p className="mt-3 text-base leading-8 text-[#dce2f4]">
-                                    {currentParsedDetail.education}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                                <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">
-                                  Vacancy fit explanation
-                                </p>
-                                <p className="mt-3 text-base leading-8 text-[#dce2f4]">
-                                  {currentParsedDetail.fitExplanation}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="space-y-4">
-                              <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                                <div className="flex items-center justify-between gap-3">
-                                  <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">
-                                    Matched skills
-                                  </p>
-                                  <Check className="h-4 w-4 text-[#52f1d1]" />
-                                </div>
-                                {currentParsedDetail.matchedSkills.length ? (
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    {currentParsedDetail.matchedSkills.map((skill) => (
-                                      <span
-                                        key={skill}
-                                        className="rounded-full border border-[#334362] bg-[#1c2540] px-3 py-1.5 text-sm font-medium text-[#dfe6f8]"
-                                      >
-                                        {skill}
-                                      </span>
-                                    ))}
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <div>
+                                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#bacac7]">
+                                      Experience
+                                    </p>
+                                    <p className="mt-2 text-sm leading-7 text-[#dae3f2]">{parsedDetail.experience}</p>
                                   </div>
-                                ) : (
-                                  <p className="mt-3 text-sm text-[#96a4c6]">No matched skills stored yet.</p>
-                                )}
+                                  <div>
+                                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#bacac7]">
+                                      Education
+                                    </p>
+                                    <p className="mt-2 text-sm leading-7 text-[#dae3f2]">{parsedDetail.education}</p>
+                                  </div>
+                                </div>
+                                <div>
+                                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#bacac7]">
+                                    Vacancy Fit Explanation
+                                  </p>
+                                  <p className="mt-2 text-sm leading-7 text-[#dae3f2]">
+                                    {parsedDetail.fitExplanation}
+                                  </p>
+                                </div>
                               </div>
 
-                              <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                                <div className="flex items-center justify-between gap-3">
-                                  <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">
-                                    Role suggestions
+                              <div className="space-y-4">
+                                <div>
+                                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#bacac7]">
+                                    Matched Skills
                                   </p>
-                                  {detailErrorMessage ? (
-                                    <span className="text-xs text-[#ffb7c2]">{detailErrorMessage}</span>
-                                  ) : null}
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {parsedDetail.matchedSkills.length > 0 ? (
+                                      parsedDetail.matchedSkills.slice(0, 8).map((skill) => (
+                                        <span
+                                          key={skill}
+                                          className="rounded bg-[#17202b] px-3 py-1 text-[11px] font-bold uppercase text-[#dae3f2]"
+                                        >
+                                          {skill}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-sm text-[#859491]">No matched skills stored yet.</span>
+                                    )}
+                                  </div>
                                 </div>
-                                {selectedRoleSuggestions.length ? (
+                                <div>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#bacac7]">
+                                      Role Suggestions
+                                    </p>
+                                    {detailErrorMessage ? (
+                                      <span className="text-xs text-[#ffb4ab]">{detailErrorMessage}</span>
+                                    ) : null}
+                                  </div>
                                   <div className="mt-3 space-y-3">
                                     {selectedRoleSuggestions.slice(0, 3).map((suggestion) => (
-                                      <div
-                                        key={suggestion.id}
-                                        className="rounded-[16px] border border-[#31405f] bg-[#17203a] px-4 py-3"
-                                      >
+                                      <div key={suggestion.id} className="rounded-xl border border-white/5 bg-[#17202b] p-3">
                                         <div className="flex items-start justify-between gap-3">
                                           <div>
-                                            <p className="text-base font-semibold text-[#eef2ff]">
-                                              {suggestion.role_title}
-                                            </p>
-                                            <p className="mt-1 text-sm text-[#96a4c6]">
+                                            <p className="text-sm font-semibold text-white">{suggestion.role_title}</p>
+                                            <p className="text-xs text-[#859491]">
                                               {suggestion.department ?? "General"}
                                             </p>
                                           </div>
-                                          <span className="text-lg font-semibold text-[#52f1d1]">
+                                          <span className="font-mono text-xs text-[#66fcf1]">
                                             {formatMatchScore(suggestion.confidence_score)}
                                           </span>
                                         </div>
-                                        <p className="mt-3 text-sm leading-7 text-[#d7def1]">
-                                          {suggestion.reason ?? "No explanation stored for this role suggestion."}
-                                        </p>
                                       </div>
                                     ))}
                                   </div>
-                                ) : (
-                                  <p className="mt-3 text-sm text-[#96a4c6]">
-                                    No role suggestions are available yet for this candidate.
-                                  </p>
-                                )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-
-                          {currentParsedDetail.resumePreviewBlocks.length > 0 ? (
-                            <div className="rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4">
-                              <p className="text-[0.7rem] uppercase tracking-[0.24em] text-[#7f8cab]">
-                                Formatted CV Preview
-                              </p>
-                              <div className="mt-3 grid gap-3">
-                                {currentParsedDetail.resumePreviewBlocks.slice(0, 3).map((block) => (
-                                  <div
-                                    key={block}
-                                    className="whitespace-pre-wrap rounded-[14px] border border-white/6 bg-black/10 px-4 py-3 text-sm leading-7 text-[#dce2f4]"
-                                  >
-                                    {block}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
+                          </td>
+                        </tr>
                       ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+
+      <section className="space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="h-5 w-5 rounded-full border border-[#66fcf1] text-[#66fcf1]" />
+          <h2 className="text-[2rem] font-semibold tracking-[-0.03em] text-white">Potential Talent from Database</h2>
+          <span className="rounded-full bg-[#66fcf1]/10 px-3 py-1 text-[10px] font-bold uppercase text-[#66fcf1]">
+            AI Discovery
+          </span>
+          {potentialTalentRefreshing ? (
+            <span className="inline-flex items-center gap-2 text-sm text-[#9ed7e2]">
+              <LoaderCircle className="h-4 w-4 animate-spin text-[#66fcf1]" />
+              Refreshing pool...
+            </span>
+          ) : null}
+        </div>
+
+        {potentialTalentError ? (
+          <div className="rounded-xl border border-[#6b3041] bg-[#2a1620] px-4 py-3 text-sm text-[#ffb9c7]">
+            {potentialTalentError}
+          </div>
+        ) : null}
+
+        {potentialTalentLoading ? (
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] px-5 py-8 text-sm text-[#bacac7]">
+            <LoaderCircle className="h-5 w-5 animate-spin text-[#66fcf1]" />
+            <span>Loading potential talent...</span>
+          </div>
+        ) : potentialTalent.length === 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] px-5 py-8 text-sm text-[#bacac7]">
+            Not available for this vacancy yet.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            {potentialTalent.map((candidate, index) => {
+              const existingApplication = applications.find(
+                (application) =>
+                  application.candidate_id === candidate.candidate_id &&
+                  ["primary", "reserve"].includes(application.shortlist_bucket),
+              );
+              const alreadyShortlisted = Boolean(existingApplication);
+              const highlightedSkills = (selectedVacancy?.required_skills ?? []).slice(0, 2);
+              const extraSkills = Math.max((selectedVacancy?.required_skills?.length ?? 0) - highlightedSkills.length, 0);
+
+              return (
+                <div
+                  key={`${candidate.candidate_name}-${index}`}
+                  className="rounded-2xl border border-white/10 bg-[rgba(23,32,43,0.7)] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.16)]"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-[1.1rem] font-bold text-white">{candidate.candidate_name}</h3>
+                      <p className="mt-1 text-sm text-[#bacac7]">{candidate.original_role}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono text-[2rem] font-bold text-[#7bd6d1]">{candidate.potential_score}%</p>
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-[#bacac7]">Match</p>
                     </div>
                   </div>
-                </article>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {highlightedSkills.map((skill) => (
+                      <span
+                        key={skill}
+                        className="rounded bg-[#222b36] px-3 py-1 text-[10px] font-bold uppercase text-[#dae3f2]"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                    {extraSkills > 0 ? (
+                      <span className="rounded bg-[#222b36] px-3 py-1 text-[10px] font-bold uppercase text-[#dae3f2]">
+                        +{extraSkills} Skills
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-5 border-t border-white/5 pt-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-sm text-[#bacac7]">
+                        {alreadyShortlisted ? "Already shortlisted" : "Talent pool candidate"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => handleAddTalentPoolCandidate(candidate)}
+                        disabled={busy || alreadyShortlisted}
+                        loading={cardBusyAction === `add-talent-pool-${candidate.candidate_id}`}
+                        className="rounded-lg border-0 bg-transparent px-0 py-0 text-sm font-bold text-[#66fcf1] hover:bg-transparent hover:underline"
+                      >
+                        {alreadyShortlisted ? "Added to shortlisted" : "Shortlist Now"}
+                      </Button>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-[#dae3f2]">{candidate.reason}</p>
+                  </div>
+                </div>
               );
             })}
           </div>
         )}
-      </section>
-
-      <section>
-        <Panel className="rounded-[30px] border border-white/12 bg-black p-6 shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
-          <div className="flex flex-col gap-2">
-            <h2 className="text-[1.55rem] font-semibold text-[#eef2ff]">Potential Talent from Database</h2>
-            <p className="text-base leading-7 text-white/65">
-              AI suggests up to 5 extra candidates from the database who did not apply for this vacancy but may still
-              fit.
-            </p>
-          </div>
-
-          {potentialTalentError ? (
-            <div className="mt-4 rounded-[18px] border border-[#6b3041] bg-[#2a1620] px-4 py-3 text-sm text-[#ffb9c7]">
-              {potentialTalentError}
-            </div>
-          ) : null}
-
-          {potentialTalentLoading ? (
-            <div className="mt-5 rounded-[22px] border border-white/12 bg-black px-4 py-5 text-sm text-white/65">
-              Loading potential talent...
-            </div>
-          ) : potentialTalent.length === 0 ? (
-            <div className="mt-5 rounded-[22px] border border-white/12 bg-black px-4 py-5 text-sm text-white/65">
-              Not available for this vacancy yet.
-            </div>
-          ) : (
-            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {potentialTalent.map((candidate, index) => (
-                <div
-                  key={`${candidate.candidate_name}-${index}`}
-                  className="rounded-[24px] border border-[#2b3550] bg-[#12192d] px-5 py-5"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[#334362] bg-[#18223d] text-[#89a0ca]">
-                        <UserRound className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="text-[1rem] font-semibold text-[#eef2ff]">{candidate.candidate_name}</p>
-                        <p className="mt-1 text-sm text-[#95a8c8]">Original role: {candidate.original_role}</p>
-                      </div>
-                    </div>
-                    <div className="rounded-full border border-[#2c8a80] bg-[#103136] px-3 py-1 text-sm font-semibold text-[#7ef0d8]">
-                      {candidate.potential_score}%
-                    </div>
-                  </div>
-                  <p className="mt-4 text-sm leading-7 text-[#d7def1]">{candidate.reason}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </Panel>
       </section>
     </div>
   );

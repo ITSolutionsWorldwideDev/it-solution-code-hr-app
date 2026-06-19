@@ -1,15 +1,16 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
-import { ArrowRight, Building2, ShieldCheck, Sparkles, Users } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { ArrowRight, BriefcaseBusiness, Building2, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { BrandLogo } from "@/components/brand/brand-logo";
 import { useRole } from "@/components/providers/role-provider";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
+  getDisplayNameFromEmail,
   prototypeRoles,
   roleLandingRoutes,
   roleProfiles,
@@ -44,13 +45,29 @@ export function LoginHome() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [selectedRole, setSelectedRole] = useState<AppRole>("HR");
+  const [nextRoute, setNextRoute] = useState(roleLandingRoutes.HR);
+  const canLogin = email.trim().length > 0 && password.trim().length > 0;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const requestedRoute = new URLSearchParams(window.location.search).get("next");
+    setNextRoute(requestedRoute || roleLandingRoutes[selectedRole]);
+  }, [selectedRole]);
 
   const handleLogin = () => {
+    if (!canLogin) {
+      return;
+    }
+
+    const displayName = getDisplayNameFromEmail(email) || roleProfiles[selectedRole].name;
     setSession({
       role: selectedRole,
-      name: roleProfiles[selectedRole].name,
+      name: displayName,
     });
-    router.push(roleLandingRoutes[selectedRole]);
+    router.push(nextRoute);
   };
 
   return (
@@ -66,13 +83,13 @@ export function LoginHome() {
           </div>
         </header>
 
-        <div className="pointer-events-none absolute right-[-170px] top-[-80px] hidden h-[84vh] w-[82vw] min-w-[1460px] lg:block">
+        <div className="pointer-events-none absolute right-[610px] top-[-10px] hidden h-[84vh] w-[82vw] min-w-[1460px] lg:block">
           <Image
-            src="/neon-leeuw-transparent.png"
-            alt="IT Solutions Worldwide logo"
+            src="/final-logo.png"
+            alt="Talent Genie logo"
             fill
             priority
-            className="scale-[0.94] object-contain object-right-top opacity-[0.11]"
+            className="scale-[1.62] object-contain object-right-top opacity-[0.11]"
             sizes="82vw"
           />
         </div>
@@ -81,18 +98,28 @@ export function LoginHome() {
           <section className="relative pt-7 lg:pt-10">
             <div className="relative z-10 max-w-[1120px]">
               <p className="text-[0.88rem] font-semibold uppercase tracking-[0.34em] text-[#93efff] lg:text-[0.92rem]">
-                AI Recruitment Platform
+                Talent Genie
               </p>
 
               <h1 className="mt-4 max-w-[1120px] text-[4rem] font-semibold leading-[0.92] tracking-[-0.08em] text-[#e6eaee] sm:text-[4.9rem] lg:text-[6.35rem]">
-                One hiring workspace built for every decision maker.
+                Talent Genie powers every hiring decision.
               </h1>
 
               <p className="mt-6 max-w-[1180px] text-[1.18rem] leading-[1.95rem] text-[#c2cbc5] lg:text-[1.26rem] lg:leading-[2.05rem]">
-                RecruitFlow centralizes AI job descriptions, candidate review,
+                Talent Genie centralizes AI job descriptions, candidate review,
                 technical approvals, management decisions, onboarding, and organizational
-                visibility in one professional recruitment environment.
+                visibility in one intelligent recruitment environment.
               </p>
+
+              <div className="mt-7 flex flex-wrap gap-4">
+                <Link
+                  href="/jobs"
+                  className="inline-flex h-[58px] items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.05] px-7 text-[1rem] font-semibold text-white transition hover:border-[#93efff]/40 hover:bg-white/[0.08]"
+                >
+                  <BriefcaseBusiness className="h-5 w-5 text-[#93efff]" />
+                  View Open Jobs
+                </Link>
+              </div>
 
               <div
                 id="employee-login"
@@ -141,7 +168,8 @@ export function LoginHome() {
                   <button
                     type="button"
                     onClick={handleLogin}
-                    className="inline-flex h-[68px] items-center justify-center gap-3 rounded-full bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-9 text-[1.08rem] font-semibold text-[#06141c] shadow-[0_16px_36px_rgba(0,0,0,0.22)] transition hover:scale-[1.01] lg:h-14 lg:text-[1rem]"
+                    disabled={!canLogin}
+                    className="inline-flex h-[68px] items-center justify-center gap-3 rounded-full bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-9 text-[1.08rem] font-semibold text-[#06141c] shadow-[0_16px_36px_rgba(0,0,0,0.22)] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100 lg:h-14 lg:text-[1rem]"
                   >
                     Log in
                     <ArrowRight className="h-5 w-5" />
@@ -182,7 +210,7 @@ export function LoginHome() {
                   Enterprise Access
                 </p>
                 <h2 className="mt-3 text-[1.7rem] font-semibold tracking-[-0.05em] text-white lg:text-[1.85rem]">
-                  RecruitFlow
+                  Talent Genie
                 </h2>
                 <p className="mt-3 max-w-[980px] text-[1rem] leading-8 text-[#c0cbc3]">
                   A single command center for hiring teams, candidate quality, approvals,

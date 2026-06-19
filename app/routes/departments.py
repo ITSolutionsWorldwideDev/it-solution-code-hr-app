@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlmodel import Session
 
-from app.db import get_session
+from app.db import ensure_default_departments, get_session
 from app.models.department import Department
 from app.schemas.department import DepartmentCreate, DepartmentRead, DepartmentUpdate
 from app.services import crud
@@ -12,6 +12,7 @@ router = APIRouter(prefix="/departments", tags=["Departments"])
 
 @router.get("/", response_model=list[DepartmentRead], summary="List departments", description="Return all departments.")
 def list_departments(session: Session = Depends(get_session)):
+    ensure_default_departments(session)
     return crud.get_all(session, Department)
 
 
