@@ -24,6 +24,7 @@ model users {
   status        Int?      @default(1) @db.SmallInt
 
   blogs Blog[] @relation("UserBlogs")
+  jobs  jobs_infos[] @relation("UserJobsInfos")
 
   @@index([email], map: "idx_users_email")
 }
@@ -43,4 +44,21 @@ model Blog {
 
   @@index([slug], map: "idx_blog_slug")
   @@map("blogs")
+}
+
+model jobs_infos {
+  job_info_id      Int       @id @default(autoincrement())
+  title            String    @db.VarChar(255)
+  location         String    @db.VarChar(255)
+  type             String    @db.VarChar(100)
+  content          String?
+  pdf_url          String?
+  published        Int       @default(0) @db.SmallInt
+  created_by       Int
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  updated_at       DateTime? @default(now()) @db.Timestamp(6)
+  author           users     @relation(fields: [created_by], references: [user_id], name: "UserJobsInfos")
+
+  @@index([created_at], map: "idx_jobs_infos_created_at")
+  @@index([published], map: "idx_jobs_infos_published")
 }

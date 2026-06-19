@@ -8,6 +8,24 @@ function escape(str: string) {
   return str.replace(/'/g, "''");
 }
 
+async function resolveUsersTable(): Promise<"users" | '"user"' | null> {
+  const result = await pool.query<{
+    users_exists: string | null;
+    user_exists: string | null;
+  }>(
+    `
+      SELECT
+        to_regclass('public.users')::text AS users_exists,
+        to_regclass('public."user"')::text AS user_exists
+    `,
+  );
+
+  const row = result.rows[0];
+  if (row?.users_exists) return "users";
+  if (row?.user_exists) return '"user"';
+  return null;
+}
+
 // -------------------------
 // GET (list or single jobs-info)
 // -------------------------
@@ -47,13 +65,22 @@ export async function GET(req: NextRequest) {
     if (sort === "nameDesc") sortingOrder = "ORDER BY i.title DESC";
     else if (sort === "dateAsc") sortingOrder = "ORDER BY i.created_at ASC";
 
+    const usersTable = await resolveUsersTable();
+    const authorJoin = usersTable
+      ? `LEFT JOIN ${usersTable} AS u ON u.user_id = i.created_by`
+      : "";
+    const authorColumns = usersTable
+      ? `u.username AS author_username, 
+            u.email AS author_email`
+      : `NULL::text AS author_username,
+            NULL::text AS author_email`;
+
     const query = `
         SELECT 
             i.*, 
-            u.username AS author_username, 
-            u.email AS author_email 
+            ${authorColumns}
         FROM jobs_infos AS i
-        LEFT JOIN users AS u ON u.user_id = i.created_by
+        ${authorJoin}
         ${whereClause}
         ${sortingOrder}
         LIMIT ${pageSize} OFFSET ${offset}
