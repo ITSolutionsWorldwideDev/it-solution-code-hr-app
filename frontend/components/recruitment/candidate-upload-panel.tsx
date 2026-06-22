@@ -50,6 +50,14 @@ type UploadProgressState = {
   totalFiles: number;
   currentBatch: number;
   totalBatches: number;
+  currentBatchFiles: string[];
+};
+
+type UploadOutcomeState = {
+  totalFiles: number;
+  successCount: number;
+  failedCount: number;
+  vacancyScoped: boolean;
 };
 
 function asString(value: unknown) {
@@ -423,6 +431,22 @@ function buildBatchFailureResult(
   };
 }
 
+function formatBatchFileNames(fileNames: string[]) {
+  if (fileNames.length === 0) {
+    return "Preparing files";
+  }
+
+  if (fileNames.length === 1) {
+    return fileNames[0];
+  }
+
+  if (fileNames.length === 2) {
+    return `${fileNames[0]} and ${fileNames[1]}`;
+  }
+
+  return `${fileNames[0]}, ${fileNames[1]} and ${fileNames.length - 2} more`;
+}
+
 function getCandidateTimestamp(
   candidate: CandidateApiRecord,
   match?: CandidateMatchLookup
@@ -715,6 +739,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [detailErrorMessage, setDetailErrorMessage] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
+  const [uploadOutcome, setUploadOutcome] = useState<UploadOutcomeState | null>(null);
   const [isExpandedProfileOpen, setIsExpandedProfileOpen] = useState(false);
   const acceptedFileTypes =
     ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -952,6 +977,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
     setRecentParsedCandidates([]);
     setSessionCandidateIds([]);
     setSelectedCandidateId(null);
+    setUploadOutcome(null);
 
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(BULK_PARSE_SESSION_STORAGE_KEY);
@@ -986,6 +1012,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
 
     setIsUploading(true);
     setUploadProgress(null);
+    setUploadOutcome(null);
     setErrorMessage(null);
     setSuccessMessage(null);
     setBatchFailures([]);
@@ -1037,6 +1064,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
             totalFiles: files.length,
             currentBatch: batchIndex + 1,
             totalBatches: uploadBatches.length,
+            currentBatchFiles: batch.map((file) => file.name),
           });
 
           const [leftResult, rightResult] = await Promise.all([
@@ -1056,6 +1084,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
         totalFiles: files.length,
         currentBatch: 1,
         totalBatches: uploadBatches.length,
+        currentBatchFiles: uploadBatches[0]?.map((file) => file.name) ?? [],
       });
 
       const batchResponses = await mapWithConcurrency(
@@ -1067,6 +1096,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
             totalFiles: files.length,
             currentBatch: index + 1,
             totalBatches: uploadBatches.length,
+            currentBatchFiles: batch.map((file) => file.name),
           });
           const response = await recoverBatchUpload(batch, index);
 
@@ -1076,6 +1106,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
             totalFiles: files.length,
             currentBatch: Math.min(index + 1, uploadBatches.length),
             totalBatches: uploadBatches.length,
+            currentBatchFiles: batch.map((file) => file.name),
           });
 
           return response;
@@ -1105,12 +1136,18 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       setRecentParsedCandidates(immediateStoredCandidates);
       const successCount = aggregatedResults.filter((item) => item.parse_status !== "failed").length;
       const failedCount = aggregatedResults.length - successCount;
+      setUploadOutcome({
+        totalFiles: aggregatedResults.length,
+        successCount,
+        failedCount,
+        vacancyScoped: Boolean(vacancyId),
+      });
       const nextSuccessMessage = `${successCount} CV${
         successCount === 1 ? "" : "s"
-      } parsed successfully${vacancyId ? " for the selected vacancy" : " without a linked vacancy"} across ${
-        uploadBatches.length
-      } batch${uploadBatches.length === 1 ? "" : "es"}${
-        failedCount > 0 ? `, with ${failedCount} file${failedCount === 1 ? "" : "s"} automatically isolated after retry.` : "."
+      } parsed successfully${vacancyId ? " for the selected vacancy" : " into the talent pool"}. ${
+        failedCount > 0
+          ? `${failedCount} file${failedCount === 1 ? "" : "s"} still need attention after automatic retry.`
+          : "All selected files finished parsing and the candidate cards are ready below."
       }`;
 
       setSuccessMessage(successCount > 0 ? nextSuccessMessage : null);
@@ -1149,6 +1186,24 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       : successMessage
         ? 100
         : 0;
+  const currentActivityLabel = uploadProgress
+    ? `Parsing batch ${uploadProgress.currentBatch}/${uploadProgress.totalBatches}`
+    : isUploading
+      ? `Parsing ${Math.max(files.length, 1)} files...`
+      : uploadOutcome
+        ? uploadOutcome.failedCount > 0
+          ? "Parsing completed with issues"
+          : "Parsing completed successfully"
+        : "Waiting for upload...";
+  const currentActivityDetail = uploadProgress
+    ? `${uploadProgress.processedFiles}/${uploadProgress.totalFiles} files finished. Processing ${formatBatchFileNames(uploadProgress.currentBatchFiles)} now.`
+    : isUploading
+      ? "The parser is still working. Keep this page open while the batch finishes."
+      : uploadOutcome
+        ? uploadOutcome.failedCount > 0
+          ? `${uploadOutcome.successCount} of ${uploadOutcome.totalFiles} CVs parsed. Review the failed files below.`
+          : `${uploadOutcome.successCount} of ${uploadOutcome.totalFiles} CVs parsed and ready for review below.`
+        : "Upload a batch to start parsing resumes into candidate profiles.";
   const successCount = renderedCandidates.length;
   const primarySkills =
     selectedCandidateView && selectedCandidateView.matchedSkills.length > 0
@@ -1228,10 +1283,10 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               </p>
               <div className="mt-7 flex items-center gap-4 text-[0.78rem] font-medium uppercase tracking-[0.16em] text-[#889297]">
                 <span>PDF</span>
-                <span>•</span>
+                <span>&bull;</span>
                 <span>DOCX</span>
-                <span>•</span>
-                <span>RTF</span>
+                <span>&bull;</span>
+                <span>DOC</span>
               </div>
             </button>
           </div>
@@ -1252,7 +1307,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               <p className="mt-3 text-sm text-[#889297]">
                 {files.length > 0
                   ? `${files.length} file${files.length === 1 ? "" : "s"} selected for direct parsing.`
-                  : "PDF, DOCX and DOC files are supported for direct parsing into the Talent Pool."}
+                  : "PDF, DOCX, and DOC files are supported for direct parsing into the talent pool."}
               </p>
               <div className="mt-4 max-w-[340px]">
                 <Select value={vacancyId} onChange={(event) => setVacancyId(event.target.value)} className="h-11 rounded-lg border-white/10 bg-[#0f171f]">
@@ -1274,7 +1329,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                 disabled={isUploading}
                 className="rounded-lg border-[#3e484c] bg-transparent px-6 py-3 text-[#dae3ee] hover:bg-[#2d363e]"
               >
-                Clear Section
+                Clear Uploads
               </Button>
               <Button
                 type="button"
@@ -1331,15 +1386,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
             <div className="space-y-6">
               <div>
                 <div className="mb-2 flex items-center justify-between text-[1rem]">
-                  <span className="text-[#dae3ee]">
-                    {uploadProgress
-                      ? `Parsing batch ${uploadProgress.currentBatch}/${uploadProgress.totalBatches} (${uploadProgress.processedFiles}/${uploadProgress.totalFiles} files done)`
-                      : isUploading
-                        ? `Parsing ${Math.max(files.length, 1)} files...`
-                        : successCount > 0
-                          ? "Parsing completed"
-                          : "Waiting for upload..."}
-                  </span>
+                  <span className="text-[#dae3ee]">{currentActivityLabel}</span>
                   <span className="font-mono text-[#a9e9ff]">{progressValue}%</span>
                 </div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#0b141c]">
@@ -1348,19 +1395,24 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                     style={{ width: `${progressValue}%` }}
                   />
                 </div>
+                <p className="mt-3 text-sm leading-6 text-[#bdc8cd]">
+                  {currentActivityDetail}
+                </p>
               </div>
 
-              <div className="flex items-start gap-4 rounded-lg border border-green-500/20 bg-green-500/10 p-4">
-                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-400" />
-                <div>
-                  <p className="text-[1.05rem] font-semibold text-green-100">
-                    {successCount} CV{successCount === 1 ? "" : "s"} parsed successfully
-                  </p>
-                  <p className="text-[0.78rem] uppercase tracking-[0.12em] text-green-300/75">
-                    Added to Global Talent Pool
-                  </p>
+              {uploadOutcome && uploadOutcome.successCount > 0 ? (
+                <div className="flex items-start gap-4 rounded-lg border border-green-500/20 bg-green-500/10 p-4">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-400" />
+                  <div>
+                    <p className="text-[1.05rem] font-semibold text-green-100">
+                      {uploadOutcome.successCount} of {uploadOutcome.totalFiles} CV{uploadOutcome.totalFiles === 1 ? "" : "s"} parsed successfully
+                    </p>
+                    <p className="text-[0.78rem] uppercase tracking-[0.12em] text-green-300/75">
+                      {uploadOutcome.vacancyScoped ? "Ready in the selected vacancy workflow" : "Ready for talent pool review"}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {batchFailures.length > 0 ? (
                 <div className="flex items-start gap-4 rounded-lg border border-[#ffb4ab]/20 bg-[#93000a]/20 p-4">
@@ -1380,7 +1432,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                 <div className="rounded-lg border border-[#a9e9ff]/15 bg-[#122433] px-4 py-3 text-sm text-[#d8eef9]">
                   <div className="flex items-center gap-3">
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    <p>Parsing in progress. This can take a few seconds per CV.</p>
+                    <p>Parsing in progress. This can take a few seconds per CV, even when the page looks idle.</p>
                   </div>
                 </div>
               ) : null}
@@ -1399,7 +1451,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
             <div className="flex items-center gap-2 rounded-full border border-white/5 bg-[#0b141c] px-4 py-2 text-[#bdc8cd]">
               <History className="h-4 w-4" />
               <span className="text-[0.68rem] font-medium uppercase tracking-[0.18em]">
-                Session Session History
+                  Session History
               </span>
             </div>
           </div>

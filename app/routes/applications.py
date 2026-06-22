@@ -123,20 +123,43 @@ async def submit_public_application(
     file: UploadFile = File(...),
     vacancy_id: int = Form(...),
     candidate_email: str = Form(...),
+    candidate_name: str | None = Form(default=None),
+    candidate_phone: str | None = Form(default=None),
+    address: str | None = Form(default=None),
+    how_did_you_hear: str | None = Form(default=None),
+    cover_letter: str | None = Form(default=None),
     location: str | None = Form(default=None),
     work_authorization: str | None = Form(default=None),
     notice_period: str | None = Form(default=None),
+    source_label: str | None = Form(default=None),
     session: Session = Depends(get_session),
 ):
     vacancy = crud.get_or_404(session, Vacancy, vacancy_id)
     stored_resume = await store_resume_upload(file)
     submitted_email = candidate_email.strip()
     intake_metadata = {
+        "candidate_name": candidate_name,
+        "candidate_phone": candidate_phone,
+        "address": address,
+        "how_did_you_hear": how_did_you_hear,
+        "cover_letter": cover_letter,
         "candidate_email": submitted_email,
         "location": location,
         "work_authorization": work_authorization,
         "notice_period": notice_period,
+        "source_label": source_label or "public_apply_page",
     }
+    print(
+        "[public-submit] received application",
+        {
+            "vacancy_id": vacancy.id,
+            "candidate_email": submitted_email,
+            "candidate_name": candidate_name,
+            "candidate_phone": candidate_phone,
+            "source_label": intake_metadata["source_label"],
+            "filename": stored_resume.original_filename,
+        },
+    )
 
     candidate = upsert_placeholder_candidate(
         session,
@@ -190,9 +213,38 @@ async def submit_public_application(
         intake_metadata=intake_metadata,
         parse_job=parse_job,
     )
+    candidate_record = result.candidate
+    candidate_changed = False
+    if candidate_name and (
+        not candidate_record.name
+        or candidate_record.name == "Pending Candidate"
+        or candidate_record.name == "Unknown Candidate"
+    ):
+        candidate_record.name = candidate_name.strip()
+        candidate_changed = True
+    if candidate_phone and not candidate_record.phone:
+        candidate_record.phone = candidate_phone.strip()
+        candidate_changed = True
+    if candidate_changed:
+        session.add(candidate_record)
+        session.commit()
+        session.refresh(candidate_record)
+
+    print(
+        "[public-submit] application parsed",
+        {
+            "application_id": application.id,
+            "candidate_id": candidate_record.id,
+            "parse_status": result.parse_status,
+            "match_status": result.match_status,
+            "vacancy_id": vacancy.id,
+            "source_label": intake_metadata["source_label"],
+        },
+    )
+
     return PublicApplicationSubmitResponse(
         application_id=application.id,
-        candidate_id=result.candidate.id,
+        candidate_id=candidate_record.id,
         parse_status=result.parse_status,
         match_status=result.match_status,
         message="Application submitted successfully.",
