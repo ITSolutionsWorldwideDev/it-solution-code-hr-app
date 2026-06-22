@@ -1397,12 +1397,15 @@ def generate_job_description_with_openai(
         return fallback
 
     system_prompt = (
-        "You are an expert HR writer. Produce professional, detailed, editable job descriptions "
-        "for vacancy intake. The generated_job_description must be a rich long-form vacancy text with "
-        "clear section headings such as Job Description, About Us, Position Overview, Key Responsibilities, "
-        "Skills & Requirements, Qualifications, and What We Offer. Avoid short summary-style outputs. "
-        "Return a polished description, extracted required skills, a short summary, and a realistic "
-        "suggested max budget based on the role, location, work setup, and experience."
+        "You are a senior HR content strategist and recruitment copywriter. Produce high-quality, human-sounding, "
+        "editable vacancy drafts for real recruiter use. The output must feel specific to the role and inputs given, "
+        "not generic or templated. Avoid vague filler, broad corporate language, and repetitive phrases like "
+        "'detail-oriented and motivated candidate' unless they are directly justified by the role. "
+        "The generated_job_description must be a complete long-form vacancy with strong section headings and practical, "
+        "role-specific content. Use the provided requirements to infer realistic day-to-day responsibilities, expected "
+        "stakeholder interactions, preferred tools, and business outcomes. Keep the wording concise, professional, "
+        "and credible for a modern recruitment team. Return a polished description, extracted required skills, a short "
+        "summary, and a realistic suggested max budget based on the role, location, work setup, and experience."
     )
     user_prompt = (
         f"Job title: {normalized_job_title}\n"
@@ -1418,14 +1421,27 @@ def generate_job_description_with_openai(
         f"Perks and benefits guidance: {perks or 'not specified'}\n"
         f"Tone: {tone or 'professional'}\n"
         f"Seniority: {seniority or 'not specified'}\n"
-        f"Requirements from user: {normalized_requirements}"
+        f"Requirements from user: {normalized_requirements}\n\n"
+        "Instructions:\n"
+        "- Write in English.\n"
+        "- Make the draft feel specific to the exact role and input details.\n"
+        "- Include these sections in this exact order: About Us, Key Responsibilities, Requirements & Qualifications, What We Offer & How to Apply.\n"
+        "- In Key Responsibilities, use numbered subsections with a short title followed by a concise explanatory paragraph.\n"
+        "- In Requirements & Qualifications, use category-style lines such as Experience, Education, Technical Skills, and Analytical Thinking.\n"
+        "- Turn the raw requirements into recruiter-ready language without sounding robotic.\n"
+        "- Keep the tone professional, corporate, polished, and suitable for direct editing and publishing.\n"
+        "- Do not include placeholders like [PLAK HIER JE URL].\n"
+        "- Do not write a generic company history paragraph if no company-specific information is provided.\n"
+        "- The summary should be 1 to 2 sentences only.\n"
+        "- generated_required_skills should be practical, non-duplicated keywords recruiters would actually use."
     )
 
     try:
         raw_text = _generate_vertex_text(
             f"{system_prompt}\n\nReturn JSON only with keys: generated_job_description, generated_required_skills, summary, suggested_max_budget.\n\n"
             "The generated_job_description should read like a complete vacancy post, not like a short overview paragraph. "
-            "Include section headings and enough detail for direct human editing.\n\n"
+            "Include section headings, practical bullet points, and enough detail for direct human editing. "
+            "The draft must sound role-specific and grounded in the supplied requirements.\n\n"
             f"{user_prompt}"
         )
         payload = _extract_json_object(raw_text)
@@ -1532,79 +1548,64 @@ def _build_long_form_job_description(
 
     has_structured_sections = any(
         marker in clean_body.lower()
-        for marker in (
-            "about us",
-            "position overview",
-            "key responsibilities",
-            "skills & requirements",
-            "qualifications",
-            "what we offer",
-        )
+        for marker in ("about us", "key responsibilities", "requirements & qualifications", "what we offer")
     )
 
-    body_section = clean_body if len(clean_body) >= 400 and not has_structured_sections else (
-        f"We are seeking a detail-oriented and motivated {display_job_title} to join our global team. "
-        f"In this role, you will be responsible for delivering reliable outcomes within the {display_department} function, "
-        f"working with structured processes, clear stakeholder communication, and a strong focus on quality.\n\n"
-        f"You will play an important role in translating day-to-day work into measurable business value while "
-        f"maintaining consistency, ownership, and high professional standards."
-    )
-
-    about_us = (
-        f"At {company_name}, we specialize in high-quality execution and measurable results. "
-        f"Our {display_department} department plays an important role in supporting strategic decision-making, "
-        f"operational consistency, and long-term growth. We foster a {((work_model or 'collaborative').lower())}-first, "
-        f"collaborative culture built on ownership, clarity, and professional growth."
-    )
-
-    responsibility_labels = [
-        "Core Delivery",
-        "Process Improvement",
-        "Documentation & Reporting",
-        "Stakeholder Management",
-        "Team Collaboration",
-        "Operational Excellence",
-    ]
-    responsibility_items = requirement_lines[:]
+    responsibility_items = requirement_lines[:8]
     while len(responsibility_items) < 6:
         responsibility_items.append(
-            f"Contribute to {display_department.lower()} priorities with structured execution and clear communication."
+            f"Take ownership of deliverables within the {display_department.lower()} team and communicate progress clearly to stakeholders."
         )
-    responsibilities = "\n".join(
-        f"- {label}: {item}"
-        for label, item in zip(responsibility_labels, responsibility_items[:6], strict=False)
+
+    must_have_items = requirement_lines[:6]
+    while len(must_have_items) < 5:
+        must_have_items.append(
+            f"Relevant experience delivering results in a {display_job_title.lower()} or closely related role."
+        )
+
+    nice_to_have_items = []
+    for skill in skill_lines[4:8]:
+        nice_to_have_items.append(f"Exposure to {skill}.")
+    if work_model and work_model.lower() != "not specified":
+        nice_to_have_items.append(f"Comfortable working in a {work_model.lower()} setup.")
+    if not nice_to_have_items:
+        nice_to_have_items = [
+            "Experience working in international or cross-functional teams.",
+            "Ability to improve processes and work proactively with minimal supervision.",
+            "Confidence presenting updates or recommendations to internal stakeholders.",
+        ]
+
+    about_us = (
+        f"At {company_name}, we cultivate a professional, performance-oriented, and execution-driven working environment. "
+        f"Our {display_department} teams operate at the intersection of operational discipline, collaboration, and measurable business value. "
+        f"We empower our people to take ownership, challenge assumptions, improve systems, and contribute to long-term growth. "
+        f"If you thrive in a structured environment that values analytical thinking, accountability, and continuous development, "
+        f"you will be well positioned to succeed in this role."
     )
 
-    skill_labels = [
-        "Technical Proficiency",
-        "Advanced Tools",
-        "Analytical Rigor",
-        "Communication",
-        "Independence",
-        "Professionalism",
+    responsibility_titles = [
+        "Core Delivery & Execution",
+        "Stakeholder Collaboration",
+        "Analysis & Problem Solving",
+        "Process Improvement",
+        "Documentation & Reporting",
+        "Operational Quality",
     ]
-    skill_items = skill_lines[:]
-    while len(skill_items) < 6:
-        skill_items.append("Strong ability to work in a structured, quality-focused environment.")
+    responsibility_blocks = []
+    for index, (title, item) in enumerate(zip(responsibility_titles, responsibility_items[:6], strict=False), start=1):
+        responsibility_blocks.append(f"{index}. {title}\n{item}")
+    responsibilities = "\n\n".join(responsibility_blocks)
+
     requirements_block = "\n".join(
-        f"- {label}: {item}"
-        for label, item in zip(skill_labels, skill_items[:6], strict=False)
+        [
+            f"Experience: {experience_label} of relevant hands-on experience in a comparable {display_job_title} or related role.",
+            f"Education: Bachelor's degree or equivalent professional experience related to {display_job_title}, {display_department}, or a closely related discipline.",
+            f"Core Requirements: {'; '.join(must_have_items[:4])}.",
+            f"Technical Skills: {', '.join(skill_lines[:6]) if skill_lines else 'Role-relevant tools and structured working methods'}.",
+            "Analytical Thinking: Strong ability to translate requirements into practical execution, evaluate outcomes, and communicate clearly with stakeholders.",
+            f"Nice to Have: {'; '.join(nice_to_have_items[:3])}.",
+        ]
     )
-
-    tools_block = "\n".join(f"- {line}" for line in preferred_tools) or "- Relevant tools and platforms based on the role"
-    qualification_lines = [
-        f"Bachelor's degree or equivalent professional experience related to the {display_job_title} role.",
-        f"{experience_label} of relevant hands-on experience in a comparable role.",
-        f"Demonstrable ability to deliver strong results within the {display_department} function.",
-    ]
-    qualifications_block = "\n".join(f"- {line}" for line in qualification_lines)
-    kpi_lines = [
-        "Delivery quality and consistency across assigned workstreams.",
-        "Timely execution of priorities and stakeholder follow-through.",
-        "Clear reporting, documentation, and communication standards.",
-        f"Contribution to measurable {display_department.lower()} outcomes and business goals.",
-    ]
-    kpi_block = "\n".join(f"- {line}" for line in kpi_lines)
     offer_lines = [
         line.strip()
         for line in re.split(r"[\n,;]+", clean_perks)
@@ -1626,23 +1627,16 @@ def _build_long_form_job_description(
         f"Salary Indication: {salary_indication_label}\n"
         f"Experience: {experience_label}\n"
         f"Start Date: {start_date_label}\n\n"
-        f"About {company_name}\n"
+        f"About Us\n"
         f"{about_us}\n\n"
-        f"Position Overview\n"
-        f"{body_section}\n\n"
         f"Key Responsibilities\n"
         f"{responsibilities}\n\n"
-        f"Skills & Requirements\n"
+        f"Requirements & Qualifications\n"
         f"{requirements_block}\n\n"
-        f"Tools & Platforms (Preferred)\n"
-        f"{tools_block}\n\n"
-        f"Qualifications\n"
-        f"{qualifications_block}\n\n"
-        f"What We Offer\n"
+        f"What We Offer & How to Apply\n"
         f"{offer_block}\n\n"
-        f"Apply Here\n"
-        f"To apply for this position, please submit your application and CV via the following link:\n\n"
-        f"[PLAK HIER JE URL]\n\n"
+        f"We offer a compensation package aligned with experience, a professional environment, and clear opportunities for long-term growth within {company_name}. "
+        f"Applicants should submit their CV and application through the official company application channel.\n\n"
         f"{company_name}\n"
         f"Excellence in Execution. Consistency in Results."
     ).strip()

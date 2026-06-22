@@ -28,6 +28,7 @@ At a high level, the platform helps a team:
 .
 |- app/                    FastAPI backend
 |- frontend/               Next.js frontend
+|- itww-admin/             Website/admin app and website application bridge routes
 |- design-sandbox/         Separate frontend-only UI sandbox
 |- scripts/                Utility scripts
 |- storage/                Uploaded files and generated assets
@@ -110,6 +111,155 @@ Important backend areas:
 - `app/services/talent_discovery_service.py`
   Hidden-potential and discovery workflows
 
+### Website/Admin App
+
+The repository also contains `itww-admin/`, which is the separate website/admin-side
+application used for website job publishing and website-side application intake.
+
+Important website/admin areas:
+
+- `itww-admin/src/app/api/jobs-application/route.ts`
+  Website job application API with forwarding logic into the HR backend
+- `itww-admin/src/app/api/job-applications/route.ts`
+  Alias route used by the live website path `/api/job-applications`
+- `itww-admin/src/app/(main)/job-applications/`
+  Admin pages for viewing website-side job applications
+
+## Database And Data Flow
+
+This project works with two different database domains:
+
+### 1. HR app database
+
+This is the main recruitment database used by the FastAPI backend in `app/`.
+
+It stores recruitment workflow data such as:
+
+- users
+- departments
+- employees
+- hiring requests
+- vacancies
+- candidates
+- applications
+- candidate matches
+- interviews
+- workflow events
+
+This is the source of truth for Talent Genie.
+
+### 2. Website database
+
+This is the separate website-side database used for:
+
+- published website jobs
+- website-side job applications
+- mappings between website jobs and HR vacancies
+
+Common website-side tables include:
+
+- `jobs_infos`
+- `job_applications`
+- `website_publication`
+
+If a candidate exists only in `job_applications`, that candidate exists only in the website system.
+The candidate becomes visible in Talent Genie only after the website forwards the submission into the HR backend.
+
+### Backend database connection model
+
+The FastAPI backend supports two database URLs through `app/config.py`:
+
+- `DATABASE_URL`
+  Main HR app database
+- `WEBSITE_DATABASE_URL`
+  Optional website database connection
+
+The actual SQLAlchemy engine setup lives in `app/db.py`:
+
+- `engine`
+  Built from `settings.database_url`
+- `website_engine`
+  Built from `settings.website_database_url` when configured
+
+That means:
+
+- normal HR routes and models use the main HR database
+- website publication support can also talk to the website database when needed
+
+### URL normalization
+
+`app/config.py` normalizes these formats automatically:
+
+- `postgres://...`
+- `postgresql://...`
+- `postgresql+psycopg://...`
+
+All of them are normalized to `postgresql+psycopg://...` before SQLAlchemy creates the engine.
+
+### Session usage
+
+The main backend request session is created in `app/db.py` through:
+
+- `get_session()`
+
+This is the session used by FastAPI routes and backend services for the HR database.
+
+### Automatic website jobs table bootstrap
+
+When `WEBSITE_DATABASE_URL` is configured, the backend also runs `ensure_website_jobs_table()` from `app/db.py`.
+
+That function ensures the website jobs table exists and has the expected structure for:
+
+- `jobs_infos`
+- `created_at`
+- `updated_at`
+- `published`
+- related indexes used for publication workflows
+
+## Website To HR Sync
+
+The website and the HR app are separate systems, so website applications must be forwarded into the HR backend.
+
+The bridge logic lives in:
+
+- `itww-admin/src/app/api/jobs-application/route.ts`
+
+That route:
+
+1. receives the website application form
+2. stores the submission in the website table `job_applications`
+3. resolves the linked HR vacancy through `website_publication`
+4. forwards the same application to the HR backend endpoint
+5. returns both the legacy website id and the Talent Genie response
+
+The forwarded HR endpoint is:
+
+- `POST /api/applications/public-submit`
+
+The forwarded multipart payload includes:
+
+- `file`
+- `vacancy_id`
+- `candidate_email`
+- `candidate_name`
+- `candidate_phone`
+- `address`
+- `how_did_you_hear`
+- `cover_letter`
+- `source_label`
+
+The HR backend intake route lives in:
+
+- `app/routes/applications.py`
+
+That route then:
+
+1. stores the uploaded CV
+2. creates or reuses the candidate
+3. creates the application
+4. runs parsing and matching logic
+5. makes the candidate visible in Talent Genie
+
 ## Main Product Flows
 
 ### 1. Hiring Request To Vacancy
@@ -143,9 +293,24 @@ Relevant files:
 Relevant files:
 
 - `frontend/components/recruitment/public-apply-form.tsx`
+- `app/routes/applications.py`
 - `app/routes/candidates.py`
 - `app/services/candidate_service.py`
 - `app/services/ai_service.py`
+
+### 3b. Website Job Application To Talent Genie
+
+1. A candidate applies through the company website
+2. The website route stores the application in `job_applications`
+3. The website route resolves the mapped HR vacancy through `website_publication`
+4. The website route forwards the CV and applicant data to the HR backend public submit endpoint
+5. The HR backend creates the candidate/application and runs parsing
+
+Relevant files:
+
+- `itww-admin/src/app/api/jobs-application/route.ts`
+- `itww-admin/src/app/api/job-applications/route.ts`
+- `app/routes/applications.py`
 
 ### 4. Pipeline And Shortlist
 
@@ -191,6 +356,9 @@ Important backend variables:
 
 ```env
 DATABASE_URL=postgresql+psycopg://...
+WEBSITE_DATABASE_URL=postgresql+psycopg://...
+WEBSITE_JOBS_TABLE=jobs_infos
+WEBSITE_PUBLISHER_USER_ID=1
 VERTEX_PROJECT_ID=...
 VERTEX_LOCATION=global
 VERTEX_GENERATIVE_MODEL=gemini-3.1-flash-lite
@@ -203,8 +371,22 @@ CAL_COM_BOOKING_BASE_URL=https://your-org.cal.com/hr-intake
 CAL_COM_WEBHOOK_SECRET=...
 PUBLIC_APPLY_BASE_URL=http://localhost:3000/apply
 PUBLIC_SCHEDULE_BASE_URL=http://localhost:3000/candidate/schedule
+HR_BACKEND_API_BASE_URL=https://it-solution-code-hr-app-backend.vercel.app/api
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,...
 ```
+
+Database-related variable roles:
+
+- `DATABASE_URL`
+  Main Talent Genie / HR app database
+- `WEBSITE_DATABASE_URL`
+  Separate website database for website jobs and website-local applications
+- `WEBSITE_JOBS_TABLE`
+  Table name used for website job publication support
+- `WEBSITE_PUBLISHER_USER_ID`
+  User id used when creating website publication records
+- `HR_BACKEND_API_BASE_URL`
+  Website-side forwarding target for sending public website applications into the HR backend
 
 For Cal.com link-based booking flows, configure a hidden booking question on the event type with identifier `application_id`.
 The HR invite link appends `application_id`, `name`, and `email` as query params so Cal.com can prefill the form and return the application id in the booking webhook payload.

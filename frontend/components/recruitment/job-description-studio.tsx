@@ -225,6 +225,25 @@ export function JobDescriptionStudio() {
       .filter(Boolean).length;
   }, [generatedDescription]);
 
+  const generationInputs = useMemo(
+    () => [
+      { label: "Role", value: jobTitle || "Not set" },
+      { label: "Department", value: selectedDepartment?.name || "Not set" },
+      { label: "Location", value: [city, country].filter(Boolean).join(", ") || "Not set" },
+      { label: "Work setup", value: workModel || "Not set" },
+      { label: "Employment type", value: employmentType || "Not set" },
+      { label: "Experience", value: yearsExperience || "Not set" },
+      { label: "Budget", value: maxBudget || "AI suggested if empty" },
+      {
+        label: "Requirements basis",
+        value:
+          requirements.trim() ||
+          "No detailed requirements added. AI will infer a baseline draft from the role and department.",
+      },
+    ],
+    [city, country, employmentType, jobTitle, maxBudget, requirements, selectedDepartment?.name, workModel, yearsExperience],
+  );
+
   const handleGenerate = async () => {
     setGenerateState("generating");
     setApprovalState("idle");
@@ -648,6 +667,24 @@ export function JobDescriptionStudio() {
             </div>
           ) : generatedDescription ? (
             <div className="space-y-6">
+              <div className="rounded-[16px] border border-[#1a252c] bg-[#0d1113] px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8ea2b3]">
+                  How this draft was generated
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {generationInputs.map((item) => (
+                    <div key={item.label} className="rounded-[12px] border border-[#172126] bg-[#0a0e10] px-3 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7690a0]">
+                        {item.label}
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#d9e5ee]">
+                        {item.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {summary ? (
                 <div className="rounded-[16px] border border-[#1a252c] bg-[#0d1113] px-4 py-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8ea2b3]">
