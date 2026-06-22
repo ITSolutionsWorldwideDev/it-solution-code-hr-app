@@ -4,6 +4,18 @@ import pool from "@/lib/db";
 
 export const runtime = "nodejs";
 
+class TalentGenieForwardingError extends Error {
+  status: number;
+  body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "TalentGenieForwardingError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 function escape(str: string) {
   return str.replace(/'/g, "''");
 }
@@ -31,18 +43,19 @@ function resolveTalentGenieApiBaseUrl() {
   ).replace(/\/$/, "");
 }
 
-async function resolvePublishedVacancy(jobCategoryId: number) {
+async function resolveWebsiteJobForApplication(jobCategoryId: number) {
   const result = await pool.query<{
-    vacancy_id: number | null;
+    job_info_id: number;
+    hr_vacancy_id: number | null;
     job_title: string | null;
   }>(
     `
       SELECT
-        wp.vacancy_id,
+        ji.job_info_id,
+        ji.hr_vacancy_id,
         ji.title AS job_title
-      FROM website_publication AS wp
-      LEFT JOIN jobs_infos AS ji ON ji.job_info_id = wp.job_info_id
-      WHERE wp.job_info_id = $1
+      FROM jobs_infos AS ji
+      WHERE ji.job_info_id = $1
       LIMIT 1
     `,
     [jobCategoryId],
@@ -102,7 +115,7 @@ async function forwardApplicationToTalentGenie(args: {
         : "";
     const errorMessage =
       detail || `Talent Genie application forwarding failed with status ${response.status}.`;
-    throw new Error(errorMessage);
+    throw new TalentGenieForwardingError(errorMessage, response.status, payload);
   }
 
   return payload;
@@ -221,16 +234,32 @@ export async function POST(req: NextRequest) {
       size: resume.size,
     });
 
-    const publication = await resolvePublishedVacancy(jobCategoryId);
-    if (!publication?.vacancy_id) {
-      console.warn("[jobs-application] no Talent Genie vacancy mapping found", {
+    const websiteJob = await resolveWebsiteJobForApplication(jobCategoryId);
+    if (!websiteJob) {
+      console.warn("[jobs-application] website job not found", {
         requestId,
         jobCategoryId,
       });
       return NextResponse.json(
         {
+          error: "Website job not found.",
+          request_id: requestId,
+        },
+        { status: 404 },
+      );
+    }
+
+    if (!websiteJob.hr_vacancy_id) {
+      console.warn("[jobs-application] website job missing hr_vacancy_id", {
+        requestId,
+        jobCategoryId,
+        jobTitle: websiteJob.job_title,
+      });
+      return NextResponse.json(
+        {
           error:
-            "This website job is not linked to a Talent Genie vacancy yet. Publish or map the vacancy first.",
+            "This website job is not linked to an HR vacancy yet. Publish or map the vacancy first.",
+          request_id: requestId,
         },
         { status: 409 },
       );
@@ -274,11 +303,12 @@ export async function POST(req: NextRequest) {
     console.info("[jobs-application] legacy website record stored", {
       requestId,
       legacyApplicationId,
-      mappedVacancyId: publication.vacancy_id,
+      resolvedHrVacancyId: websiteJob.hr_vacancy_id,
+      websiteJobId: websiteJob.job_info_id,
     });
 
     const talentGenieResponse = await forwardApplicationToTalentGenie({
-      vacancyId: publication.vacancy_id,
+      vacancyId: websiteJob.hr_vacancy_id,
       name,
       email,
       phone,
@@ -291,7 +321,8 @@ export async function POST(req: NextRequest) {
     console.info("[jobs-application] Talent Genie forwarding succeeded", {
       requestId,
       legacyApplicationId,
-      mappedVacancyId: publication.vacancy_id,
+      resolvedHrVacancyId: websiteJob.hr_vacancy_id,
+      websiteJobId: websiteJob.job_info_id,
       talentGenieResponse,
     });
 
@@ -300,12 +331,31 @@ export async function POST(req: NextRequest) {
         message: "Application submitted successfully.",
         request_id: requestId,
         legacy_job_application_id: legacyApplicationId,
-        vacancy_id: publication.vacancy_id,
+        vacancy_id: websiteJob.hr_vacancy_id,
         talent_genie: talentGenieResponse,
       },
       { status: 201 },
     );
   } catch (err) {
+    if (err instanceof TalentGenieForwardingError) {
+      console.error("[jobs-application] HR backend forwarding failed", {
+        requestId,
+        legacyApplicationId,
+        status: err.status,
+        body: err.body,
+      });
+
+      return NextResponse.json(
+        {
+          error: "Application stored on website, but HR sync failed.",
+          request_id: requestId,
+          legacy_job_application_id: legacyApplicationId,
+          hr_error: err.body,
+        },
+        { status: 502 },
+      );
+    }
+
     console.error("[jobs-application] application bridge failed", {
       requestId,
       legacyApplicationId,

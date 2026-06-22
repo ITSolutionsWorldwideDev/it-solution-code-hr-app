@@ -264,6 +264,7 @@ def _build_mapped_fields(
         "location": location,
         "type": employment_type,
         "content": content,
+        "hr_vacancy_id": vacancy.id,
         "slug": slug,
         "apply_url": apply_url,
         "summary": str(vacancy.ai_summary or "").strip(),

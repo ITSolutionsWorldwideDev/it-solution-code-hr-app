@@ -53,6 +53,7 @@ model jobs_infos {
   type             String    @db.VarChar(100)
   content          String?
   pdf_url          String?
+  hr_vacancy_id    Int?
   published        Int       @default(0) @db.SmallInt
   created_by       Int
   created_at       DateTime? @default(now()) @db.Timestamp(6)

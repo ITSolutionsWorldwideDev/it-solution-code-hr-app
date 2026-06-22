@@ -125,17 +125,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { title, location, type, pdf_url, published } = await req.json();
+    const { title, location, type, pdf_url, published, hr_vacancy_id } =
+      await req.json();
+    const hrVacancyId =
+      hr_vacancy_id === null || hr_vacancy_id === undefined || hr_vacancy_id === ""
+        ? null
+        : Number(hr_vacancy_id);
+
+    if (hrVacancyId !== null && (!Number.isInteger(hrVacancyId) || hrVacancyId <= 0)) {
+      return NextResponse.json(
+        { error: "hr_vacancy_id must be a positive integer." },
+        { status: 400 },
+      );
+    }
     // const slug = title
     //   .toLowerCase()
     //   .replace(/[^a-z0-9]+/g, "-")
     //   .replace(/(^-|-$)+/g, "");
 
     const result = await pool.query(
-      `INSERT INTO jobs_infos (title, location, type, pdf_url, created_at, updated_at, published, created_by)
-       VALUES ($1, $2, $3, $4, NOW(), NOW(),$5, $6)
+      `INSERT INTO jobs_infos (title, location, type, pdf_url, hr_vacancy_id, created_at, updated_at, published, created_by)
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW(),$6, $7)
        RETURNING *`,
-      [title, location, type, pdf_url || null, published ? 1 : 0, user.user_id],
+      [
+        title,
+        location,
+        type,
+        pdf_url || null,
+        hrVacancyId,
+        published ? 1 : 0,
+        user.user_id,
+      ],
     );
 
     return NextResponse.json(result.rows[0], { status: 201 });
@@ -173,14 +193,41 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { job_info_id, title, location, type, pdf_url, published } = await req.json();
+    const {
+      job_info_id,
+      title,
+      location,
+      type,
+      pdf_url,
+      published,
+      hr_vacancy_id,
+    } = await req.json();
+    const hrVacancyId =
+      hr_vacancy_id === null || hr_vacancy_id === undefined || hr_vacancy_id === ""
+        ? null
+        : Number(hr_vacancy_id);
+
+    if (hrVacancyId !== null && (!Number.isInteger(hrVacancyId) || hrVacancyId <= 0)) {
+      return NextResponse.json(
+        { error: "hr_vacancy_id must be a positive integer." },
+        { status: 400 },
+      );
+    }
 
     const result = await pool.query(
       `UPDATE jobs_infos
-       SET title = $1, location = $2, type = $3, pdf_url = $4, published = $5, updated_at = NOW()
-       WHERE job_info_id = $6
+       SET title = $1, location = $2, type = $3, pdf_url = $4, published = $5, hr_vacancy_id = $6, updated_at = NOW()
+       WHERE job_info_id = $7
        RETURNING *`,
-      [title, location, type, pdf_url || null, published ? 1 : 0, job_info_id],
+      [
+        title,
+        location,
+        type,
+        pdf_url || null,
+        published ? 1 : 0,
+        hrVacancyId,
+        job_info_id,
+      ],
     );
 
     if (result.rows.length === 0) {

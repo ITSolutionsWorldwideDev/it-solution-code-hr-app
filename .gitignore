@@ -16,6 +16,7 @@ design-sandbox/.next/
 *.out.log
 *.err.log
 *.sql
+!itww-admin/prisma/migrations/**/*.sql
 
 storage/resumes/
 storage/website-job-pdfs/
