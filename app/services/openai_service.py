@@ -1397,19 +1397,28 @@ def generate_job_description_with_openai(
         return fallback
 
     system_prompt = (
-        "You are a senior HR content strategist and recruitment copywriter. Produce high-quality, human-sounding, "
-        "editable vacancy drafts for real recruiter use. The output must feel specific to the role and inputs given, "
-        "not generic or templated. Avoid vague filler, broad corporate language, and repetitive phrases like "
-        "'detail-oriented and motivated candidate' unless they are directly justified by the role. "
-        "The generated_job_description must be a complete long-form vacancy with strong section headings and practical, "
-        "role-specific content. Use the provided requirements to infer realistic day-to-day responsibilities, expected "
-        "stakeholder interactions, preferred tools, and business outcomes. Keep the wording concise, professional, "
-        "and credible for a modern recruitment team. Return a polished description, extracted required skills, a short "
-        "summary, and a realistic suggested max budget based on the role, location, work setup, and experience."
+        "You are an elite enterprise HR content strategist and professional recruitment copywriter. "
+        "Your job is to produce high-quality, human-sounding, instantly publishable vacancy drafts based on the provided inputs.\n\n"
+        "The output inside the \"generated_job_description\" field must look like a premium, complete long-form vacancy post. "
+        "It must never sound generic, robotic, or templated. Avoid broad corporate fluff and cliche phrases "
+        "(like 'detail-oriented go-getter') unless explicitly requested. Instead, infer realistic day-to-day responsibilities, "
+        "key stakeholder interactions, and clear business outcomes from the user's input.\n\n"
+        "Strict Layout & Styling Rules for \"generated_job_description\":\n"
+        "- Use standard Markdown (`##`, `###`, `**`, and `*`) for a clean, scannable, and modern UI hierarchy.\n"
+        "- Include exactly these sections in this exact order:\n"
+        "  ## [Company Name] - [Job Title] (with location & contract type details)\n"
+        "  ## About Us (A compelling paragraph about an entrepreneurial, high-growth, and collaborative culture)\n"
+        "  ## The Role (A clear 2-3 sentence bridge between the data/infrastructure and business strategy)\n"
+        "  ## Key Responsibilities (Must use numbered subsections with a short bold title followed by a concise explanatory paragraph)\n"
+        "  ## Requirements & Qualifications (Must use category-style lines such as **Experience:**, **Education:**, **Technical Skills:**, and **Soft Skills:** with clean bullet points)\n"
+        "  ## What We Offer (A comprehensive summary of autonomy, competitive perks, and flexible/hybrid working environments)\n"
+        "  ## How to Apply (A clear call-to-action for the candidate, followed by a standard recruitment agency disclaimer)\n\n"
+        "Return a polished JSON object containing a complete description, extracted required skills, a brief summary, and a realistic budget estimation."
     )
     user_prompt = (
         f"Job title: {normalized_job_title}\n"
         f"Department: {normalized_department}\n"
+        f"Company name: IT Solutions Worldwide\n"
         f"Budget: {budget or 'not specified'}\n"
         f"Start date: {start_date or 'not specified'}\n"
         f"Employment type: {employment_type or 'not specified'}\n"
@@ -1421,27 +1430,23 @@ def generate_job_description_with_openai(
         f"Perks and benefits guidance: {perks or 'not specified'}\n"
         f"Tone: {tone or 'professional'}\n"
         f"Seniority: {seniority or 'not specified'}\n"
-        f"Requirements from user: {normalized_requirements}\n\n"
-        "Instructions:\n"
-        "- Write in English.\n"
-        "- Make the draft feel specific to the exact role and input details.\n"
-        "- Include these sections in this exact order: About Us, Key Responsibilities, Requirements & Qualifications, What We Offer & How to Apply.\n"
-        "- In Key Responsibilities, use numbered subsections with a short title followed by a concise explanatory paragraph.\n"
-        "- In Requirements & Qualifications, use category-style lines such as Experience, Education, Technical Skills, and Analytical Thinking.\n"
-        "- Turn the raw requirements into recruiter-ready language without sounding robotic.\n"
-        "- Keep the tone professional, corporate, polished, and suitable for direct editing and publishing.\n"
-        "- Do not include placeholders like [PLAK HIER JE URL].\n"
-        "- Do not write a generic company history paragraph if no company-specific information is provided.\n"
-        "- The summary should be 1 to 2 sentences only.\n"
-        "- generated_required_skills should be practical, non-duplicated keywords recruiters would actually use."
+        f"Requirements from user:\n{normalized_requirements}\n\n"
+        "Additional instructions:\n"
+        "- Write in clear, modern English.\n"
+        "- Make the draft specific to the actual role, not a generic company template.\n"
+        "- Do not echo the user's raw prompt text back as responsibilities or requirements.\n"
+        "- Convert rough notes into polished recruiter language.\n"
+        "- Keep the description ready for direct editing and publishing.\n"
+        "- generated_required_skills should be practical, deduplicated, recruiter-friendly keywords.\n"
+        "- summary should be 1 to 2 sentences only.\n"
+        "- Do not include internal notes, explanation, or meta commentary."
     )
 
     try:
         raw_text = _generate_vertex_text(
-            f"{system_prompt}\n\nReturn JSON only with keys: generated_job_description, generated_required_skills, summary, suggested_max_budget.\n\n"
-            "The generated_job_description should read like a complete vacancy post, not like a short overview paragraph. "
-            "Include section headings, practical bullet points, and enough detail for direct human editing. "
-            "The draft must sound role-specific and grounded in the supplied requirements.\n\n"
+            f"{system_prompt}\n\n"
+            "Return JSON only with keys: generated_job_description, generated_required_skills, summary, suggested_max_budget.\n"
+            "Do not wrap the JSON in markdown fences.\n"
             f"{user_prompt}"
         )
         payload = _extract_json_object(raw_text)
@@ -1453,31 +1458,18 @@ def generate_job_description_with_openai(
     if not result:
         return fallback
 
-    normalized_description = _build_long_form_job_description(
-        job_title=normalized_job_title,
-        department=normalized_department,
-        location=", ".join(part for part in [city, country] if part) or "the relevant hiring location",
-        salary_indication=result.suggested_max_budget
-        or _estimate_budget(
-            budget=budget,
-            seniority=seniority,
-            years_experience=years_experience,
-            country=country,
-        ),
-        employment_type=employment_type,
-        work_hours=work_hours,
-        work_model=work_model,
-        years_experience=years_experience,
-        perks=perks,
-        requirements=normalized_requirements,
-        skills=result.generated_required_skills,
-        tone=sanitize_text(tone) or "professional",
-        seniority=sanitize_text(seniority) or "appropriate",
-        start_date=start_date,
-        source_body=result.generated_job_description,
-    )
-
-    result.generated_job_description = normalized_description
+    result.generated_job_description = sanitize_text(result.generated_job_description) or fallback.generated_job_description
+    result.generated_required_skills = [
+        skill
+        for skill in dict.fromkeys(
+            sanitize_text(skill) or ""
+            for skill in result.generated_required_skills
+        )
+        if skill
+    ]
+    result.summary = sanitize_text(result.summary) or fallback.summary
+    if not result.suggested_max_budget:
+        result.suggested_max_budget = fallback.suggested_max_budget
 
     return result
 
