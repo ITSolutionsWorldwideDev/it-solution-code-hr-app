@@ -1278,6 +1278,20 @@ def _estimate_budget(
     return junior_band
 
 
+def _strip_job_description_markdown(value: str | None) -> str | None:
+    cleaned = sanitize_text(value)
+    if not cleaned:
+        return cleaned
+
+    cleaned = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", cleaned)
+    cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"__(.*?)__", r"\1", cleaned)
+    cleaned = re.sub(r"(?m)^\s*[*-]\s+", "- ", cleaned)
+    cleaned = re.sub(r"(?m)^\s*\d+\.\s+\*\*(.*?)\*\*:\s*$", r"\1:", cleaned)
+    cleaned = cleaned.replace("`", "")
+    return sanitize_text(cleaned)
+
+
 def _generate_job_description_fallback(
     *,
     job_title: str | None,
@@ -1404,15 +1418,14 @@ def generate_job_description_with_openai(
         "(like 'detail-oriented go-getter') unless explicitly requested. Instead, infer realistic day-to-day responsibilities, "
         "key stakeholder interactions, and clear business outcomes from the user's input.\n\n"
         "Strict Layout & Styling Rules for \"generated_job_description\":\n"
-        "- Use standard Markdown (`##`, `###`, `**`, and `*`) for a clean, scannable, and modern UI hierarchy.\n"
         "- Include exactly these sections in this exact order:\n"
-        "  ## [Company Name] - [Job Title] (with location & contract type details)\n"
-        "  ## About Us (A compelling paragraph about an entrepreneurial, high-growth, and collaborative culture)\n"
-        "  ## The Role (A clear 2-3 sentence bridge between the data/infrastructure and business strategy)\n"
-        "  ## Key Responsibilities (Must use numbered subsections with a short bold title followed by a concise explanatory paragraph)\n"
-        "  ## Requirements & Qualifications (Must use category-style lines such as **Experience:**, **Education:**, **Technical Skills:**, and **Soft Skills:** with clean bullet points)\n"
-        "  ## What We Offer (A comprehensive summary of autonomy, competitive perks, and flexible/hybrid working environments)\n"
-        "  ## How to Apply (A clear call-to-action for the candidate, followed by a standard recruitment agency disclaimer)\n\n"
+        "  [Company Name] - [Job Title] (with location & contract type details)\n"
+        "  About Us (A compelling paragraph about an entrepreneurial, high-growth, and collaborative culture)\n"
+        "  The Role (A clear 2-3 sentence bridge between the data/infrastructure and business strategy)\n"
+        "  Key Responsibilities (Use numbered subsections with a short title followed by a concise explanatory paragraph)\n"
+        "  Requirements & Qualifications (Use category-style lines such as Experience:, Education:, Technical Skills:, and Soft Skills: with clean bullet points)\n"
+        "  What We Offer (A comprehensive summary of autonomy, competitive perks, and flexible/hybrid working environments)\n"
+        "  How to Apply (A clear call-to-action for the candidate, followed by a standard recruitment agency disclaimer)\n\n"
         "Return a polished JSON object containing a complete description, extracted required skills, a brief summary, and a realistic budget estimation."
     )
     user_prompt = (
@@ -1436,6 +1449,7 @@ def generate_job_description_with_openai(
         "- Make the draft specific to the actual role, not a generic company template.\n"
         "- Do not echo the user's raw prompt text back as responsibilities or requirements.\n"
         "- Convert rough notes into polished recruiter language.\n"
+        "- Do not use markdown symbols such as ##, ###, **, *, underscores for emphasis, or backticks in generated_job_description.\n"
         "- Keep the description ready for direct editing and publishing.\n"
         "- generated_required_skills should be practical, deduplicated, recruiter-friendly keywords.\n"
         "- summary should be 1 to 2 sentences only.\n"
@@ -1458,7 +1472,11 @@ def generate_job_description_with_openai(
     if not result:
         return fallback
 
-    result.generated_job_description = sanitize_text(result.generated_job_description) or fallback.generated_job_description
+    result.generated_job_description = (
+        _strip_job_description_markdown(result.generated_job_description)
+        or _strip_job_description_markdown(fallback.generated_job_description)
+        or fallback.generated_job_description
+    )
     result.generated_required_skills = [
         skill
         for skill in dict.fromkeys(
