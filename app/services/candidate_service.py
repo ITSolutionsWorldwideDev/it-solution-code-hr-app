@@ -31,6 +31,21 @@ from app.services.crud import get_or_404
 from app.services.openai_service import CandidateParseResult, parse_candidate_with_openai
 
 
+def _store_resume_on_candidate(candidate: Candidate, pdf_content: dict) -> None:
+    file_bytes = pdf_content.get("file_bytes")
+    if not isinstance(file_bytes, (bytes, bytearray)) or not file_bytes:
+        return
+
+    filename = sanitize_text(pdf_content.get("original_filename")) or sanitize_text(pdf_content.get("filename"))
+    content_type = sanitize_text(pdf_content.get("content_type"))
+    file_checksum = sanitize_text(pdf_content.get("file_checksum"))
+
+    candidate.resume_file_name = filename
+    candidate.resume_content_type = content_type
+    candidate.resume_file_checksum = file_checksum
+    candidate.resume_file_data = bytes(file_bytes)
+
+
 def create_candidate_from_cv(
     session: Session,
     pdf_content: dict,
@@ -68,6 +83,7 @@ def create_candidate_from_cv(
             parsed_candidate.get("match_score", 0.0),
             parsed_data,
         )
+        _store_resume_on_candidate(existing_candidate, pdf_content)
         session.add(existing_candidate)
         session.commit()
         session.refresh(existing_candidate)
@@ -98,6 +114,7 @@ def create_candidate_from_cv(
         parsed_data=parsed_data,
     )
     candidate = Candidate(**payload.model_dump())
+    _store_resume_on_candidate(candidate, pdf_content)
     session.add(candidate)
     session.commit()
     session.refresh(candidate)
@@ -148,6 +165,7 @@ def update_candidate_from_cv(
         parsed_candidate.get("match_score", 0.0),
         parsed_data,
     )
+    _store_resume_on_candidate(candidate, pdf_content)
     session.add(candidate)
     session.commit()
     session.refresh(candidate)
@@ -333,14 +351,20 @@ def backfill_candidate_hidden_potentials(
     skipped: list[dict[str, object]] = []
 
     for candidate in candidates:
+        resume_bytes: bytes | None = None
         resume_path_value = candidate.parsed_data.get("resume_path") if candidate.parsed_data else None
-        if not isinstance(resume_path_value, str) or not resume_path_value.strip():
-            skipped.append({"candidate_id": candidate.id, "reason": "Missing resume_path in parsed_data."})
-            continue
 
-        resume_path = Path(resume_path_value)
-        if not resume_path.exists():
-            skipped.append({"candidate_id": candidate.id, "reason": f"Resume file not found at {resume_path_value}."})
+        if candidate.resume_file_data:
+            resume_bytes = bytes(candidate.resume_file_data)
+        elif isinstance(resume_path_value, str) and resume_path_value.strip():
+            resume_path = Path(resume_path_value)
+            if resume_path.exists():
+                resume_bytes = resume_path.read_bytes()
+            else:
+                skipped.append({"candidate_id": candidate.id, "reason": f"Resume file not found at {resume_path_value}."})
+                continue
+        else:
+            skipped.append({"candidate_id": candidate.id, "reason": "Missing stored CV in database and resume_path in parsed_data."})
             continue
 
         application = session.exec(
@@ -351,12 +375,15 @@ def backfill_candidate_hidden_potentials(
         fallback_vacancy_id = candidate.parsed_data.get("vacancy_context", {}).get("vacancy_id") if candidate.parsed_data else None
         vacancy_id = application.vacancy_id if application else (int(fallback_vacancy_id) if fallback_vacancy_id else None)
 
-        pdf_content = extract_pdf_content(resume_path.read_bytes())
+        pdf_content = extract_pdf_content(resume_bytes)
         pdf_content.update(
             {
-                "filename": candidate.parsed_data.get("filename"),
-                "content_type": candidate.parsed_data.get("content_type") or "application/pdf",
-                "resume_path": str(resume_path),
+                "filename": candidate.parsed_data.get("filename") or candidate.resume_file_name,
+                "original_filename": candidate.parsed_data.get("original_file_name") or candidate.resume_file_name,
+                "content_type": candidate.parsed_data.get("content_type") or candidate.resume_content_type or "application/pdf",
+                "resume_path": resume_path_value,
+                "file_checksum": candidate.parsed_data.get("file_checksum") or candidate.resume_file_checksum,
+                "file_bytes": resume_bytes,
             }
         )
 

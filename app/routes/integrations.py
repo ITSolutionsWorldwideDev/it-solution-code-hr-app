@@ -91,14 +91,16 @@ def process_parse_job(
     session.refresh(parse_job)
 
     try:
-        resume_path = _resolve_resume_path(payload.file_path)
-        file_bytes = resume_path.read_bytes()
+        file_bytes, resume_path = _load_parse_job_file_bytes(parse_job, payload.file_path)
         pdf_content = extract_pdf_content(file_bytes)
         pdf_content.update(
             {
                 "filename": parse_job.file_name,
+                "original_filename": parse_job.original_file_name or parse_job.file_name,
                 "content_type": parse_job.mime_type or "application/pdf",
-                "resume_path": str(resume_path),
+                "resume_path": str(resume_path) if resume_path is not None else parse_job.file_path,
+                "file_checksum": parse_job.file_checksum,
+                "file_bytes": file_bytes,
             }
         )
 
@@ -126,7 +128,7 @@ def process_parse_job(
             },
         )
 
-        parse_job.file_path = str(resume_path)
+        parse_job.file_path = str(resume_path) if resume_path is not None else parse_job.file_path
         parse_job.candidate_id = candidate.id
         parse_job.application_id = application.id
         parse_job.raw_text = pdf_content["extracted_text"]
@@ -161,6 +163,14 @@ def process_parse_job(
         file_path=parse_job.file_path,
         parsed_at=parse_job.parsed_at,
     )
+
+
+def _load_parse_job_file_bytes(parse_job: ParseJob, file_path: str) -> tuple[bytes, Path | None]:
+    if parse_job.file_blob_data:
+        return bytes(parse_job.file_blob_data), None
+
+    resume_path = _resolve_resume_path(file_path)
+    return resume_path.read_bytes(), resume_path
 
 
 def _resolve_resume_path(file_path: str) -> Path:

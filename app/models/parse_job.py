@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, LargeBinary, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,8 +23,10 @@ class ParseJob(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     original_file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    file_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    file_blob_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="uploaded", nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     candidate_id: Mapped[int | None] = mapped_column(ForeignKey("candidate.id", ondelete="SET NULL"), nullable=True)

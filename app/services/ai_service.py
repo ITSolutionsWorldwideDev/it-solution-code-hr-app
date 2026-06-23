@@ -105,7 +105,10 @@ async def extract_pdf_content_from_upload(file: UploadFile) -> dict:
     return {
         **pdf_content,
         "filename": upload_data["filename"],
+        "original_filename": upload_data["original_filename"],
         "content_type": upload_data["content_type"],
+        "file_checksum": upload_data["file_checksum"],
+        "file_bytes": file_bytes,
         "resume_path": upload_data["resume_path"],
     }
 
@@ -175,8 +178,10 @@ def extract_pdf_content_from_bytes(
     return {
         **pdf_content,
         "filename": filename,
+        "original_filename": filename,
         "content_type": content_type,
         "file_checksum": file_checksum,
+        "file_bytes": file_bytes,
         "resume_path": str(stored_path),
     }
 
@@ -236,6 +241,7 @@ def build_parsed_data(pdf_content: dict, parsed_candidate: dict, vacancy: Vacanc
         "source": "pdf_cv_upload",
         "resume_path": pdf_content.get("resume_path"),
         "filename": pdf_content.get("filename"),
+        "original_file_name": pdf_content.get("original_filename") or pdf_content.get("filename"),
         "file_checksum": pdf_content.get("file_checksum"),
         "content_type": pdf_content.get("content_type"),
         "page_count": pdf_content.get("page_count"),

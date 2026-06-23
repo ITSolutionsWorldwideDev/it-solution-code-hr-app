@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import String
+from sqlalchemy import LargeBinary, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +22,10 @@ class Candidate(Base):
     ai_summary: Mapped[str | None] = mapped_column(String, nullable=True)
     match_score: Mapped[float | None] = mapped_column(nullable=True)
     parsed_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    resume_file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resume_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    resume_file_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    resume_file_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     applications: Mapped[list["Application"]] = relationship(back_populates="candidate")
     employee: Mapped[Optional["Employee"]] = relationship(back_populates="candidate")

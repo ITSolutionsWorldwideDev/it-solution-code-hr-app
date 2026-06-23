@@ -1,11 +1,13 @@
 import asyncio
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 import re
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 import requests
 from sqlmodel import Session, select
 
@@ -176,15 +178,32 @@ def _resolve_original_resume_filename(session: Session, file_checksum: str, fall
     candidates = session.exec(select(Candidate)).all()
     for candidate in candidates:
         parsed_data = candidate.parsed_data or {}
-        if parsed_data.get("file_checksum") != file_checksum:
+        if (candidate.resume_file_checksum or parsed_data.get("file_checksum")) != file_checksum:
             continue
 
+        if candidate.resume_file_name:
+            return Path(candidate.resume_file_name).name
         for key in ("original_file_name", "filename"):
             value = parsed_data.get(key)
             if isinstance(value, str) and value.strip():
                 return Path(value.strip()).name
 
     return fallback_path.name
+
+
+def _find_candidate_resume_by_checksum(session: Session, file_checksum: str) -> Candidate | None:
+    candidate = session.exec(
+        select(Candidate).where(Candidate.resume_file_checksum == file_checksum)
+    ).first()
+    if candidate is not None:
+        return candidate
+
+    candidates = session.exec(select(Candidate)).all()
+    for item in candidates:
+        parsed_data = item.parsed_data or {}
+        if parsed_data.get("file_checksum") == file_checksum:
+            return item
+    return None
 
 
 def _get_or_create_parse_job(
@@ -206,8 +225,10 @@ def _get_or_create_parse_job(
     if existing_job:
         existing_job.file_name = Path(upload_data["resume_path"]).name
         existing_job.original_file_name = upload_data["original_filename"]
+        existing_job.file_checksum = upload_data["file_checksum"]
         existing_job.mime_type = upload_data["content_type"]
         existing_job.file_size_bytes = upload_data["file_size_bytes"]
+        existing_job.file_blob_data = upload_data["file_bytes"]
         existing_job.uploaded_by = uploaded_by
         existing_job.source = "manual_upload"
         if existing_job.status == "failed":
@@ -229,8 +250,10 @@ def _get_or_create_parse_job(
         file_name=Path(upload_data["resume_path"]).name,
         original_file_name=upload_data["original_filename"],
         file_path=upload_data["resume_path"],
+        file_checksum=upload_data["file_checksum"],
         mime_type=upload_data["content_type"],
         file_size_bytes=upload_data["file_size_bytes"],
+        file_blob_data=upload_data["file_bytes"],
         status="uploaded",
         source="manual_upload",
         uploaded_by=uploaded_by,
@@ -266,8 +289,18 @@ def get_candidate_cv_file(
     download: bool = Query(default=False),
     session: Session = Depends(get_session),
 ):
-    resume_path = _resolve_resume_file_from_checksum(file_checksum)
-    filename = _resolve_original_resume_filename(session, file_checksum.strip().lower(), resume_path)
+    normalized_checksum = file_checksum.strip().lower()
+    candidate = _find_candidate_resume_by_checksum(session, normalized_checksum)
+    if candidate is not None and candidate.resume_file_data:
+        filename = _resolve_original_resume_filename(session, normalized_checksum, Path(f"{normalized_checksum}.bin"))
+        media_type = candidate.resume_content_type or "application/octet-stream"
+        disposition = "attachment" if download else "inline"
+        response = StreamingResponse(BytesIO(bytes(candidate.resume_file_data)), media_type=media_type)
+        response.headers["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+        return response
+
+    resume_path = _resolve_resume_file_from_checksum(normalized_checksum)
+    filename = _resolve_original_resume_filename(session, normalized_checksum, resume_path)
     return FileResponse(
         path=resume_path,
         media_type=_guess_media_type(resume_path),

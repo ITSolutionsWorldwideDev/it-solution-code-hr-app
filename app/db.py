@@ -93,6 +93,46 @@ def ensure_website_jobs_table() -> None:
         )
 
 
+def ensure_candidate_resume_storage() -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                ALTER TABLE candidate
+                ADD COLUMN IF NOT EXISTS resume_file_name VARCHAR(255),
+                ADD COLUMN IF NOT EXISTS resume_content_type VARCHAR(100),
+                ADD COLUMN IF NOT EXISTS resume_file_checksum VARCHAR(64),
+                ADD COLUMN IF NOT EXISTS resume_file_data BYTEA
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_candidate_resume_file_checksum
+                ON candidate (resume_file_checksum)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE parse_jobs
+                ADD COLUMN IF NOT EXISTS file_checksum VARCHAR(64),
+                ADD COLUMN IF NOT EXISTS file_blob_data BYTEA
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_parse_jobs_file_checksum
+                ON parse_jobs (file_checksum)
+                """
+            )
+        )
+
+
 def get_session():
     with Session(engine) as session:
         yield session
@@ -122,6 +162,7 @@ def ensure_default_departments(session: Session) -> None:
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     ensure_website_jobs_table()
+    ensure_candidate_resume_storage()
 
     with Session(engine) as session:
         ensure_default_departments(session)

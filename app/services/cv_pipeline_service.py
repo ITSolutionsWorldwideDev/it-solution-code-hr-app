@@ -185,6 +185,7 @@ def _build_pdf_content(stored_resume: StoredResume, extracted_text: str) -> dict
         "content_type": stored_resume.content_type,
         "file_size_bytes": stored_resume.file_size_bytes,
         "file_checksum": stored_resume.file_checksum,
+        "file_bytes": stored_resume.file_bytes,
         "resume_path": stored_resume.resume_path,
         "extracted_text": extracted_text,
         "page_count": None,
@@ -408,6 +409,13 @@ def _sync_candidate_metadata(
     candidate.parsed_data = parsed_data
 
 
+def _store_resume_on_candidate_record(candidate: Candidate, stored_resume: StoredResume) -> None:
+    candidate.resume_file_name = stored_resume.original_filename or stored_resume.filename
+    candidate.resume_content_type = stored_resume.content_type
+    candidate.resume_file_checksum = stored_resume.file_checksum
+    candidate.resume_file_data = stored_resume.file_bytes
+
+
 def _sync_application_metadata(
     *,
     application: Application,
@@ -447,8 +455,10 @@ def create_parse_job_for_application(
         file_name=Path(stored_resume.resume_path).name,
         original_file_name=stored_resume.original_filename,
         file_path=stored_resume.resume_path,
+        file_checksum=stored_resume.file_checksum,
         mime_type=stored_resume.content_type,
         file_size_bytes=stored_resume.file_size_bytes,
+        file_blob_data=stored_resume.file_bytes,
         status="pending",
         candidate_id=application.candidate_id,
         application_id=application.id,
@@ -517,6 +527,7 @@ def process_candidate_file(
                 matched_job_id=None,
                 intake_metadata=intake_metadata,
             )
+            _store_resume_on_candidate_record(candidate, stored_resume)
             candidate.match_score = None
             session.add(candidate)
             if application:
@@ -602,6 +613,7 @@ def process_candidate_file(
             matched_job_id=matched_job_id,
             intake_metadata=intake_metadata,
         )
+        _store_resume_on_candidate_record(candidate, stored_resume)
         session.add(candidate)
         if application:
             application.candidate_id = candidate.id
@@ -667,6 +679,7 @@ def process_candidate_file(
         intake_metadata=intake_metadata,
         error_message=error_message,
     )
+    _store_resume_on_candidate_record(candidate, stored_resume)
     session.add(candidate)
     if application:
         _sync_application_metadata(
