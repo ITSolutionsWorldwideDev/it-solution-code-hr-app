@@ -7,8 +7,10 @@ from app.models.enums import HiringRequestStatus, VacancyStatus
 from app.models.hiring_request import HiringRequest
 from app.models.user import User
 from app.models.vacancy import Vacancy
+from app.config import settings
 from app.schemas.hiring_request import HiringRequestDecision
 from app.services.crud import get_or_404
+from app.services.openai_service import inject_job_description_apply_url
 from app.services.website_publish_service import auto_publish_vacancy_to_website
 
 
@@ -48,6 +50,15 @@ def approve_hiring_request(
 
     session.add(hiring_request)
     session.add(vacancy)
+    session.flush()
+
+    apply_url = f"{settings.public_apply_base_url.rstrip('/')}/{vacancy.id}"
+    vacancy.description = inject_job_description_apply_url(
+        description=vacancy.description,
+        apply_url=apply_url,
+    )
+    hiring_request.description = vacancy.description
+
     session.commit()
     session.refresh(vacancy)
     auto_publish_vacancy_to_website(session, vacancy, public_base_url=public_base_url)

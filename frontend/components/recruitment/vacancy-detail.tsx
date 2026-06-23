@@ -18,7 +18,7 @@ type VacancyDetailProps = {
 type VacancyDetailContent = {
   overview: Array<{ label: string; value: string; icon: React.ReactNode }>;
   aboutRole: string[];
-  responsibilities: string[];
+  fullDescription: Array<{ kind: "heading" | "bullet" | "paragraph" | "divider"; text: string }>;
 };
 
 function formatUploadedDate(value: string) {
@@ -37,7 +37,7 @@ function formatUploadedDate(value: string) {
 }
 
 function normalizeWorkspaceDescription(description: string) {
-  const marker = /How to Apply/i;
+  const marker = /(?:###\s*\*\*How to Apply\*\*|How to Apply)/i;
 
   if (marker.test(description)) {
     return description.split(marker)[0].trimEnd();
@@ -48,11 +48,7 @@ function normalizeWorkspaceDescription(description: string) {
 
 export function VacancyDetail({ vacancy }: VacancyDetailProps) {
   const content = buildVacancyDetailContent(vacancy);
-  const normalizedDescription = normalizeDescription(normalizeWorkspaceDescription(vacancy.description));
-  const compensation =
-    extractOverviewValue(normalizedDescription, "Salary Indication") ??
-    extractOverviewValue(normalizedDescription, "Compensation") ??
-    "Not specified";
+  const compensation = extractCompensation(vacancy) ?? "Not specified";
 
   return (
     <div className="relative mx-auto max-w-[1440px]">
@@ -129,37 +125,23 @@ export function VacancyDetail({ vacancy }: VacancyDetailProps) {
           <div className="rounded-2xl border border-[#3c4948]/40 bg-[#17202b] p-7 shadow-[0_16px_30px_rgba(0,0,0,0.14)]">
             <h2 className="text-[18px] font-semibold text-[#3cdcd1]">About the Role</h2>
             <div className="mt-5 space-y-5 text-[16px] leading-10 text-[#bacac7]">
-              {content.aboutRole.map((paragraph, index) => (
-                <p key={`about-role-${index}`}>{paragraph}</p>
-              ))}
+              {content.fullDescription.map((item, index) =>
+                item.kind === "heading" ? (
+                  <h3 key={`about-role-${index}`} className="pt-3 text-[17px] font-semibold text-white">
+                    {item.text}
+                  </h3>
+                ) : item.kind === "bullet" ? (
+                  <div key={`about-role-${index}`} className="flex items-start gap-3">
+                    <span className="mt-4 h-2 w-2 shrink-0 rounded-full bg-[#3cdcd1]" />
+                    <p>{item.text}</p>
+                  </div>
+                ) : item.kind === "divider" ? (
+                  <div key={`about-role-${index}`} className="border-t border-[#3c4948]/30 pt-2" />
+                ) : (
+                  <p key={`about-role-${index}`}>{item.text}</p>
+                )
+              )}
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-[#3c4948]/40 bg-[#17202b] p-7 shadow-[0_16px_30px_rgba(0,0,0,0.14)]">
-            <h2 className="text-[18px] font-semibold text-[#3cdcd1]">Key Responsibilities</h2>
-            <ul className="mt-5 space-y-5">
-              {content.responsibilities.map((item, index) => {
-                const [title, ...rest] = item.split(":");
-                const description = rest.join(":").trim();
-                return (
-                  <li key={`${item}-${index}`} className="group flex items-start gap-4">
-                    <span className="mt-[9px] h-2 w-2 shrink-0 rounded-full bg-[#3cdcd1] transition-transform group-hover:scale-125" />
-                    <div className="flex flex-col">
-                      <span className="text-[15px] font-semibold text-[#dae3f2]">
-                        {description ? `${title.trim()}: ${description.split(".")[0].trim()}` : item}
-                      </span>
-                      {description ? (
-                        <span className="text-[12px] text-[#859491]">
-                          {description.includes(".")
-                            ? description.substring(description.indexOf(".") + 1).trim() || "Execution aligned with role expectations."
-                            : "Execution aligned with role expectations."}
-                        </span>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
           </div>
         </section>
 
@@ -175,23 +157,15 @@ export function VacancyDetail({ vacancy }: VacancyDetailProps) {
 function buildVacancyDetailContent(vacancy: VacancyRecord): VacancyDetailContent {
   const normalizedDescription = normalizeDescription(normalizeWorkspaceDescription(vacancy.description));
   const aboutRole =
-    extractParagraphSection(normalizedDescription, ["About the Role", "Position Overview"], [
+    extractParagraphSection(normalizedDescription, ["About Us", "The Role", "About the Role", "Position Overview"], [
       "Key Responsibilities",
-      "What Youâ€™ll Bring",
+      "Requirements & Qualifications",
+      "What You’ll Bring",
       "What You'll Bring",
       "Nice to Have",
       "Working Arrangements and Benefits",
       "What We Offer",
     ]) ?? ["No detailed role overview has been added yet."];
-
-  const responsibilities =
-    extractBulletSection(normalizedDescription, ["Key Responsibilities"], [
-      "What Youâ€™ll Bring",
-      "What You'll Bring",
-      "Nice to Have",
-      "Working Arrangements and Benefits",
-      "What We Offer",
-    ]) ?? vacancy.requirements;
 
   return {
     overview: [
@@ -217,7 +191,7 @@ function buildVacancyDetailContent(vacancy: VacancyRecord): VacancyDetailContent
       },
       {
         label: "Compensation",
-        value: extractOverviewValue(normalizedDescription, "Salary Indication") ?? extractOverviewValue(normalizedDescription, "Compensation") ?? "Not specified",
+        value: extractCompensation(vacancy) ?? "Not specified",
         icon: <CircleDollarSign className="h-3.5 w-3.5" />,
       },
       {
@@ -227,15 +201,18 @@ function buildVacancyDetailContent(vacancy: VacancyRecord): VacancyDetailContent
       },
     ],
     aboutRole,
-    responsibilities,
+    fullDescription: buildFullDescription(normalizedDescription),
   };
 }
 
 function normalizeDescription(description: string) {
   return description
     .replace(/\r\n/g, "\n")
+    .replace(/^\s*###\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/^-\s*/gm, "* ")
     .replace(
-      /(Short Summary|Overview|About the Role|Position Overview|Key Responsibilities|What Youâ€™ll Bring|What You'll Bring|Nice to Have|Working Arrangements and Benefits|What We Offer|How to Apply)/gi,
+      /(Short Summary|Overview|About Us|The Role|About the Role|Position Overview|Key Responsibilities|Requirements & Qualifications|What You’ll Bring|What You'll Bring|Nice to Have|Working Arrangements and Benefits|What We Offer|How to Apply)/gi,
       "\n$1\n",
     )
     .replace(/\n{3,}/g, "\n\n")
@@ -257,30 +234,11 @@ function extractParagraphSection(
     .map((item) => item.trim())
     .filter(Boolean)
     .filter((item) => !item.startsWith("-"))
+    .filter((item) => !item.startsWith("*"))
     .filter((item) => !item.startsWith("•"))
     .filter((item) => !/^[A-Za-z ]+:\s.+/.test(item));
 
   return paragraphs.length > 0 ? paragraphs : null;
-}
-
-function extractBulletSection(
-  description: string,
-  headings: string[],
-  nextHeadings: string[],
-): string[] | null {
-  const content = matchSection(description, headings, nextHeadings);
-  if (!content) {
-    return null;
-  }
-
-  const items = content
-    .split(/\n+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => item.replace(/^[\-â€¢•]\s*/, "").trim())
-    .filter(Boolean);
-
-  return items.length > 0 ? items : null;
 }
 
 function extractOverviewValue(description: string, label: string) {
@@ -307,4 +265,52 @@ function matchSection(description: string, headings: string[], nextHeadings: str
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractCompensation(vacancy: VacancyRecord) {
+  const normalizedDescription = normalizeDescription(normalizeWorkspaceDescription(vacancy.description));
+  const compensationLine =
+    extractOverviewValue(normalizedDescription, "Compensation") ??
+    extractOverviewValue(normalizedDescription, "Salary Indication");
+
+  if (!compensationLine) {
+    return null;
+  }
+
+  return compensationLine
+    .replace(/^\*+\s*&?\s*Benefits:\s*/i, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .trim();
+}
+
+function buildFullDescription(description: string) {
+  return description
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^IT Solutions Worldwide$/i.test(line))
+    .filter((line) => !/^Job Title:/i.test(line))
+    .filter((line) => !/^Location:/i.test(line))
+    .filter((line) => !/^Employment Type:/i.test(line))
+    .filter((line) => !/^Compensation:/i.test(line))
+    .filter((line) => !/^Start Date:/i.test(line))
+    .map((line) => {
+      if (line === "---") {
+        return { kind: "divider" as const, text: "" };
+      }
+
+      if (line === "--") {
+        return { kind: "divider" as const, text: "" };
+      }
+
+      if (/^(About Us|The Role|About the Role|Key Responsibilities|Requirements & Qualifications|What We Offer)$/i.test(line)) {
+        return { kind: "heading" as const, text: line };
+      }
+
+      if (/^[*\-•]\s*/.test(line)) {
+        return { kind: "bullet" as const, text: line.replace(/^[*\-•]\s*/, "").trim() };
+      }
+
+      return { kind: "paragraph" as const, text: line };
+    });
 }

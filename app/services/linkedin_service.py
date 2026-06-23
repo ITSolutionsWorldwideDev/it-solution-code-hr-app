@@ -121,10 +121,10 @@ def _normalize_preview_response(
         normalized["apply_url"] = apply_url
 
     returned_post_text = str(normalized.get("post_text") or "").strip()
-    if (not returned_post_text) or ("Solliciteer via onze website." in returned_post_text):
+    if not returned_post_text:
         normalized["post_text"] = suggested_post_text.replace(apply_url, normalized["apply_url"])
     else:
-        normalized["post_text"] = _ensure_apply_url_in_post_text(
+        normalized["post_text"] = _normalize_linkedin_post_text(
             post_text=returned_post_text,
             apply_url=normalized["apply_url"],
         )
@@ -132,25 +132,31 @@ def _normalize_preview_response(
     return normalized
 
 
-def _ensure_apply_url_in_post_text(*, post_text: str, apply_url: str) -> str:
-    cleaned_post = post_text.strip()
-    if apply_url in cleaned_post:
-        return cleaned_post
+def _normalize_linkedin_post_text(*, post_text: str, apply_url: str) -> str:
+    clean_url = apply_url
+    if "localhost" in apply_url or "127.0.0.1" in apply_url:
+        clean_url = "[Application Link]"
 
-    placeholder_pattern = r"\[PLAK HIER JE URL\]"
-    if re.search(placeholder_pattern, cleaned_post, re.IGNORECASE):
-        return re.sub(placeholder_pattern, apply_url, cleaned_post, flags=re.IGNORECASE).strip()
-
-    how_to_apply_pattern = r"(How to Apply\s*\n(?:.*\n?)*)"
-    match = re.search(how_to_apply_pattern, cleaned_post, re.IGNORECASE)
-
-    if match:
-        section = match.group(1).rstrip()
-        updated_section = f"{section}\n\nApply here:\n{apply_url}"
-        return cleaned_post.replace(section, updated_section, 1).strip()
-
-    joiner = "\n\n" if cleaned_post else ""
-    return f"{cleaned_post}{joiner}How to Apply\nApply here:\n{apply_url}".strip()
+    cleaned = post_text.strip().replace("\r\n", "\n")
+    cleaned = re.sub(r"^\s*###\s*", "", cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", cleaned)
+    cleaned = cleaned.replace("[application link generated after approval]", clean_url)
+    cleaned = cleaned.replace("[Application Link]", clean_url)
+    cleaned = cleaned.replace("[PLAK HIER JE URL]", clean_url)
+    cleaned = re.sub(r"(?im)^Location:\s*", "📍 Location: ", cleaned)
+    cleaned = re.sub(r"(?im)^Job Type:\s*", "💼 Job Type: ", cleaned)
+    cleaned = re.sub(r"(?im)^Employment Type:\s*", "💼 Employment Type: ", cleaned)
+    cleaned = re.sub(r"(?im)^Salary Indication:\s*", "💰 Salary: ", cleaned)
+    cleaned = re.sub(r"(?im)^Compensation:\s*", "💰 Compensation: ", cleaned)
+    cleaned = re.sub(r"(?im)^Apply here:\s*", "💼 Apply here: ", cleaned)
+    cleaned = re.sub(r"(?m)^\s*---\s*$", "", cleaned)
+    cleaned = re.sub(
+        r"(?im)^(About Us|The Role|Key Responsibilities|Requirements & Qualifications|What We Offer|How to Apply)\s*$",
+        r"\n\1\n",
+        cleaned,
+    )
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def _get_vacancy_location(vacancy: Vacancy) -> str:
@@ -168,6 +174,6 @@ def _get_employment_type(vacancy: Vacancy) -> str:
 def _build_suggested_post_text(*, vacancy: Vacancy, apply_url: str) -> str:
     description = str(vacancy.description or "").strip()
     if not description:
-        return apply_url
+        return "[Application Link]" if ("localhost" in apply_url or "127.0.0.1" in apply_url) else apply_url
 
-    return _ensure_apply_url_in_post_text(post_text=description, apply_url=apply_url)
+    return _normalize_linkedin_post_text(post_text=description, apply_url=apply_url)

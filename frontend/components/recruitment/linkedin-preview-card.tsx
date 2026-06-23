@@ -47,53 +47,59 @@ function normalizeLocalPostText(postText: string, originalApplyUrl: string, norm
   return nextText.trim();
 }
 
-function ensureApplyUrlInPostText(postText: string, applyUrl: string) {
-  const cleanedPost = postText.trim();
-
-  if (!cleanedPost) {
-    return `How to Apply\nApply here:\n${applyUrl}`;
-  }
-
-  if (cleanedPost.includes(applyUrl)) {
-    return cleanedPost;
-  }
-
-  const placeholderPattern = /\[PLAK HIER JE URL\]/gi;
-  if (placeholderPattern.test(cleanedPost)) {
-    return cleanedPost.replace(placeholderPattern, applyUrl).trim();
-  }
-
-  return `${cleanedPost}\n\nApply here:\n${applyUrl}`.trim();
-}
-
 function renderLinkedInPreviewText(postText: string) {
-  const urlPattern = /(https?:\/\/[^\s]+)/g;
+  const urlPattern = /(https?:\/\/[^\s]+|\[Application Link\])/g;
+  const headingPattern = /^(About Us|The Role|Key Responsibilities|Requirements & Qualifications|What We Offer|How to Apply)$/i;
+  const bulletPattern = /^[*\-•]\s*/;
   const lines = postText.split("\n");
 
   return lines.map((line, lineIndex) => {
+    const trimmedLine = line.trim();
     const parts = line.split(urlPattern);
 
-    return (
-      <span key={`line-${lineIndex}`}>
-        {parts.map((part, partIndex) => {
-          if (/^https?:\/\/[^\s]+$/i.test(part)) {
-            return (
-              <a
-                key={`part-${lineIndex}-${partIndex}`}
-                href={part}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[#9fd0ff] underline underline-offset-4 transition hover:text-white"
-              >
-                {part}
-              </a>
-            );
-          }
+    const renderedInline = parts.map((part, partIndex) => {
+      if (/^https?:\/\/[^\s]+$/i.test(part)) {
+        return (
+          <a
+            key={`part-${lineIndex}-${partIndex}`}
+            href={part}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[#9fd0ff] underline underline-offset-4 transition hover:text-white"
+          >
+            {part}
+          </a>
+        );
+      }
 
-          return <span key={`part-${lineIndex}-${partIndex}`}>{part}</span>;
-        })}
-        {lineIndex < lines.length - 1 ? <br /> : null}
-      </span>
+      return <span key={`part-${lineIndex}-${partIndex}`}>{part}</span>;
+    });
+
+    if (!trimmedLine) {
+      return <div key={`line-${lineIndex}`} className="h-3" />;
+    }
+
+    if (headingPattern.test(trimmedLine)) {
+      return (
+        <p key={`line-${lineIndex}`} className="pt-2 text-[13px] font-bold text-white">
+          {renderedInline}
+        </p>
+      );
+    }
+
+    if (bulletPattern.test(trimmedLine)) {
+      return (
+        <div key={`line-${lineIndex}`} className="flex items-start gap-2">
+          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#9fd0ff]" />
+          <p>{parts.join("").replace(bulletPattern, "")}</p>
+        </div>
+      );
+    }
+
+    return (
+      <p key={`line-${lineIndex}`}>
+        {renderedInline}
+      </p>
     );
   });
 }
@@ -106,10 +112,28 @@ function truncateLinkedInText(postText: string, maxLength: number) {
   return `${postText.slice(0, maxLength).trimEnd()}...`;
 }
 
-function extractCompensation(vacancy: VacancyRecord) {
-  const lines = vacancy.description.split("\n");
-  const line = lines.find((item) => /salary indication|compensation/i.test(item));
-  return line?.split(":").slice(1).join(":").trim() || "Compensation on request";
+function buildLinkedInPostText(vacancy: VacancyRecord, applyUrl: string) {
+  const cleanUrl =
+    applyUrl.includes("localhost") || applyUrl.includes("127.0.0.1")
+      ? "[Application Link]"
+      : applyUrl;
+
+  return vacancy.description
+    .replace(/\r\n/g, "\n")
+    .replace(/^\s*###\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace("[application link generated after approval]", cleanUrl)
+    .replace("[Application Link]", cleanUrl)
+    .replace(/^Location:\s*/gim, "📍 Location: ")
+    .replace(/^Job Type:\s*/gim, "💼 Job Type: ")
+    .replace(/^Employment Type:\s*/gim, "💼 Employment Type: ")
+    .replace(/^Salary Indication:\s*/gim, "💰 Salary: ")
+    .replace(/^Compensation:\s*/gim, "💰 Compensation: ")
+    .replace(/^Apply here:\s*/gim, "💼 Apply here: ")
+    .replace(/^\s*---\s*$/gim, "")
+    .replace(/^(About Us|The Role|Key Responsibilities|Requirements & Qualifications|What We Offer|How to Apply)$/gim, "\n$1\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardProps) {
@@ -123,7 +147,7 @@ export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardP
       typeof window === "undefined"
         ? `/apply/${vacancyId}`
         : new URL(`/apply/${vacancyId}`, window.location.origin).toString();
-    const postText = ensureApplyUrlInPostText(vacancy.description, applyUrl);
+    const postText = buildLinkedInPostText(vacancy, applyUrl);
 
     return {
       success: true,
@@ -132,10 +156,9 @@ export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardP
       post_text: postText,
       apply_url: applyUrl,
     } satisfies LinkedInPreviewApiRecord;
-  }, [vacancy.description, vacancyId]);
+  }, [vacancy.description, vacancyId, vacancy]);
 
   const currentPreview = preview ?? localPreview;
-  const salary = extractCompensation(vacancy);
   const fullPreviewText = currentPreview.post_text.trim();
   const previewText = showFullText ? fullPreviewText : truncateLinkedInText(fullPreviewText, 220);
   const canExpand = fullPreviewText.length > 220;
@@ -219,12 +242,6 @@ export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardP
         </div>
 
         <div className="space-y-3 font-mono text-[12px] leading-relaxed text-[#bacac7]">
-          <p className="font-semibold text-white">{vacancy.title} | IT Solutions Worldwide</p>
-          <p>
-            📍 Location: {vacancy.location}
-            <br />💼 Job Type: {vacancy.employmentType}
-            <br />💰 Salary: {salary}
-          </p>
           <p>{renderLinkedInPreviewText(previewText)}</p>
           {canExpand ? (
             <button

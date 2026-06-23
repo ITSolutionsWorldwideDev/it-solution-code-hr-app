@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Bold,
   BriefcaseBusiness,
@@ -50,6 +50,9 @@ const fallbackDepartments: DepartmentOption[] = [
 
 const defaultPerksPrompt =
   "Holiday allowance, pension plan, paid time off, travel reimbursement, learning budget, home office support, and performance bonus where relevant.";
+
+const urlPattern = /https?:\/\/[^\s]+/gi;
+const boldPattern = /\*\*(.+?)\*\*/g;
 
 type StudioFieldProps = {
   label: string;
@@ -223,6 +226,108 @@ export function JobDescriptionStudio() {
       .trim()
       .split(/\s+/)
       .filter(Boolean).length;
+  }, [generatedDescription]);
+
+  const renderedDescription = useMemo(() => {
+    const renderInlineContent = (value: string, keyPrefix: string) => {
+      const nodes: React.ReactNode[] = [];
+      let cursor = 0;
+      let keyIndex = 0;
+
+      const pushLinkifiedText = (segment: string) => {
+        let textCursor = 0;
+        for (const match of segment.matchAll(urlPattern)) {
+          const fullMatch = match[0];
+          const startIndex = match.index ?? 0;
+
+          if (startIndex > textCursor) {
+            nodes.push(segment.slice(textCursor, startIndex));
+          }
+
+          nodes.push(
+            <a
+              key={`${keyPrefix}-url-${keyIndex}`}
+              href={fullMatch}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[#63a9ff] underline decoration-[#63a9ff]/50 underline-offset-4 hover:text-[#8bc2ff]"
+            >
+              {fullMatch}
+            </a>
+          );
+          keyIndex += 1;
+          textCursor = startIndex + fullMatch.length;
+        }
+
+        if (textCursor < segment.length) {
+          nodes.push(segment.slice(textCursor));
+        }
+      };
+
+      for (const match of value.matchAll(boldPattern)) {
+        const fullMatch = match[0];
+        const boldValue = match[1];
+        const startIndex = match.index ?? 0;
+
+        if (startIndex > cursor) {
+          pushLinkifiedText(value.slice(cursor, startIndex));
+        }
+
+        nodes.push(
+          <strong key={`${keyPrefix}-bold-${keyIndex}`} className="font-semibold text-white">
+            {boldValue}
+          </strong>
+        );
+        keyIndex += 1;
+        cursor = startIndex + fullMatch.length;
+      }
+
+      if (cursor < value.length) {
+        pushLinkifiedText(value.slice(cursor));
+      }
+
+      return nodes;
+    };
+
+    return generatedDescription.split("\n").map((line, lineIndex) => {
+      const trimmedLine = line.trim();
+
+      if (!trimmedLine) {
+        return (
+          <p key={`line-${lineIndex}`} className="min-h-[1.8rem]">
+            {"\u00A0"}
+          </p>
+        );
+      }
+
+      if (trimmedLine === "---") {
+        return <hr key={`line-${lineIndex}`} className="my-6 border-0 border-t border-[#243139]" />;
+      }
+
+      if (trimmedLine.startsWith("### ")) {
+        return (
+          <h3 key={`line-${lineIndex}`} className="mt-7 mb-3 text-[1.35rem] font-semibold text-white first:mt-0">
+            {renderInlineContent(trimmedLine.slice(4), `line-${lineIndex}`)}
+          </h3>
+        );
+      }
+
+      if (trimmedLine.startsWith("*")) {
+        const bulletContent = trimmedLine.replace(/^\*\s+/, "");
+        return (
+          <div key={`line-${lineIndex}`} className="mb-3 flex items-start gap-3 text-[1rem] leading-8 text-[#d9e5ee] last:mb-0">
+            <span className="mt-3 h-2 w-2 shrink-0 rounded-full bg-[#63a9ff]" />
+            <p>{renderInlineContent(bulletContent, `line-${lineIndex}`)}</p>
+          </div>
+        );
+      }
+
+      return (
+        <p key={`line-${lineIndex}`} className="mb-3 min-h-[1.8rem] text-[1rem] leading-8 text-[#d9e5ee] last:mb-0">
+          {renderInlineContent(line, `line-${lineIndex}`)}
+        </p>
+      );
+    });
   }, [generatedDescription]);
 
   const handleGenerate = async () => {
@@ -657,13 +762,8 @@ export function JobDescriptionStudio() {
                 </div>
               ) : null}
 
-              <div>
-                <Textarea
-                  value={generatedDescription}
-                  onChange={(event) => setGeneratedDescription(event.target.value)}
-                  placeholder="Your generated job description will appear here and can be edited before approval."
-                  className="min-h-[540px] rounded-[16px] border-[#1a252c] bg-[#07090a] px-5 py-5 text-[1rem] leading-8 text-white focus:border-[#18d8ea]/35 focus:bg-[#090c0d]"
-                />
+              <div className="min-h-[540px] rounded-[16px] border border-[#1a252c] bg-[#07090a] px-5 py-6 text-[1rem] leading-8 text-white">
+                {renderedDescription}
               </div>
 
               {generatedSkills.length > 0 ? (

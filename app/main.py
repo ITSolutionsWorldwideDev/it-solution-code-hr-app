@@ -1,3 +1,7 @@
+import logging
+import os
+from threading import Thread
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -5,6 +9,9 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db import init_db
 from app.routes import router as api_router
+
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -36,7 +43,11 @@ app.mount(
 
 @app.on_event("startup")
 def on_startup() -> None:
-    init_db()
+    if os.getenv("VERCEL") == "1":
+        init_db()
+        return
+
+    Thread(target=_run_init_db_background, daemon=True).start()
 
 
 @app.get(
@@ -60,3 +71,11 @@ def root() -> dict[str, str]:
 
 
 app.include_router(api_router, prefix="/api")
+
+
+def _run_init_db_background() -> None:
+    try:
+        init_db()
+        logger.info("Background database initialization completed.")
+    except Exception:
+        logger.exception("Background database initialization failed.")

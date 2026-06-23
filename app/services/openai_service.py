@@ -1278,21 +1278,41 @@ def _estimate_budget(
     return junior_band
 
 
-def _strip_job_description_markdown(value: str | None) -> str | None:
+def _normalize_job_description_text(value: str | None) -> str | None:
     cleaned = sanitize_text(value)
     if not cleaned:
         return cleaned
 
-    cleaned = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", cleaned)
-    cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", cleaned)
-    cleaned = re.sub(r"__(.*?)__", r"\1", cleaned)
-    cleaned = re.sub(r"(?m)^\s*[*-]\s+", "- ", cleaned)
-    cleaned = re.sub(r"(?m)^\s*\d+\.\s+\*\*(.*?)\*\*:\s*$", r"\1:", cleaned)
-    cleaned = cleaned.replace("`", "")
-    return sanitize_text(cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+    return cleaned.strip()
 
 
-JOB_DESCRIPTION_APPLY_URL = "https://it-solution-code-hr-app-nine.vercel.app/apply/15"
+JOB_DESCRIPTION_APPLY_URL_PLACEHOLDER = "[application link generated after approval]"
+
+
+def _upsert_job_description_apply_section(*, description: str, apply_target: str) -> str:
+    cleaned = _normalize_job_description_text(description) or ""
+    apply_section = (
+        "### **How to Apply**\n"
+        "Interested candidates are invited to submit their application directly via the link below:\n"
+        f"**Apply here:** {apply_target}"
+    )
+
+    if re.search(r"(?:###\s*\*\*How to Apply\*\*|How to Apply)[\s\S]*$", cleaned, flags=re.IGNORECASE):
+        return re.sub(
+            r"(?:###\s*\*\*How to Apply\*\*|How to Apply)[\s\S]*$",
+            apply_section,
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+
+    joiner = "\n\n" if cleaned else ""
+    return f"{cleaned}{joiner}{apply_section}".strip()
+
+
+def inject_job_description_apply_url(*, description: str, apply_url: str) -> str:
+    return _upsert_job_description_apply_section(description=description, apply_target=apply_url)
 
 
 def _generate_job_description_fallback(
@@ -1414,47 +1434,62 @@ def generate_job_description_with_openai(
         return fallback
 
     system_prompt = (
-        "You are an elite enterprise HR content strategist and professional recruitment copywriter. "
-        "Your job is to produce high-quality, human-sounding, instantly publishable vacancy drafts based on the provided inputs.\n\n"
-        "The output inside the \"generated_job_description\" field must look like a premium, complete long-form vacancy post. "
-        "It must never sound generic, robotic, or templated. Avoid broad corporate fluff and cliche phrases "
-        "(like 'detail-oriented go-getter') unless explicitly requested. Instead, infer realistic day-to-day responsibilities, "
-        "key stakeholder interactions, and clear business outcomes from the user's input.\n\n"
-        "Strict Layout & Styling Rules for \"generated_job_description\":\n"
-        "- Include exactly these sections in this exact order:\n"
-        "  [Company Name] - [Job Title] (with location & contract type details)\n"
-        "  About Us (A compelling paragraph about an entrepreneurial, high-growth, and collaborative culture)\n"
-        "  The Role (A clear 2-3 sentence bridge between the data/infrastructure and business strategy)\n"
-        "  Key Responsibilities (Use numbered subsections with a short title followed by a concise explanatory paragraph)\n"
-        "  Requirements & Qualifications (Use category-style lines such as Experience:, Education:, Technical Skills:, and Soft Skills: with clean bullet points)\n"
-        "  What We Offer (A comprehensive summary of autonomy, competitive perks, and flexible/hybrid working environments)\n"
-        "  How to Apply (A clear call-to-action for the candidate that includes the exact external application link)\n\n"
-        "Return a polished JSON object containing a complete description, extracted required skills, a brief summary, and a realistic budget estimation."
+        "You are a professional corporate copywriter for IT Solutions Worldwide. Generate a job description based on the structure provided below.\n\n"
+        "STRICT FORMATTING GUIDELINES FOR A PREMIUM LAYOUT:\n"
+        "1. Use clean Markdown for layout formatting to ensure standard modern typography and clear hierarchy.\n"
+        "2. All main section headers MUST use an H3 header (###).\n"
+        "3. All sub-headers, labels, and the job title details MUST be bolded (**text**).\n"
+        "4. Use clean bullet points for Responsibilities, Requirements, and What We Offer. Always bold the first few words or labels of each bullet point.\n"
+        "5. Use a subtle horizontal rule (---) directly after the job title block to cleanly separate the header from the content.\n"
+        "6. Eliminate all double or redundant line breaks to keep the text compact, readable, and highly scannable.\n"
     )
     user_prompt = (
-        f"Job title: {normalized_job_title}\n"
-        f"Department: {normalized_department}\n"
-        f"Company name: IT Solutions Worldwide\n"
-        f"Budget: {budget or 'not specified'}\n"
-        f"Start date: {start_date or 'not specified'}\n"
-        f"Employment type: {employment_type or 'not specified'}\n"
-        f"Work hours: {work_hours or 'not specified'}\n"
-        f"Work model: {work_model or 'not specified'}\n"
-        f"City: {city or 'not specified'}\n"
-        f"Country: {country or 'not specified'}\n"
-        f"Years of experience: {years_experience or 'not specified'}\n"
-        f"Perks and benefits guidance: {perks or 'not specified'}\n"
-        f"Tone: {tone or 'professional'}\n"
-        f"Seniority: {seniority or 'not specified'}\n"
-        f"Requirements from user:\n{normalized_requirements}\n\n"
+        "USE THIS EXACT STRUCTURE AND TARGET DATA:\n\n"
+        "### **IT Solutions Worldwide**\n"
+        f"**Job Title:** {normalized_job_title}  \n"
+        f"**Location:** {city or 'Location TBD'} ({work_model or 'Work model TBD'})  \n"
+        f"**Employment Type:** {employment_type or 'Employment type TBD'}  \n\n"
+        "---\n\n"
+        "### **About Us**\n"
+        "[premium intro about the company: focus on a data-driven culture, growth, innovation, and global impact]\n\n"
+        "### **The Role**\n"
+        f"[2-3 powerful, formal sentences summarizing the core mission of the role, why it matters, and the start date from {start_date or 'the agreed start date'}]\n\n"
+        "### **Key Responsibilities**\n"
+        "*   **Responsibility Area:** [short, professional explanation tied directly to the role and the user requirements]\n"
+        "*   **Responsibility Area:** [short, professional explanation tied directly to the role and the user requirements]\n"
+        "*   **Responsibility Area:** [short, professional explanation tied directly to the role and the user requirements]\n\n"
+        "### **Requirements & Qualifications**\n"
+        f"*   **Experience:** Minimum of {years_experience or 'the requested'} professional experience in {normalized_job_title}, business intelligence, analytics, or a closely related field.\n"
+        f"*   **Education:** Use the most credible education background for a {normalized_job_title} in the {normalized_department} department.\n"
+        "*   **Technical Skills:** Base this directly on the user input and inferred relevant tools only.\n"
+        "*   **Soft Skills:** Use polished, role-relevant communication, analytical, and autonomy traits.\n\n"
+        "### **What We Offer**\n"
+        "*   **Compensation & Benefits:** Use the provided salary and benefits context when available.\n"
+        "*   **Flexibility & Autonomy:** Reflect the provided work setup and ownership level.\n"
+        "*   **Growth & Well-being:** Use realistic development and support benefits.\n\n"
+        "### **How to Apply**\n"
+        "Interested candidates are invited to submit their application directly via the link below:  \n"
+        f"**Apply here:** {JOB_DESCRIPTION_APPLY_URL_PLACEHOLDER}\n\n"
+        "Runtime input:\n"
+        f"- Department: {normalized_department}\n"
+        f"- Budget: {budget or 'not specified'}\n"
+        f"- Start date: {start_date or 'not specified'}\n"
+        f"- Employment type: {employment_type or 'not specified'}\n"
+        f"- Work hours: {work_hours or 'not specified'}\n"
+        f"- Work model: {work_model or 'not specified'}\n"
+        f"- City: {city or 'not specified'}\n"
+        f"- Country: {country or 'not specified'}\n"
+        f"- Perks and benefits guidance: {perks or 'not specified'}\n"
+        f"- Tone: {tone or 'professional'}\n"
+        f"- Seniority: {seniority or 'not specified'}\n"
+        f"- Requirements from user: {normalized_requirements}\n\n"
         "Additional instructions:\n"
-        "- Write in clear, modern English.\n"
         "- Make the draft specific to the actual role, not a generic company template.\n"
+        "- Anchor the entire draft to the exact job title provided.\n"
+        "- Do not introduce other domains, role families, or enterprise specialisms unless they are explicitly mentioned in the input.\n"
+        "- Never introduce topics such as SAP, S/4HANA, master data, ERP, governance, procurement, or engineering ownership unless the user explicitly asked for them.\n"
         "- Do not echo the user's raw prompt text back as responsibilities or requirements.\n"
         "- Convert rough notes into polished recruiter language.\n"
-        "- Do not use markdown symbols such as ##, ###, **, *, underscores for emphasis, or backticks in generated_job_description.\n"
-        "- Keep the description ready for direct editing and publishing.\n"
-        f"- In the How to Apply section, include exactly this call to action: Apply here: {JOB_DESCRIPTION_APPLY_URL}\n"
         "- Do not include equal opportunity employer statements or recruiter/agency disclaimers.\n"
         "- generated_required_skills should be practical, deduplicated, recruiter-friendly keywords.\n"
         "- summary should be 1 to 2 sentences only.\n"
@@ -1478,9 +1513,13 @@ def generate_job_description_with_openai(
         return fallback
 
     result.generated_job_description = (
-        _strip_job_description_markdown(result.generated_job_description)
-        or _strip_job_description_markdown(fallback.generated_job_description)
+        _normalize_job_description_text(result.generated_job_description)
+        or _normalize_job_description_text(fallback.generated_job_description)
         or fallback.generated_job_description
+    )
+    result.generated_job_description = _upsert_job_description_apply_section(
+        description=result.generated_job_description,
+        apply_target=JOB_DESCRIPTION_APPLY_URL_PLACEHOLDER,
     )
     result.generated_required_skills = [
         skill
@@ -1636,21 +1675,29 @@ def _build_long_form_job_description(
     offer_block = "\n".join(f"- {line}" for line in offer_lines)
 
     return (
-        f"{display_job_title} | {company_name}\n"
-        f"Location: {location}\n"
-        f"Job Type: {job_type_label}\n"
-        f"Salary Indication: {salary_indication_label}\n"
-        f"Experience: {experience_label}\n"
-        f"Start Date: {start_date_label}\n\n"
-        f"About Us\n"
+        f"### **{company_name}**\n"
+        f"**Job Title:** {display_job_title}  \n"
+        f"**Location:** {location}{f' ({work_model})' if work_model else ''}  \n"
+        f"**Employment Type:** {employment_type or 'Full-time'}  \n"
+        f"**Compensation:** {salary_indication_label}  \n"
+        f"**Start Date:** {start_date_label}\n\n"
+        f"---\n\n"
+        f"### **About Us**\n"
         f"{about_us}\n\n"
-        f"Key Responsibilities\n"
-        f"{responsibilities}\n\n"
-        f"Requirements & Qualifications\n"
-        f"{requirements_block}\n\n"
-        f"What We Offer & How to Apply\n"
+        f"### **The Role**\n"
+        f"This {display_job_title} opportunity sits within our {display_department} function and is designed for a candidate who can turn role-specific expertise into measurable business impact. "
+        f"You will combine structured execution, stakeholder alignment, and practical problem solving to deliver outcomes that support growth from {start_date_label.lower()} onward.\n\n"
+        f"### **Key Responsibilities**\n"
+        f"{''.join(f'*   **{title}:** {item}\n' for title, item in zip(responsibility_titles, responsibility_items[:6], strict=False))}\n"
+        f"### **Requirements & Qualifications**\n"
+        f"*   **Experience:** {experience_label} of relevant hands-on experience in a comparable {display_job_title} or related role.\n"
+        f"*   **Education:** Bachelor's degree or equivalent professional experience related to {display_job_title}, {display_department}, or a closely related discipline.\n"
+        f"*   **Technical Skills:** {', '.join(skill_lines[:6]) if skill_lines else 'Role-relevant tools and structured working methods'}.\n"
+        f"*   **Soft Skills:** Strong ability to translate requirements into practical execution, evaluate outcomes, and communicate clearly with stakeholders.\n"
+        f"*   **Additional Strengths:** {'; '.join(nice_to_have_items[:3])}.\n\n"
+        f"### **What We Offer**\n"
         f"{offer_block}\n\n"
-        f"We offer a compensation package aligned with experience, a professional environment, and clear opportunities for long-term growth within {company_name}.\n\n"
-        f"How to Apply\n"
-        f"Apply here: {JOB_DESCRIPTION_APPLY_URL}"
+        f"### **How to Apply**\n"
+        f"Interested candidates are invited to submit their application directly via the link below:  \n"
+        f"**Apply here:** {JOB_DESCRIPTION_APPLY_URL_PLACEHOLDER}"
     ).strip()
