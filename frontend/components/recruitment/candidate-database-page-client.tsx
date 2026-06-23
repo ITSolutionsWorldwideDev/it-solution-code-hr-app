@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 import { CandidateUploadPanel } from "@/components/recruitment/candidate-upload-panel";
 import { useRole } from "@/components/providers/role-provider";
-import { apiRequest } from "@/lib/api/client";
+import { apiRequest, resolveApiPath } from "@/lib/api/client";
 import type {
   ApplicationApiRecord,
   CandidateDatabaseResponseApi,
@@ -230,6 +230,24 @@ function extractExperienceYears(candidate: CandidateApiRecord) {
 
 function normalizeMatchText(value: string) {
   return value.trim().toLowerCase();
+}
+
+function buildCandidateCvUrl(fileChecksum?: string | null) {
+  const normalizedChecksum = typeof fileChecksum === "string" ? fileChecksum.trim().toLowerCase() : "";
+  if (!/^[a-f0-9]{64}$/.test(normalizedChecksum)) {
+    return null;
+  }
+
+  return resolveApiPath(`/candidates/files/${normalizedChecksum}`);
+}
+
+function buildCandidateCvDownloadUrl(fileChecksum?: string | null) {
+  const viewUrl = buildCandidateCvUrl(fileChecksum);
+  if (!viewUrl) {
+    return null;
+  }
+
+  return `${viewUrl}?download=1`;
 }
 
 function scoreCandidateAgainstVacancy(
@@ -797,6 +815,14 @@ export function CandidateDatabasePageClient() {
     () => databaseRecords.find((candidate) => candidate.id === selectedCandidateId) ?? null,
     [databaseRecords, selectedCandidateId]
   );
+  const selectedCandidateCvUrl = useMemo(
+    () => buildCandidateCvUrl(asString(selectedCandidate?.parsedData?.file_checksum)),
+    [selectedCandidate]
+  );
+  const selectedCandidateCvDownloadUrl = useMemo(
+    () => buildCandidateCvDownloadUrl(asString(selectedCandidate?.parsedData?.file_checksum)),
+    [selectedCandidate]
+  );
   const showingFrom = filteredRecords.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const showingTo = Math.min(currentPage * PAGE_SIZE, filteredRecords.length);
   const visiblePageNumbers = Array.from(new Set([1, 2, 3, totalPages].filter((page) => page <= totalPages)));
@@ -1351,10 +1377,36 @@ export function CandidateDatabasePageClient() {
                         </p>
                       </div>
                       <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4 md:col-span-2">
-                        <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">File Checksum</p>
-                        <p className="mt-2 break-all text-[0.96rem] text-[#dae3ee]">
-                          {asString(selectedCandidate.parsedData?.file_checksum) ?? "Not stored"}
-                        </p>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">File Checksum</p>
+                            <p className="mt-2 break-all text-[0.96rem] text-[#dae3ee]">
+                              {asString(selectedCandidate.parsedData?.file_checksum) ?? "Not stored"}
+                            </p>
+                          </div>
+                          {selectedCandidateCvUrl ? (
+                            <div className="flex shrink-0 flex-wrap gap-2">
+                              <a
+                                href={selectedCandidateCvUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#10161c] px-4 py-3 text-sm font-semibold text-[#dbe7f0] transition hover:border-[#63e7ff]/30 hover:bg-[#182028]"
+                              >
+                                <Expand className="h-4 w-4" />
+                                <span>View Full CV</span>
+                              </a>
+                              {selectedCandidateCvDownloadUrl ? (
+                                <a
+                                  href={selectedCandidateCvDownloadUrl}
+                                  className="inline-flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#10161c] px-4 py-3 text-sm font-semibold text-[#dbe7f0] transition hover:border-[#63e7ff]/30 hover:bg-[#182028]"
+                                >
+                                  <Download className="h-4 w-4" />
+                                  <span>Download CV</span>
+                                </a>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="rounded-lg border border-white/5 bg-[#0b141c] p-4 md:col-span-2">
                         <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#bdc8cd]">Latest Parser Note</p>

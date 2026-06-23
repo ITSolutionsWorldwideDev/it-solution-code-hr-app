@@ -14,6 +14,10 @@ function resolveApiBaseUrl() {
   return configuredApiBaseUrl;
 }
 
+export function resolveApiPath(path: string) {
+  return `${resolveApiBaseUrl()}${path}`;
+}
+
 type RequestOptions = RequestInit & {
   path: string;
 };
@@ -40,10 +44,9 @@ function extractErrorMessage(payload: unknown): string | null {
 export async function apiRequest<T>({ path, ...options }: RequestOptions): Promise<T> {
   const isFormData = options.body instanceof FormData;
   let response: Response;
-  const apiBaseUrl = resolveApiBaseUrl();
 
   try {
-    response = await fetch(`${apiBaseUrl}${path}`, {
+    response = await fetch(resolveApiPath(path), {
       ...options,
       headers: {
         ...(isFormData ? {} : { "Content-Type": "application/json" }),

@@ -1,12 +1,15 @@
 import asyncio
 from datetime import datetime
 from pathlib import Path
+import re
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
 import requests
 from sqlmodel import Session, select
 
+from app.config import settings
 from app.db import engine, get_session
 from app.models.candidate import Candidate
 from app.models.parse_job import ParseJob
@@ -41,6 +44,7 @@ from app.services import crud
 
 router = APIRouter(prefix="/candidates", tags=["Candidates"])
 MAX_BATCH_PARSE_CONCURRENCY = 4
+CHECKSUM_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 
 def _format_batch_error(error: str) -> str:
@@ -139,6 +143,50 @@ def _download_pdf_from_url(url: str) -> tuple[bytes, str, str]:
     return file_bytes, filename, normalized_content_type
 
 
+def _resolve_resume_file_from_checksum(checksum: str) -> Path:
+    normalized_checksum = checksum.strip().lower()
+    if not CHECKSUM_PATTERN.fullmatch(normalized_checksum):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file checksum.",
+        )
+
+    for path in settings.resume_upload_dir.glob(f"{normalized_checksum}.*"):
+        if path.is_file():
+            return path
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="No stored CV was found for this checksum.",
+    )
+
+
+def _guess_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return "application/pdf"
+    if suffix == ".docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if suffix == ".doc":
+        return "application/msword"
+    return "application/octet-stream"
+
+
+def _resolve_original_resume_filename(session: Session, file_checksum: str, fallback_path: Path) -> str:
+    candidates = session.exec(select(Candidate)).all()
+    for candidate in candidates:
+        parsed_data = candidate.parsed_data or {}
+        if parsed_data.get("file_checksum") != file_checksum:
+            continue
+
+        for key in ("original_file_name", "filename"):
+            value = parsed_data.get(key)
+            if isinstance(value, str) and value.strip():
+                return Path(value.strip()).name
+
+    return fallback_path.name
+
+
 def _get_or_create_parse_job(
     *,
     session: Session,
@@ -206,6 +254,26 @@ def list_candidates(session: Session = Depends(get_session)):
 )
 def get_candidate_database(session: Session = Depends(get_session)):
     return get_candidate_database_payload(session)
+
+
+@router.get(
+    "/files/{file_checksum}",
+    summary="View stored candidate CV",
+    description="Return the stored original CV file for a candidate based on its file checksum.",
+)
+def get_candidate_cv_file(
+    file_checksum: str,
+    download: bool = Query(default=False),
+    session: Session = Depends(get_session),
+):
+    resume_path = _resolve_resume_file_from_checksum(file_checksum)
+    filename = _resolve_original_resume_filename(session, file_checksum.strip().lower(), resume_path)
+    return FileResponse(
+        path=resume_path,
+        media_type=_guess_media_type(resume_path),
+        filename=filename,
+        content_disposition_type="attachment" if download else "inline",
+    )
 
 
 @router.post(
