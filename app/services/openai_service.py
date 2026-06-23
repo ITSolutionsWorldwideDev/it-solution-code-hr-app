@@ -1292,6 +1292,9 @@ def _strip_job_description_markdown(value: str | None) -> str | None:
     return sanitize_text(cleaned)
 
 
+JOB_DESCRIPTION_APPLY_URL = "https://it-solution-code-hr-app-nine.vercel.app/apply/15"
+
+
 def _generate_job_description_fallback(
     *,
     job_title: str | None,
@@ -1425,7 +1428,7 @@ def generate_job_description_with_openai(
         "  Key Responsibilities (Use numbered subsections with a short title followed by a concise explanatory paragraph)\n"
         "  Requirements & Qualifications (Use category-style lines such as Experience:, Education:, Technical Skills:, and Soft Skills: with clean bullet points)\n"
         "  What We Offer (A comprehensive summary of autonomy, competitive perks, and flexible/hybrid working environments)\n"
-        "  How to Apply (A clear call-to-action for the candidate, followed by a standard recruitment agency disclaimer)\n\n"
+        "  How to Apply (A clear call-to-action for the candidate that includes the exact external application link)\n\n"
         "Return a polished JSON object containing a complete description, extracted required skills, a brief summary, and a realistic budget estimation."
     )
     user_prompt = (
@@ -1451,6 +1454,8 @@ def generate_job_description_with_openai(
         "- Convert rough notes into polished recruiter language.\n"
         "- Do not use markdown symbols such as ##, ###, **, *, underscores for emphasis, or backticks in generated_job_description.\n"
         "- Keep the description ready for direct editing and publishing.\n"
+        f"- In the How to Apply section, include exactly this call to action: Apply here: {JOB_DESCRIPTION_APPLY_URL}\n"
+        "- Do not include equal opportunity employer statements or recruiter/agency disclaimers.\n"
         "- generated_required_skills should be practical, deduplicated, recruiter-friendly keywords.\n"
         "- summary should be 1 to 2 sentences only.\n"
         "- Do not include internal notes, explanation, or meta commentary."
@@ -1645,8 +1650,7 @@ def _build_long_form_job_description(
         f"{requirements_block}\n\n"
         f"What We Offer & How to Apply\n"
         f"{offer_block}\n\n"
-        f"We offer a compensation package aligned with experience, a professional environment, and clear opportunities for long-term growth within {company_name}. "
-        f"Applicants should submit their CV and application through the official company application channel.\n\n"
-        f"{company_name}\n"
-        f"Excellence in Execution. Consistency in Results."
+        f"We offer a compensation package aligned with experience, a professional environment, and clear opportunities for long-term growth within {company_name}.\n\n"
+        f"How to Apply\n"
+        f"Apply here: {JOB_DESCRIPTION_APPLY_URL}"
     ).strip()
