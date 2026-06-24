@@ -4,7 +4,7 @@ import { BriefcaseBusiness, CircleDollarSign, Clock3, MapPin, UserRound } from "
 import type { ReactNode } from "react";
 
 import { PublicApplyForm } from "@/components/recruitment/public-apply-form";
-import type { PublishedWebsiteJobApiRecord } from "@/lib/recruitment-types";
+import type { PublishedWebsiteJobApiRecord, VacancyApiRecord } from "@/lib/recruitment-types";
 
 type ApplyPageProps = {
   params: Promise<{
@@ -23,15 +23,7 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
   const { id } = await params;
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://it-solution-code-hr-app-backend.vercel.app/api";
 
-  const response = await fetch(`${apiBaseUrl}/website/jobs/${id}`, {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    notFound();
-  }
-
-  const vacancy = (await response.json()) as PublishedWebsiteJobApiRecord;
+  const vacancy = await loadPublicVacancy(apiBaseUrl, id);
   const content = buildCandidateFacingContent(vacancy);
 
   return (
@@ -150,6 +142,50 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
       </div>
     </main>
   );
+}
+
+async function loadPublicVacancy(apiBaseUrl: string, id: string): Promise<PublishedWebsiteJobApiRecord> {
+  const publishedResponse = await fetch(`${apiBaseUrl}/website/jobs/${id}`, {
+    cache: "no-store",
+  });
+
+  if (publishedResponse.ok) {
+    return (await publishedResponse.json()) as PublishedWebsiteJobApiRecord;
+  }
+
+  const vacancyResponse = await fetch(`${apiBaseUrl}/vacancies/${id}`, {
+    cache: "no-store",
+  });
+
+  if (!vacancyResponse.ok) {
+    notFound();
+  }
+
+  const vacancy = (await vacancyResponse.json()) as VacancyApiRecord;
+  return mapVacancyToPublishedWebsiteJob(vacancy);
+}
+
+function mapVacancyToPublishedWebsiteJob(vacancy: VacancyApiRecord): PublishedWebsiteJobApiRecord {
+  const parsedData = asRecord(vacancy.parsed_data);
+
+  return {
+    vacancy_id: vacancy.id,
+    job_info_id: vacancy.id,
+    title: vacancy.title,
+    description: vacancy.description,
+    required_skills: vacancy.required_skills,
+    experience_level: vacancy.experience_level,
+    department_id: vacancy.department_id,
+    hiring_request_id: vacancy.hiring_request_id,
+    ai_summary: vacancy.ai_summary,
+    match_score: vacancy.match_score,
+    parsed_data: parsedData,
+    created_at: vacancy.created_at,
+    published_at: vacancy.created_at,
+    location: readString(parsedData, "location"),
+    employment_type: readString(parsedData, "employment_type"),
+    pdf_url: readString(parsedData, "pdf_url"),
+  };
 }
 
 function SectionBlock({

@@ -4,6 +4,7 @@ import { Edit3, Send } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { apiRequest } from "@/lib/api/client";
+import { cleanInlineJobText, normalizeJobText } from "@/lib/job-text";
 import type { LinkedInPreviewApiRecord, VacancyRecord } from "@/lib/recruitment-types";
 
 type LinkedInPreviewCardProps = {
@@ -14,6 +15,8 @@ type LinkedInPreviewCardProps = {
 function isLocalDevHost(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
+
+const configuredPublicApplyBaseUrl = process.env.NEXT_PUBLIC_PUBLIC_APPLY_BASE_URL?.trim() || "";
 
 function normalizeLocalApplyUrl(applyUrl: string) {
   if (typeof window === "undefined") {
@@ -37,8 +40,20 @@ function normalizeLocalApplyUrl(applyUrl: string) {
   }
 }
 
+function getCurrentPublicApplyBaseUrl() {
+  if (configuredPublicApplyBaseUrl) {
+    return configuredPublicApplyBaseUrl.replace(/\/$/, "");
+  }
+
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return new URL("/apply", window.location.origin).toString().replace(/\/$/, "");
+}
+
 function normalizeLocalPostText(postText: string, originalApplyUrl: string, normalizedApplyUrl: string) {
-  let nextText = postText;
+  let nextText = normalizeJobText(postText);
 
   if (originalApplyUrl !== normalizedApplyUrl) {
     nextText = nextText.replaceAll(originalApplyUrl, normalizedApplyUrl);
@@ -50,7 +65,7 @@ function normalizeLocalPostText(postText: string, originalApplyUrl: string, norm
 function renderLinkedInPreviewText(postText: string) {
   const urlPattern = /(https?:\/\/[^\s]+|\[Application Link\])/g;
   const headingPattern = /^(About Us|The Role|Key Responsibilities|Requirements & Qualifications|What We Offer|How to Apply)$/i;
-  const bulletPattern = /^[*\-•]\s*/;
+  const bulletPattern = /^[*-]\s*/;
   const lines = postText.split("\n");
 
   return lines.map((line, lineIndex) => {
@@ -91,16 +106,12 @@ function renderLinkedInPreviewText(postText: string) {
       return (
         <div key={`line-${lineIndex}`} className="flex items-start gap-2">
           <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#9fd0ff]" />
-          <p>{parts.join("").replace(bulletPattern, "")}</p>
+          <p>{cleanInlineJobText(parts.join(""))}</p>
         </div>
       );
     }
 
-    return (
-      <p key={`line-${lineIndex}`}>
-        {renderedInline}
-      </p>
-    );
+    return <p key={`line-${lineIndex}`}>{renderedInline}</p>;
   });
 }
 
@@ -113,23 +124,18 @@ function truncateLinkedInText(postText: string, maxLength: number) {
 }
 
 function buildLinkedInPostText(vacancy: VacancyRecord, applyUrl: string) {
-  const cleanUrl =
-    applyUrl.includes("localhost") || applyUrl.includes("127.0.0.1")
-      ? "[Application Link]"
-      : applyUrl;
+  const cleanUrl = applyUrl;
 
-  return vacancy.description
-    .replace(/\r\n/g, "\n")
-    .replace(/^\s*###\s*/gm, "")
-    .replace(/\*\*(.*?)\*\*/g, "$1")
+  return normalizeJobText(vacancy.description)
     .replace("[application link generated after approval]", cleanUrl)
     .replace("[Application Link]", cleanUrl)
-    .replace(/^Location:\s*/gim, "📍 Location: ")
-    .replace(/^Job Type:\s*/gim, "💼 Job Type: ")
-    .replace(/^Employment Type:\s*/gim, "💼 Employment Type: ")
-    .replace(/^Salary Indication:\s*/gim, "💰 Salary: ")
-    .replace(/^Compensation:\s*/gim, "💰 Compensation: ")
-    .replace(/^Apply here:\s*/gim, "💼 Apply here: ")
+    .replace(/^Apply here:\s*.+$/gim, `Apply here: ${cleanUrl}`)
+    .replace(/^Location:\s*/gim, "Location: ")
+    .replace(/^Job Type:\s*/gim, "Job Type: ")
+    .replace(/^Employment Type:\s*/gim, "Employment Type: ")
+    .replace(/^Salary Indication:\s*/gim, "Salary: ")
+    .replace(/^Compensation:\s*/gim, "Compensation: ")
+    .replace(/^Apply here:\s*/gim, "Apply here: ")
     .replace(/^\s*---\s*$/gim, "")
     .replace(/^(About Us|The Role|Key Responsibilities|Requirements & Qualifications|What We Offer|How to Apply)$/gim, "\n$1\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -143,8 +149,10 @@ export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardP
   const [showFullText, setShowFullText] = useState(false);
 
   const localPreview = useMemo(() => {
-    const applyUrl =
-      typeof window === "undefined"
+    const publicApplyBaseUrl = getCurrentPublicApplyBaseUrl();
+    const applyUrl = publicApplyBaseUrl
+      ? `${publicApplyBaseUrl.replace(/\/$/, "")}/${vacancyId}`
+      : typeof window === "undefined"
         ? `/apply/${vacancyId}`
         : new URL(`/apply/${vacancyId}`, window.location.origin).toString();
     const postText = buildLinkedInPostText(vacancy, applyUrl);
@@ -181,6 +189,7 @@ export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardP
         body: JSON.stringify({
           vacancy_id: Number(vacancyId),
           dry_run: false,
+          public_apply_base_url: getCurrentPublicApplyBaseUrl(),
         }),
       });
 
@@ -256,9 +265,9 @@ export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardP
 
         <div className="mt-4 flex items-center justify-between border-t border-[#3c4948]/20 pt-4">
           <div className="flex gap-4 text-[#859491]">
-            <span>👍</span>
-            <span>💬</span>
-            <span>↗</span>
+            <span>Like</span>
+            <span>Comment</span>
+            <span>Share</span>
           </div>
           <button type="button" className="rounded-full bg-[#0077b5] px-3 py-1.5 text-[10px] font-bold text-white">
             Apply Now

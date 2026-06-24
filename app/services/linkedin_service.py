@@ -4,6 +4,7 @@ import json
 import re
 import ssl
 from http.client import RemoteDisconnected
+from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -14,8 +15,13 @@ from app.models.vacancy import Vacancy
 from app.schemas.linkedin import LinkedInPreviewRead
 
 
-def build_linkedin_preview(vacancy: Vacancy, dry_run: bool = True) -> LinkedInPreviewRead:
-    apply_url = f"{settings.public_apply_base_url.rstrip('/')}/{vacancy.id}"
+def build_linkedin_preview(
+    vacancy: Vacancy,
+    dry_run: bool = True,
+    public_apply_base_url: str | None = None,
+) -> LinkedInPreviewRead:
+    apply_base_url = _resolve_public_apply_base_url(public_apply_base_url)
+    apply_url = f"{apply_base_url.rstrip('/')}/{vacancy.id}"
     suggested_post_text = _build_suggested_post_text(vacancy=vacancy, apply_url=apply_url)
 
     payload = {
@@ -138,18 +144,23 @@ def _normalize_linkedin_post_text(*, post_text: str, apply_url: str) -> str:
         clean_url = "[Application Link]"
 
     cleaned = post_text.strip().replace("\r\n", "\n")
-    cleaned = re.sub(r"^\s*###\s*", "", cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r"â€¢|•", "* ", cleaned)
+    cleaned = re.sub(r"\s*#{1,6}\s*", "", cleaned)
     cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"__(.*?)__", r"\1", cleaned)
     cleaned = cleaned.replace("[application link generated after approval]", clean_url)
     cleaned = cleaned.replace("[Application Link]", clean_url)
     cleaned = cleaned.replace("[PLAK HIER JE URL]", clean_url)
-    cleaned = re.sub(r"(?im)^Location:\s*", "📍 Location: ", cleaned)
-    cleaned = re.sub(r"(?im)^Job Type:\s*", "💼 Job Type: ", cleaned)
-    cleaned = re.sub(r"(?im)^Employment Type:\s*", "💼 Employment Type: ", cleaned)
-    cleaned = re.sub(r"(?im)^Salary Indication:\s*", "💰 Salary: ", cleaned)
-    cleaned = re.sub(r"(?im)^Compensation:\s*", "💰 Compensation: ", cleaned)
-    cleaned = re.sub(r"(?im)^Apply here:\s*", "💼 Apply here: ", cleaned)
+    cleaned = re.sub(r"(?im)^Apply here:\s*.+$", f"Apply here: {clean_url}", cleaned)
+    cleaned = re.sub(r"(?im)^Location:\s*", "Location: ", cleaned)
+    cleaned = re.sub(r"(?im)^Job Type:\s*", "Job Type: ", cleaned)
+    cleaned = re.sub(r"(?im)^Employment Type:\s*", "Employment Type: ", cleaned)
+    cleaned = re.sub(r"(?im)^Salary Indication:\s*", "Salary: ", cleaned)
+    cleaned = re.sub(r"(?im)^Compensation:\s*", "Compensation: ", cleaned)
+    cleaned = re.sub(r"(?im)^Apply here:\s*", "Apply here: ", cleaned)
     cleaned = re.sub(r"(?m)^\s*---\s*$", "", cleaned)
+    cleaned = re.sub(r"(?m)^\s*\*\s*$", "", cleaned)
+    cleaned = re.sub(r"(?m)^\s*\*\s*\*\s*$", "", cleaned)
     cleaned = re.sub(
         r"(?im)^(About Us|The Role|Key Responsibilities|Requirements & Qualifications|What We Offer|How to Apply)\s*$",
         r"\n\1\n",
@@ -177,3 +188,43 @@ def _build_suggested_post_text(*, vacancy: Vacancy, apply_url: str) -> str:
         return "[Application Link]" if ("localhost" in apply_url or "127.0.0.1" in apply_url) else apply_url
 
     return _normalize_linkedin_post_text(post_text=description, apply_url=apply_url)
+
+
+def _resolve_public_apply_base_url(candidate: str | None) -> str:
+    normalized = _normalize_public_apply_base_url(candidate)
+    if normalized:
+        return normalized
+
+    fallback = _normalize_public_apply_base_url(settings.public_apply_base_url)
+    if fallback:
+        return fallback
+
+    return "http://localhost:3000/apply"
+
+
+def _normalize_public_apply_base_url(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    candidate = value.strip().rstrip("/")
+    if not candidate:
+        return None
+
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return None
+
+    is_local = hostname in {"localhost", "127.0.0.1"}
+    is_vercel = hostname.endswith(".vercel.app")
+    if not (is_local or is_vercel):
+        return None
+
+    path = parsed.path.rstrip("/")
+    if not path.endswith("/apply"):
+        path = f"{path}/apply" if path else "/apply"
+
+    return f"{parsed.scheme}://{parsed.netloc}{path}"

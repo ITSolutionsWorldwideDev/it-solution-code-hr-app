@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -48,10 +48,15 @@ class N8NProcessParseJobResponse(BaseModel):
 )
 def generate_linkedin_preview(
     payload: LinkedInPreviewRequest,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     vacancy = get_or_404(session, Vacancy, payload.vacancy_id)
-    return build_linkedin_preview(vacancy, dry_run=payload.dry_run)
+    return build_linkedin_preview(
+        vacancy,
+        dry_run=payload.dry_run,
+        public_apply_base_url=payload.public_apply_base_url or request.headers.get("origin"),
+    )
 
 
 @router.post(

@@ -9,6 +9,7 @@ import {
 
 import { LinkedInPreviewCard } from "@/components/recruitment/linkedin-preview-card";
 import { WebsitePublishCard } from "@/components/recruitment/website-publish-card";
+import { cleanInlineJobText, normalizeJobText } from "@/lib/job-text";
 import type { VacancyRecord } from "@/lib/recruitment-types";
 
 type VacancyDetailProps = {
@@ -139,7 +140,7 @@ export function VacancyDetail({ vacancy }: VacancyDetailProps) {
                   <div key={`about-role-${index}`} className="border-t border-[#3c4948]/30 pt-2" />
                 ) : (
                   <p key={`about-role-${index}`}>{item.text}</p>
-                )
+                ),
               )}
             </div>
           </div>
@@ -160,7 +161,6 @@ function buildVacancyDetailContent(vacancy: VacancyRecord): VacancyDetailContent
     extractParagraphSection(normalizedDescription, ["About Us", "The Role", "About the Role", "Position Overview"], [
       "Key Responsibilities",
       "Requirements & Qualifications",
-      "What You’ll Bring",
       "What You'll Bring",
       "Nice to Have",
       "Working Arrangements and Benefits",
@@ -206,17 +206,7 @@ function buildVacancyDetailContent(vacancy: VacancyRecord): VacancyDetailContent
 }
 
 function normalizeDescription(description: string) {
-  return description
-    .replace(/\r\n/g, "\n")
-    .replace(/^\s*###\s*/gm, "")
-    .replace(/\*\*(.*?)\*\*/g, "$1")
-    .replace(/^-\s*/gm, "* ")
-    .replace(
-      /(Short Summary|Overview|About Us|The Role|About the Role|Position Overview|Key Responsibilities|Requirements & Qualifications|What You’ll Bring|What You'll Bring|Nice to Have|Working Arrangements and Benefits|What We Offer|How to Apply)/gi,
-      "\n$1\n",
-    )
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return normalizeJobText(description);
 }
 
 function extractParagraphSection(
@@ -235,8 +225,9 @@ function extractParagraphSection(
     .filter(Boolean)
     .filter((item) => !item.startsWith("-"))
     .filter((item) => !item.startsWith("*"))
-    .filter((item) => !item.startsWith("•"))
-    .filter((item) => !/^[A-Za-z ]+:\s.+/.test(item));
+    .filter((item) => !/^[A-Za-z ]+:\s.+/.test(item))
+    .map((item) => cleanInlineJobText(item))
+    .filter(Boolean);
 
   return paragraphs.length > 0 ? paragraphs : null;
 }
@@ -252,7 +243,7 @@ function extractOverviewValue(description: string, label: string) {
     return null;
   }
 
-  return line.replace(regex, "$1").trim();
+  return cleanInlineJobText(line.replace(regex, "$1").trim());
 }
 
 function matchSection(description: string, headings: string[], nextHeadings: string[]): string | null {
@@ -279,7 +270,7 @@ function extractCompensation(vacancy: VacancyRecord) {
 
   return compensationLine
     .replace(/^\*+\s*&?\s*Benefits:\s*/i, "")
-    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/^&?\s*Benefits:\s*/i, "")
     .trim();
 }
 
@@ -295,22 +286,19 @@ function buildFullDescription(description: string) {
     .filter((line) => !/^Compensation:/i.test(line))
     .filter((line) => !/^Start Date:/i.test(line))
     .map((line) => {
-      if (line === "---") {
-        return { kind: "divider" as const, text: "" };
-      }
-
-      if (line === "--") {
+      if (line === "---" || line === "--") {
         return { kind: "divider" as const, text: "" };
       }
 
       if (/^(About Us|The Role|About the Role|Key Responsibilities|Requirements & Qualifications|What We Offer)$/i.test(line)) {
-        return { kind: "heading" as const, text: line };
+        return { kind: "heading" as const, text: cleanInlineJobText(line) };
       }
 
-      if (/^[*\-•]\s*/.test(line)) {
-        return { kind: "bullet" as const, text: line.replace(/^[*\-•]\s*/, "").trim() };
+      if (/^[*-]\s*/.test(line)) {
+        return { kind: "bullet" as const, text: cleanInlineJobText(line) };
       }
 
-      return { kind: "paragraph" as const, text: line };
-    });
+      return { kind: "paragraph" as const, text: cleanInlineJobText(line) };
+    })
+    .filter((item) => item.kind === "divider" || item.text.length > 0);
 }
