@@ -257,7 +257,7 @@ export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardP
         </div>
 
         <div className="space-y-3 font-mono text-[12px] leading-relaxed text-[#bacac7]">
-          <p>{renderLinkedInPreviewText(previewText)}</p>
+          <div>{renderLinkedInPreviewText(previewText)}</div>
           {canExpand ? (
             <button
               type="button"

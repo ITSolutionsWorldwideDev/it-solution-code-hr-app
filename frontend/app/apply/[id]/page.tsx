@@ -49,8 +49,8 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
   const content = buildCandidateFacingContent(vacancy, departmentName);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#071728] text-[#d4e4fa] selection:bg-[#8aebff]/30">
-      <header className="sticky top-0 z-50 border-b border-[#3c494c] bg-[#071728]/90 backdrop-blur-md">
+    <div className="min-h-screen overflow-x-hidden bg-[#0b141e] text-[#d4e4fa] selection:bg-[#8aebff]/30">
+      <header className="sticky top-0 z-50 border-b border-[#3c494c] bg-[#0b141e]/90 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between px-6 py-4 lg:px-10">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-[#8aebff]/20 bg-[#8aebff]/10 shadow-[0_18px_36px_rgba(47,217,244,0.12)]">
@@ -83,29 +83,29 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
       </header>
 
       <main className="mx-auto w-full max-w-[1280px] px-6 py-10 lg:px-10">
-        <section className="mb-14">
-          <div className="mb-4 flex items-center gap-3">
-            <span className="rounded bg-[#00799e]/20 px-3 py-1 font-mono text-[12px] font-medium uppercase tracking-[0.12em] text-[#8aebff] ring-1 ring-inset ring-[#8aebff]/30">
-              Open Role
-            </span>
-            <span className="text-sm text-[#bbc9cd]">• {formatPostedLabel(vacancy.created_at)}</span>
-          </div>
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start">
+          <div className="order-2 space-y-12 lg:order-1 lg:col-span-8">
+            <section>
+              <div className="mb-4 flex items-center gap-3">
+                <span className="rounded bg-[#00799e]/20 px-3 py-1 font-mono text-[12px] font-medium uppercase tracking-[0.12em] text-[#8aebff] ring-1 ring-inset ring-[#8aebff]/30">
+                  Open Role
+                </span>
+                <span className="text-sm text-[#bbc9cd]">• {formatPostedLabel(vacancy.created_at)}</span>
+              </div>
 
-          <h1 className="font-['Hanken_Grotesk'] text-[4.6rem] font-bold lowercase leading-none tracking-[-0.05em] text-[#8aebff]">
-            {vacancy.title}
-          </h1>
+              <h1 className="font-['Hanken_Grotesk'] text-[4.6rem] font-bold lowercase leading-none tracking-[-0.05em] text-[#8aebff]">
+                {vacancy.title}
+              </h1>
 
-          <div className="mt-6 flex flex-wrap gap-8 text-[#d4e4fa]">
-            <MetadataItem icon={<BriefcaseBusiness className="h-4 w-4" />} value={content.department} />
-            <MetadataItem icon={<MapPin className="h-4 w-4" />} value={content.location} />
-            <MetadataItem icon={<CircleDollarSign className="h-4 w-4" />} value={content.compensation} />
-          </div>
+              <div className="mt-6 flex flex-wrap gap-8 text-[#d4e4fa]">
+                <MetadataItem icon={<BriefcaseBusiness className="h-4 w-4" />} value={content.department} />
+                <MetadataItem icon={<MapPin className="h-4 w-4" />} value={content.location} />
+                <MetadataItem icon={<CircleDollarSign className="h-4 w-4" />} value={content.compensation} />
+              </div>
 
-          <p className="mt-8 max-w-3xl text-[1.08rem] leading-9 text-[#bbc9cd]">{content.intro}</p>
-        </section>
+              <p className="mt-8 max-w-3xl text-[1.08rem] leading-9 text-[#bbc9cd]">{content.intro}</p>
+            </section>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          <div className="space-y-12 lg:col-span-8">
             <section className="rounded-2xl border border-[#3c494c] bg-[#122131] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
               <h2 className="font-['Hanken_Grotesk'] text-[2rem] font-semibold text-white">Short Summary</h2>
               <p className="mt-4 text-[1rem] leading-9 text-[#bbc9cd]">{content.shortSummary}</p>
@@ -156,7 +156,7 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
             </section>
           </div>
 
-          <aside className="space-y-5 lg:col-span-4 lg:sticky lg:top-24">
+          <aside className="order-1 space-y-5 lg:order-2 lg:col-span-4 lg:sticky lg:top-24">
             <PublicApplyForm vacancy={{ id: vacancy.vacancy_id, title: vacancy.title }} compact />
 
             <div className="rounded-2xl border border-[#3c494c] bg-[#122131] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.16)]">
