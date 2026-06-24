@@ -147,7 +147,7 @@ class Settings(BaseModel):
     n8n_calendar_booking_webhook_url: str | None = os.getenv("N8N_CALENDAR_BOOKING_WEBHOOK_URL")
     cal_com_booking_base_url: str = os.getenv("CAL_COM_BOOKING_BASE_URL", "http://localhost:3000/candidate/schedule")
     cal_com_webhook_secret: str | None = os.getenv("CAL_COM_WEBHOOK_SECRET")
-    public_apply_base_url: str = os.getenv("PUBLIC_APPLY_BASE_URL", "http://localhost:3000/apply")
+    public_apply_base_url: str = os.getenv("PUBLIC_APPLY_BASE_URL", "http://localhost:3000/careers")
     public_schedule_base_url: str = os.getenv(
         "PUBLIC_SCHEDULE_BASE_URL",
         "http://localhost:3000/candidate/schedule",

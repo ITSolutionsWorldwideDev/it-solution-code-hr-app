@@ -18,6 +18,10 @@ function isLocalDevHost(hostname: string) {
 
 const configuredPublicApplyBaseUrl = process.env.NEXT_PUBLIC_PUBLIC_APPLY_BASE_URL?.trim() || "";
 
+function normalizeApplyBaseUrl(value: string) {
+  return value.replace(/\/apply(?=\/?$)/i, "/careers").replace(/\/$/, "");
+}
+
 function normalizeLocalApplyUrl(applyUrl: string) {
   if (typeof window === "undefined") {
     return applyUrl;
@@ -42,14 +46,14 @@ function normalizeLocalApplyUrl(applyUrl: string) {
 
 function getCurrentPublicApplyBaseUrl() {
   if (configuredPublicApplyBaseUrl) {
-    return configuredPublicApplyBaseUrl.replace(/\/$/, "");
+    return normalizeApplyBaseUrl(configuredPublicApplyBaseUrl);
   }
 
   if (typeof window === "undefined") {
     return null;
   }
 
-  return new URL("/apply", window.location.origin).toString().replace(/\/$/, "");
+  return new URL("/careers", window.location.origin).toString().replace(/\/$/, "");
 }
 
 function normalizeLocalPostText(postText: string, originalApplyUrl: string, normalizedApplyUrl: string) {
@@ -58,6 +62,8 @@ function normalizeLocalPostText(postText: string, originalApplyUrl: string, norm
   if (originalApplyUrl !== normalizedApplyUrl) {
     nextText = nextText.replaceAll(originalApplyUrl, normalizedApplyUrl);
   }
+
+  nextText = nextText.replace(/(https?:\/\/[^\s]+)\/apply\/(\d+)/gi, "$1/careers/$2");
 
   return nextText.trim();
 }
@@ -153,8 +159,8 @@ export function LinkedInPreviewCard({ vacancyId, vacancy }: LinkedInPreviewCardP
     const applyUrl = publicApplyBaseUrl
       ? `${publicApplyBaseUrl.replace(/\/$/, "")}/${vacancyId}`
       : typeof window === "undefined"
-        ? `/apply/${vacancyId}`
-        : new URL(`/apply/${vacancyId}`, window.location.origin).toString();
+        ? `/careers/${vacancyId}`
+        : new URL(`/careers/${vacancyId}`, window.location.origin).toString();
     const postText = buildLinkedInPostText(vacancy, applyUrl);
 
     return {

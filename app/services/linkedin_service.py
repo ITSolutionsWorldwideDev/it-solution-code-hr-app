@@ -151,6 +151,7 @@ def _normalize_linkedin_post_text(*, post_text: str, apply_url: str) -> str:
     cleaned = cleaned.replace("[application link generated after approval]", clean_url)
     cleaned = cleaned.replace("[Application Link]", clean_url)
     cleaned = cleaned.replace("[PLAK HIER JE URL]", clean_url)
+    cleaned = re.sub(r"(https?://[^\s]+)/apply/(\d+)", r"\1/careers/\2", cleaned)
     cleaned = re.sub(r"(?im)^Apply here:\s*.+$", f"Apply here: {clean_url}", cleaned)
     cleaned = re.sub(r"(?im)^Location:\s*", "Location: ", cleaned)
     cleaned = re.sub(r"(?im)^Job Type:\s*", "Job Type: ", cleaned)
@@ -199,7 +200,7 @@ def _resolve_public_apply_base_url(candidate: str | None) -> str:
     if fallback:
         return fallback
 
-    return "http://localhost:3000/apply"
+    return "http://localhost:3000/careers"
 
 
 def _normalize_public_apply_base_url(value: str | None) -> str | None:
@@ -224,7 +225,9 @@ def _normalize_public_apply_base_url(value: str | None) -> str | None:
         return None
 
     path = parsed.path.rstrip("/")
-    if not path.endswith("/apply"):
-        path = f"{path}/apply" if path else "/apply"
+    if path.endswith("/apply"):
+        path = f"{path[:-len('/apply')]}/careers"
+    elif not path.endswith("/careers"):
+        path = f"{path}/careers" if path else "/careers"
 
     return f"{parsed.scheme}://{parsed.netloc}{path}"

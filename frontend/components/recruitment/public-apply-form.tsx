@@ -1,10 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FileUp, LoaderCircle } from "lucide-react";
+import { FileUp, LoaderCircle, Send } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/api/client";
 import type { PublicApplicationSubmitResponse } from "@/lib/recruitment-types";
 
@@ -16,12 +14,21 @@ type PublicApplyFormProps = {
   compact?: boolean;
 };
 
+const workAuthorizationOptions = [
+  "Requires Visa Sponsorship",
+  "Authorized to work in the EU",
+  "Authorized to work in the Netherlands",
+  "Student Visa",
+];
+
+const noticePeriodOptions = ["Immediate", "1 Month", "2 Months", "3 Months"];
+
 export function PublicApplyForm({ vacancy, compact = false }: PublicApplyFormProps) {
   const [file, setFile] = useState<File | null>(null);
   const [candidateEmail, setCandidateEmail] = useState("");
   const [location, setLocation] = useState("");
-  const [workAuthorization, setWorkAuthorization] = useState("");
-  const [noticePeriod, setNoticePeriod] = useState("");
+  const [workAuthorization, setWorkAuthorization] = useState(workAuthorizationOptions[0]);
+  const [noticePeriod, setNoticePeriod] = useState(noticePeriodOptions[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -66,8 +73,8 @@ export function PublicApplyForm({ vacancy, compact = false }: PublicApplyFormPro
       setFile(null);
       setCandidateEmail("");
       setLocation("");
-      setWorkAuthorization("");
-      setNoticePeriod("");
+      setWorkAuthorization(workAuthorizationOptions[0]);
+      setNoticePeriod(noticePeriodOptions[0]);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Resume upload failed.");
     } finally {
@@ -76,40 +83,38 @@ export function PublicApplyForm({ vacancy, compact = false }: PublicApplyFormPro
   };
 
   return (
-    <div className="rounded-[26px] border border-white/10 bg-white/[0.04] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-      <div>
-        <h2 className="text-[1.45rem] font-semibold text-white">Upload your resume</h2>
-        <p className="mt-2 text-sm leading-6 text-[#9eb0bf]">
-          Apply for <span className="font-semibold text-white">{vacancy.title}</span> by sharing your resume and a
-          few quick details.
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[rgba(30,41,59,0.4)] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+      <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#8aebff]/10 blur-3xl" />
+
+      <div className="relative">
+        <h2 className="font-['Hanken_Grotesk'] text-[2rem] font-semibold text-white">Upload your resume</h2>
+        <p className="mt-2 text-sm leading-7 text-[#bbc9cd]">
+          Apply for <span className="font-medium text-[#8aebff]">{vacancy.title}</span> by sharing your details.
         </p>
       </div>
 
-      <div className="mt-6 space-y-4">
-        <div>
-          <label className="mb-2 block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9ab0c3]">
-            Email Address
-          </label>
-          <Input
-            type="email"
-            value={candidateEmail}
-            onChange={(event) => setCandidateEmail(event.target.value)}
-            placeholder="your.name@example.com"
-            className="h-11 rounded-[14px] border-white/10 bg-white/[0.05] text-[#f5f7fa] placeholder:text-[#6f8293]"
-          />
-        </div>
+      <div className="relative mt-6 space-y-4">
+        <FieldLabel>Email Address</FieldLabel>
+        <input
+          type="email"
+          value={candidateEmail}
+          onChange={(event) => setCandidateEmail(event.target.value)}
+          placeholder="your.name@example.com"
+          className="h-12 w-full rounded-lg border border-[#3c494c] bg-[#273647] px-4 text-[#d4e4fa] outline-none transition placeholder:text-[#859397] focus:border-[#8aebff] focus:shadow-[0_0_0_1px_#8aebff,0_0_12px_rgba(138,235,255,0.2)]"
+        />
 
         <div>
-          <label className="mb-2 block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9ab0c3]">
-            Resume
-          </label>
-          <label className="flex cursor-pointer flex-col items-center justify-center rounded-[18px] border border-dashed border-white/14 bg-[#11151b] px-5 py-8 text-center transition hover:border-[#9db8ff]/35">
-            <FileUp className="h-5 w-5 text-[#a9c3ff]" />
-            <span className="mt-3 text-sm font-medium text-[#d9e5ee]">
-              {file ? file.name : "Click to upload or drag and drop"}
-            </span>
-            <span className="mt-2 text-xs text-[#7f93a5]">PDF, DOCX, or DOC</span>
-            <Input
+          <FieldLabel>Resume</FieldLabel>
+          <label className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#3c494c] bg-[#122131]/50 px-5 py-8 text-center transition hover:border-[#8aebff]/50">
+            <FileUp className="h-8 w-8 text-[#859397]" />
+            <p className="mt-3 text-sm text-[#d4e4fa]">
+              <span className="font-medium text-[#8aebff]">{file ? file.name : "Click to upload"}</span>
+              {!file ? " or drag and drop" : ""}
+            </p>
+            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#859397]">
+              PDF, DOCX, or DOC (Max 5MB)
+            </p>
+            <input
               type="file"
               accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
@@ -118,75 +123,80 @@ export function PublicApplyForm({ vacancy, compact = false }: PublicApplyFormPro
           </label>
         </div>
 
-        <div>
-          <label className="mb-2 block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9ab0c3]">
-            Location
-          </label>
-          <Input
-            type="text"
-            value={location}
-            onChange={(event) => setLocation(event.target.value)}
-            placeholder="City, Country"
-            className="h-11 rounded-[14px] border-white/10 bg-white/[0.05] text-[#f5f7fa] placeholder:text-[#6f8293]"
-          />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <FieldLabel>Location</FieldLabel>
+            <input
+              type="text"
+              value={location}
+              onChange={(event) => setLocation(event.target.value)}
+              placeholder="City, Country"
+              className="mt-2 h-12 w-full rounded-lg border border-[#3c494c] bg-[#273647] px-4 text-[#d4e4fa] outline-none transition placeholder:text-[#859397] focus:border-[#8aebff]"
+            />
+          </div>
+          <div>
+            <FieldLabel>Notice Period</FieldLabel>
+            <select
+              value={noticePeriod}
+              onChange={(event) => setNoticePeriod(event.target.value)}
+              className="mt-2 h-12 w-full rounded-lg border border-[#3c494c] bg-[#273647] px-4 text-[#d4e4fa] outline-none transition focus:border-[#8aebff]"
+            >
+              {noticePeriodOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div>
-          <label className="mb-2 block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9ab0c3]">
-            Work Authorization
-          </label>
-          <Input
-            type="text"
+          <FieldLabel>Work Authorization</FieldLabel>
+          <select
             value={workAuthorization}
             onChange={(event) => setWorkAuthorization(event.target.value)}
-            placeholder="Select status"
-            className="h-11 rounded-[14px] border-white/10 bg-white/[0.05] text-[#f5f7fa] placeholder:text-[#6f8293]"
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9ab0c3]">
-            Notice Period
-          </label>
-          <Input
-            type="text"
-            value={noticePeriod}
-            onChange={(event) => setNoticePeriod(event.target.value)}
-            placeholder="Select duration"
-            className="h-11 rounded-[14px] border-white/10 bg-white/[0.05] text-[#f5f7fa] placeholder:text-[#6f8293]"
-          />
+            className="mt-2 h-12 w-full rounded-lg border border-[#3c494c] bg-[#273647] px-4 text-[#d4e4fa] outline-none transition focus:border-[#8aebff]"
+          >
+            {workAuthorizationOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
         </div>
 
         {errorMessage ? (
-          <div className="rounded-[18px] border border-[#6f2a36] bg-[#2b1418] px-4 py-3 text-sm text-[#ffb6c0]">
+          <div className="rounded-lg border border-[#93000a] bg-[#93000a]/20 px-4 py-3 text-sm text-[#ffdad6]">
             {errorMessage}
           </div>
         ) : null}
 
         {successMessage ? (
-          <div className="rounded-[18px] border border-[#27553e] bg-[#12261c] px-4 py-3 text-sm text-[#8fe0b2]">
+          <div className="rounded-lg border border-[#27553e] bg-[#12261c] px-4 py-3 text-sm text-[#8fe0b2]">
             {successMessage}
           </div>
         ) : null}
 
-        <Button
+        <button
           type="button"
           onClick={handleSubmit}
           disabled={!file || !candidateEmail.trim() || isSubmitting}
-          icon={isSubmitting ? LoaderCircle : FileUp}
-          className={`w-full justify-center rounded-[14px] bg-[#adc2ff] px-4 py-3 text-[#0d1420] shadow-none hover:bg-[#bfd0ff] ${
-            isSubmitting ? "opacity-80" : ""
-          }`}
+          className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-lg bg-[#8aebff] px-4 font-semibold text-[#001f25] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isSubmitting ? "Uploading..." : "Submit Resume"}
-        </Button>
+          {isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {isSubmitting ? "Submitting..." : "Submit Application"}
+        </button>
 
         {compact ? (
-          <p className="text-center text-xs leading-5 text-[#7f93a5]">
+          <p className="px-4 text-center text-[11px] leading-5 text-[#859397]">
             By submitting, you agree to our recruitment privacy policy and data processing terms.
           </p>
         ) : null}
       </div>
     </div>
   );
+}
+
+function FieldLabel({ children }: { children: string }) {
+  return <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-[#bbc9cd]">{children}</label>;
 }

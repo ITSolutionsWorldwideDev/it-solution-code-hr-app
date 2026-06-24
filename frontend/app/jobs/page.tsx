@@ -66,7 +66,7 @@ export default async function JobsPage() {
 
                   <div className="flex shrink-0 items-center">
                     <Link
-                      href={`/apply/${job.vacancy_id}`}
+                      href={`/careers/${job.vacancy_id}`}
                       className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#adc2ff] px-6 text-sm font-semibold text-[#0d1420] transition hover:bg-[#bfd0ff]"
                     >
                       View & Apply
