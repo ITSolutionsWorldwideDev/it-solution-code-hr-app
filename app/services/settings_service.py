@@ -239,7 +239,7 @@ def _default_access_settings() -> AccessSettingsData:
         allowed_login_password_source_status="Configured in environment",
         session_duration_days=7,
         cookie_secure_mode=settings.auth_cookie_secure,
-        cookie_same_site_mode="lax",
+        cookie_same_site_mode="none" if settings.auth_cookie_secure else "lax",
         auto_create_user_records_on_login=True,
         default_role_for_auto_created_users=UserRole.HR,
         restrict_login_to_allowed_email_domains=False,
@@ -379,7 +379,18 @@ def get_support_settings_runtime(*, session: Session | None = None) -> SupportSe
 
 
 def get_access_settings_runtime(*, session: Session | None = None) -> AccessSettingsData:
-    return _with_session(session, lambda active_session: AccessSettingsData.model_validate(_serialize_settings_category(active_session, "access").data))
+    def _load(active_session: Session) -> AccessSettingsData:
+        resolved = AccessSettingsData.model_validate(_serialize_settings_category(active_session, "access").data)
+
+        # Hosted frontend/backend deployments use separate Vercel domains, so the
+        # internal auth cookie must be cross-site compatible to survive API calls.
+        if os.getenv("VERCEL") == "1":
+            resolved.cookie_secure_mode = True
+            resolved.cookie_same_site_mode = "none"
+
+        return resolved
+
+    return _with_session(session, _load)
 
 
 def get_website_pdf_settings_runtime(*, session: Session | None = None) -> WebsitePdfSettingsData:
