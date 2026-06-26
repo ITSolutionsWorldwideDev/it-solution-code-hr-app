@@ -11,6 +11,7 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer
 
 from app.config import BASE_DIR, settings
@@ -19,9 +20,16 @@ from app.models.vacancy import Vacancy
 
 _HEADING_ALIASES: dict[str, tuple[str, ...]] = {
     "about_us": ("About Us",),
-    "position_overview": ("Position Overview", "About the Role", "Role Summary"),
+    "position_overview": ("Position Overview", "About the Role", "Role Summary", "The Role"),
     "key_responsibilities": ("Key Responsibilities", "Responsibilities"),
-    "skills_requirements": ("Skills & Requirements", "Skills and Requirements", "Qualifications", "What You'll Bring", "What You’ll Bring"),
+    "skills_requirements": (
+        "Skills & Requirements",
+        "Skills and Requirements",
+        "Qualifications",
+        "Requirements & Qualifications",
+        "What You'll Bring",
+        "What You’ll Bring",
+    ),
     "preferred_experience": ("Preferred Experience", "Nice to Have"),
     "what_we_offer": ("What We Offer", "Working Arrangements and Benefits", "Benefits"),
 }
@@ -60,11 +68,17 @@ def _build_metadata(vacancy: Vacancy) -> dict[str, str]:
     parsed = vacancy.parsed_data or {}
     city = str(parsed.get("city") or "").strip()
     country = str(parsed.get("country") or "").strip()
-    location = str(parsed.get("location") or "").strip() or ", ".join(part for part in [city, country] if part) or "Location not set"
+    location = str(parsed.get("location") or "").strip() or ", ".join(
+        part for part in [city, country] if part
+    ) or "Location not set"
     employment_type = str(parsed.get("employment_type") or "").strip() or "Full-time"
     work_model = str(parsed.get("work_model") or "").strip()
     work_hours = str(parsed.get("work_hours") or "").strip()
-    years_experience = str(parsed.get("years_experience") or "").strip() or str(vacancy.experience_level or "").strip() or "Not specified"
+    years_experience = (
+        str(parsed.get("years_experience") or "").strip()
+        or str(vacancy.experience_level or "").strip()
+        or "Not specified"
+    )
     languages = parsed.get("languages")
     work_authorization = str(parsed.get("work_authorization") or "").strip() or _default_work_authorization(country)
 
@@ -117,69 +131,67 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
         ParagraphStyle(
             name="WebsiteBody",
             parent=styles["BodyText"],
-            fontName="Helvetica",
-            fontSize=11,
-            leading=18,
+            fontName="Times-Roman",
+            fontSize=11.5,
+            leading=19,
             textColor=colors.HexColor("#111111"),
             alignment=TA_LEFT,
-            spaceAfter=8,
+            spaceAfter=10,
         )
     )
     styles.add(
         ParagraphStyle(
             name="WebsiteHeading",
             parent=styles["Heading2"],
-            fontName="Helvetica-Bold",
-            fontSize=16,
-            leading=20,
+            fontName="Times-Bold",
+            fontSize=17,
+            leading=22,
             textColor=colors.HexColor("#111111"),
-            spaceBefore=10,
-            spaceAfter=8,
+            spaceBefore=14,
+            spaceAfter=10,
         )
     )
     styles.add(
         ParagraphStyle(
             name="WebsiteTitle",
             parent=styles["Heading1"],
-            fontName="Helvetica-Bold",
-            fontSize=18,
-            leading=22,
+            fontName="Times-Bold",
+            fontSize=22,
+            leading=26,
             textColor=colors.HexColor("#111111"),
-            spaceAfter=10,
+            spaceAfter=12,
         )
     )
 
-    document = SimpleDocTemplate(
-        str(pdf_path),
-        pagesize=A4,
-        leftMargin=26 * mm,
-        rightMargin=26 * mm,
-        topMargin=56 * mm,
-        bottomMargin=42 * mm,
-    )
-
     story: list[Any] = []
-    story.append(Paragraph(_escape(title), styles["WebsiteTitle"]))
+    story.append(Paragraph(_escape(_clean_markdown_text(title)), styles["WebsiteTitle"]))
 
     for label, value in metadata.items():
         story.append(
-            Paragraph(f"<b>{_escape(label)}:</b> {_escape(value)}", styles["WebsiteBody"])
+            Paragraph(
+                f"<b>{_escape(_clean_markdown_text(label))}:</b> {_escape(_clean_markdown_text(value))}",
+                styles["WebsiteBody"],
+            )
         )
 
     story.append(Spacer(1, 8))
 
     for heading, paragraphs in sections:
-        story.append(Paragraph(_escape(heading), styles["WebsiteHeading"]))
+        story.append(Paragraph(_escape(_clean_markdown_text(heading)), styles["WebsiteHeading"]))
         for paragraph in paragraphs:
-            if paragraph.strip().startswith("•"):
-                story.append(Paragraph(_escape(paragraph), styles["WebsiteBody"]))
-            elif paragraph.strip().startswith("-"):
-                story.append(Paragraph(f"• {_escape(paragraph.strip().lstrip('- ').strip())}", styles["WebsiteBody"]))
+            cleaned_paragraph = _clean_markdown_text(paragraph)
+            if not cleaned_paragraph:
+                continue
+
+            if _is_bullet_line(paragraph):
+                bullet_text = _strip_bullet_prefix(cleaned_paragraph)
+                if bullet_text:
+                    story.append(Paragraph(f"&bull; {_escape(bullet_text)}", styles["WebsiteBody"]))
             else:
-                story.append(Paragraph(_escape(paragraph), styles["WebsiteBody"]))
+                story.append(Paragraph(_escape(cleaned_paragraph), styles["WebsiteBody"]))
         story.append(Spacer(1, 4))
 
-    def apply_pdf_metadata(page_canvas: canvas.Canvas, _doc) -> None:
+    def apply_pdf_metadata(page_canvas: canvas.Canvas) -> None:
         page_canvas.setTitle(f"{title} | IT Solutions Worldwide")
         page_canvas.setAuthor(_PDF_AUTHOR)
         page_canvas.setCreator(_PDF_CREATOR)
@@ -191,21 +203,26 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
         teal = colors.HexColor("#78b8b6")
         slate = colors.HexColor("#5f8492")
         dark = colors.HexColor("#425766")
+        background_asset_path = _ensure_template_background_asset()
         header_asset_path, footer_asset_path = _ensure_template_branding_assets()
 
         page_canvas.saveState()
-        apply_pdf_metadata(page_canvas, _doc)
-        if header_asset_path is not None and header_asset_path.exists():
-            header_width = 184 * mm
-            header_height = (111 / 522) * header_width
-            page_canvas.drawImage(
-                str(header_asset_path),
-                26 * mm,
-                page_height - header_height - 10 * mm,
-                width=header_width,
-                height=header_height,
-                preserveAspectRatio=True,
-                mask="auto",
+        apply_pdf_metadata(page_canvas)
+        if background_asset_path is not None and background_asset_path.exists():
+            _draw_asset_to_box(
+                page_canvas=page_canvas,
+                asset_path=background_asset_path,
+                x=0,
+                y=0,
+                width=page_width,
+                height=page_height,
+            )
+        elif header_asset_path is not None and header_asset_path.exists():
+            _draw_asset_full_width(
+                page_canvas=page_canvas,
+                asset_path=header_asset_path,
+                page_width=page_width,
+                y=page_height - _asset_height_for_width(header_asset_path, page_width),
             )
         else:
             page_canvas.setFillColor(teal)
@@ -220,25 +237,36 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
                 logo = Image(str(logo_path), width=34 * mm, height=34 * mm)
                 logo.drawOn(page_canvas, 32 * mm, page_height - 42 * mm)
 
-            page_canvas.setFont("Helvetica-Bold", 18)
+            page_canvas.setFont("Times-Bold", 18)
             page_canvas.setFillColor(colors.HexColor("#111111"))
             page_canvas.drawString(65 * mm, page_height - 24 * mm, "IT Solutions")
             page_canvas.drawString(65 * mm, page_height - 33 * mm, "Worldwide")
 
-        if footer_asset_path is not None and footer_asset_path.exists():
-            footer_width = page_width
-            footer_height = (221 / 1247) * footer_width
-            page_canvas.drawImage(
-                str(footer_asset_path),
-                0,
-                0,
-                width=footer_width,
-                height=footer_height,
-                preserveAspectRatio=True,
-                mask="auto",
+        if background_asset_path is not None and background_asset_path.exists():
+            pass
+        elif footer_asset_path is not None and footer_asset_path.exists():
+            _draw_asset_full_width(
+                page_canvas=page_canvas,
+                asset_path=footer_asset_path,
+                page_width=page_width,
+                y=0,
             )
+        else:
+            page_canvas.setFillColor(teal)
+            page_canvas.rect(0, 0, page_width, 11 * mm, fill=1, stroke=0)
+            page_canvas.setFillColor(dark)
+            page_canvas.rect(0, 11 * mm, page_width, 6 * mm, fill=1, stroke=0)
         page_canvas.restoreState()
 
+    document = SimpleDocTemplate(
+        str(pdf_path),
+        pagesize=A4,
+        leftMargin=26 * mm,
+        rightMargin=24 * mm,
+        topMargin=39 * mm,
+        bottomMargin=40 * mm,
+        pageCompression=1,
+    )
     document.build(story, onFirstPage=draw_branding, onLaterPages=draw_branding)
 
 
@@ -255,19 +283,26 @@ def _resolve_logo_path() -> Path | None:
 
 
 def _resolve_template_pdf_path() -> Path | None:
-    path = BASE_DIR / "ITSW TEMPLATE Posting.pdf"
-    return path if path.exists() else None
+    candidates = [
+        BASE_DIR / "Letter Head ITWW HD.pdf",
+        BASE_DIR / "ITSW TEMPLATE Posting.pdf",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
 
 
 def _ensure_template_branding_assets() -> tuple[Path | None, Path | None]:
-    header_path = settings.website_pdf_output_dir / "itsw-template-header.jpg"
-    footer_path = settings.website_pdf_output_dir / "itsw-template-footer.jpg"
-    if header_path.exists() and footer_path.exists():
-        return header_path, footer_path
-
     template_pdf_path = _resolve_template_pdf_path()
     if template_pdf_path is None:
         return None, None
+
+    template_key = _slugify(template_pdf_path.stem) or "itsw-template"
+    header_path = settings.website_pdf_output_dir / f"{template_key}-header.jpg"
+    footer_path = settings.website_pdf_output_dir / f"{template_key}-footer.jpg"
+    if header_path.exists() and footer_path.exists():
+        return header_path, footer_path
 
     try:
         reader = PdfReader(str(template_pdf_path))
@@ -285,13 +320,72 @@ def _ensure_template_branding_assets() -> tuple[Path | None, Path | None]:
     return None, None
 
 
-def _normalize_description(description: str) -> str:
-    return (
-        description.replace("\r\n", "\n")
-        .replace("How to Apply", "\nHow to Apply\n")
-        .replace("[PLAK HIER JE URL]", "")
-        .strip()
+def _ensure_template_background_asset() -> Path | None:
+    template_pdf_path = _resolve_template_pdf_path()
+    if template_pdf_path is None:
+        return None
+
+    template_key = _slugify(template_pdf_path.stem) or "itsw-template"
+    background_path = settings.website_pdf_output_dir / f"{template_key}-background.jpg"
+    if background_path.exists():
+        return background_path
+
+    try:
+        reader = PdfReader(str(template_pdf_path))
+        if not reader.pages:
+            return None
+
+        images = list(reader.pages[0].images)
+        if images:
+            background_path.write_bytes(images[0].data)
+            return background_path
+    except Exception:
+        return None
+
+    return None
+
+
+def _asset_height_for_width(asset_path: Path, width: float) -> float:
+    image = ImageReader(str(asset_path))
+    image_width, image_height = image.getSize()
+    if not image_width or not image_height:
+        return 0
+    return width * (float(image_height) / float(image_width))
+
+
+def _draw_asset_to_box(*, page_canvas, asset_path: Path, x: float, y: float, width: float, height: float) -> None:
+    page_canvas.drawImage(
+        str(asset_path),
+        x,
+        y,
+        width=width,
+        height=height,
+        preserveAspectRatio=False,
+        mask="auto",
     )
+
+
+def _draw_asset_full_width(*, page_canvas, asset_path: Path, page_width: float, y: float) -> None:
+    asset_height = _asset_height_for_width(asset_path, page_width)
+    if asset_height <= 0:
+        return
+    _draw_asset_to_box(
+        page_canvas=page_canvas,
+        asset_path=asset_path,
+        x=0,
+        y=y,
+        width=page_width,
+        height=asset_height,
+    )
+
+
+def _normalize_description(description: str) -> str:
+    normalized = description.replace("\r\n", "\n").replace("[PLAK HIER JE URL]", "")
+    normalized = re.sub(r"(?is)(?:^|\n)\s*#*\s*\**\s*how to apply\s*\**\s*:?.*$", "", normalized)
+    normalized = re.sub(r"(?is)how to apply[\s\S]*$", "", normalized)
+    normalized = re.sub(r"(?m)^\s*#+\s*", "", normalized)
+    normalized = normalized.replace("â€™", "’")
+    return normalized.strip()
 
 
 def _extract_sections(description: str) -> dict[str, list[str]]:
@@ -303,7 +397,8 @@ def _extract_sections(description: str) -> dict[str, list[str]]:
     def flush() -> None:
         nonlocal buffer, current_key
         if current_key and buffer:
-            cleaned = [item.strip() for item in buffer if item.strip()]
+            cleaned = [_clean_markdown_text(item) for item in buffer if item.strip()]
+            cleaned = [item for item in cleaned if item]
             if cleaned:
                 section_values[current_key] = cleaned
         buffer = []
@@ -315,14 +410,14 @@ def _extract_sections(description: str) -> dict[str, list[str]]:
     }
 
     for line in lines:
-        normalized = line.strip().rstrip(":")
+        normalized = _normalize_heading_candidate(line)
         matched_key = heading_lookup.get(normalized.lower())
         if matched_key:
             flush()
             current_key = matched_key
             continue
 
-        if normalized.lower() == "apply here":
+        if normalized.lower() in {"how to apply", "apply here"} or normalized.lower().startswith("apply here"):
             flush()
             current_key = None
             continue
@@ -335,8 +430,8 @@ def _extract_sections(description: str) -> dict[str, list[str]]:
 
 
 def _fallback_position_overview(vacancy: Vacancy) -> list[str]:
-    summary = str(vacancy.ai_summary or "").strip()
-    description = _remove_apply_section(str(vacancy.description or "").strip())
+    summary = _clean_markdown_text(str(vacancy.ai_summary or "").strip())
+    description = _clean_markdown_text(_remove_apply_section(str(vacancy.description or "").strip()))
     if summary:
         return [summary, description] if description and summary not in description else [summary]
     if description:
@@ -347,7 +442,7 @@ def _fallback_position_overview(vacancy: Vacancy) -> list[str]:
 
 def _fallback_requirements_list(skills: list[str]) -> list[str]:
     if skills:
-        return [f"• {skill}" for skill in skills]
+        return [f"• {_clean_markdown_text(skill)}" for skill in skills if _clean_markdown_text(skill)]
     return [
         "• Strong professional communication and teamwork.",
         "• Relevant role-specific expertise and ownership.",
@@ -360,7 +455,7 @@ def _fallback_perks(parsed_data: dict[str, Any]) -> list[str]:
     if perks:
         items = [item.strip(" -") for item in re.split(r"[\n,;]+", perks) if item.strip(" -")]
         if items:
-            return [f"• {item}" for item in items]
+            return [f"• {_clean_markdown_text(item)}" for item in items if _clean_markdown_text(item)]
     return [
         "• Competitive compensation package based on experience.",
         "• Learning and development opportunities.",
@@ -409,9 +504,33 @@ def _slugify(value: str) -> str:
 
 
 def _remove_apply_section(value: str) -> str:
-    cleaned = re.sub(r"How to Apply[\s\S]*$", "", value, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"(?is)(?:^|\n)\s*#*\s*\**\s*how to apply\s*\**\s*:?.*$", "", value)
+    cleaned = re.sub(r"How to Apply[\s\S]*$", "", cleaned, flags=re.IGNORECASE).strip()
     cleaned = cleaned.replace("[PLAK HIER JE URL]", "").strip()
     return cleaned
+
+
+def _normalize_heading_candidate(value: str) -> str:
+    return _clean_markdown_text(value).rstrip(":").strip()
+
+
+def _clean_markdown_text(value: str) -> str:
+    cleaned = value.replace("\u2019", "'").replace("â€™", "'").strip()
+    cleaned = re.sub(r"^\s*#+\s*", "", cleaned)
+    cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"__(.*?)__", r"\1", cleaned)
+    cleaned = re.sub(r"`([^`]*)`", r"\1", cleaned)
+    cleaned = cleaned.replace("**", "")
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
+def _is_bullet_line(value: str) -> bool:
+    return bool(re.match(r"^\s*(?:[-*•]|\u2022)\s+", value))
+
+
+def _strip_bullet_prefix(value: str) -> str:
+    return re.sub(r"^\s*(?:[-*•]|\u2022)\s+", "", value).strip()
 
 
 def _escape(value: str) -> str:
