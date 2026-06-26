@@ -183,3 +183,6 @@ def init_db() -> None:
 
     with Session(engine) as session:
         ensure_default_departments(session)
+        from app.services.vacancy_service import backfill_vacancy_apply_urls
+
+        backfill_vacancy_apply_urls(session)

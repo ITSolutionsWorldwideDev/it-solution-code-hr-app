@@ -20,6 +20,7 @@ from app.services.candidate_service import create_candidate_from_cv
 from app.services.crud import get_or_404
 from app.services.hr_invite_service import process_hr_invite_callback
 from app.services.linkedin_service import build_linkedin_preview
+from app.services.vacancy_service import ensure_vacancy_apply_url
 
 
 router = APIRouter(prefix="/integrations/n8n", tags=["Integrations"])
@@ -52,6 +53,7 @@ def generate_linkedin_preview(
     session: Session = Depends(get_session),
 ):
     vacancy = get_or_404(session, Vacancy, payload.vacancy_id)
+    ensure_vacancy_apply_url(session=session, vacancy=vacancy)
     return build_linkedin_preview(
         vacancy,
         dry_run=payload.dry_run,

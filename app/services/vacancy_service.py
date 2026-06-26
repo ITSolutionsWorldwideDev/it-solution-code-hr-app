@@ -7,8 +7,49 @@ from app.models.candidate_match import CandidateMatch
 from app.models.parse_job import ParseJob
 from app.models.potential_match import PotentialMatch
 from app.models.vacancy import Vacancy
+from app.services.openai_service import inject_job_description_apply_url
 from app.services.application_workflow_service import delete_application_from_pipeline
 from app.services.crud import get_or_404
+from app.services.settings_service import get_general_settings_runtime
+
+
+def build_vacancy_apply_url(*, session: Session, vacancy: Vacancy) -> str:
+    general_settings = get_general_settings_runtime(session=session)
+    return f"{general_settings.public_apply_base_url.rstrip('/')}/{vacancy.id}"
+
+
+def ensure_vacancy_apply_url(*, session: Session, vacancy: Vacancy, commit: bool = True) -> Vacancy:
+    apply_url = build_vacancy_apply_url(session=session, vacancy=vacancy)
+    updated_description = inject_job_description_apply_url(
+        description=vacancy.description,
+        apply_url=apply_url,
+    )
+
+    if updated_description == vacancy.description:
+        return vacancy
+
+    vacancy.description = updated_description
+    session.add(vacancy)
+    if commit:
+        session.commit()
+        session.refresh(vacancy)
+    return vacancy
+
+
+def backfill_vacancy_apply_urls(session: Session) -> int:
+    vacancies = list(session.exec(select(Vacancy)).all())
+    updated_count = 0
+
+    for vacancy in vacancies:
+        original_description = vacancy.description
+        ensure_vacancy_apply_url(session=session, vacancy=vacancy, commit=False)
+        if vacancy.description != original_description:
+            updated_count += 1
+
+    if updated_count:
+        session.commit()
+
+    return updated_count
 
 
 def delete_vacancy_with_dependencies(session: Session, vacancy_id: int) -> None:

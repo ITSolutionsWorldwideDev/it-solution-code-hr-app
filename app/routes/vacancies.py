@@ -24,7 +24,11 @@ from app.services.talent_discovery_service import (
     trigger_talent_discovery_for_vacancy,
 )
 from app.services.settings_service import get_recruitment_settings_runtime
-from app.services.vacancy_service import clear_all_vacancies, delete_vacancy_with_dependencies
+from app.services.vacancy_service import (
+    clear_all_vacancies,
+    delete_vacancy_with_dependencies,
+    ensure_vacancy_apply_url,
+)
 from app.services.website_publish_service import auto_publish_vacancy_to_website
 
 
@@ -42,12 +46,17 @@ class ClearVacanciesResponse(BaseModel):
 
 @router.get("/", response_model=list[VacancyRead], summary="List vacancies", description="Return all vacancies.")
 def list_vacancies(session: Session = Depends(get_session)):
-    return crud.get_all(session, Vacancy)
+    vacancies = crud.get_all(session, Vacancy)
+    for vacancy in vacancies:
+        ensure_vacancy_apply_url(session=session, vacancy=vacancy)
+    return vacancies
 
 
 @router.get("/{vacancy_id}", response_model=VacancyRead, summary="Get vacancy", description="Return a vacancy by ID.")
 def get_vacancy(vacancy_id: int, session: Session = Depends(get_session)):
-    return crud.get_or_404(session, Vacancy, vacancy_id)
+    vacancy = crud.get_or_404(session, Vacancy, vacancy_id)
+    ensure_vacancy_apply_url(session=session, vacancy=vacancy)
+    return vacancy
 
 
 @router.get(
@@ -148,7 +157,9 @@ def add_talent_pool_candidate_to_shortlist_route(
 
 @router.post("/", response_model=VacancyRead, status_code=status.HTTP_201_CREATED, summary="Create vacancy", description="Create a new vacancy.")
 def create_vacancy(payload: VacancyCreate, session: Session = Depends(get_session)):
-    return crud.create(session, Vacancy, payload.model_dump())
+    vacancy = crud.create(session, Vacancy, payload.model_dump())
+    ensure_vacancy_apply_url(session=session, vacancy=vacancy)
+    return vacancy
 
 
 @router.put("/{vacancy_id}", response_model=VacancyRead, summary="Update vacancy", description="Update an existing vacancy.")
@@ -174,6 +185,7 @@ def update_vacancy(
             public_base_url=str(request.base_url).rstrip("/"),
         )
 
+    ensure_vacancy_apply_url(session=session, vacancy=updated_vacancy)
     return updated_vacancy
 
 
