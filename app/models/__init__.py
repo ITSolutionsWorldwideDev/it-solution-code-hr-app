@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.app_setting import AppSetting
 from app.models.application import Application
 from app.models.application_email_event import ApplicationEmailEvent
 from app.models.application_interview import ApplicationInterview
@@ -12,11 +13,13 @@ from app.models.employee import Employee
 from app.models.hiring_request import HiringRequest
 from app.models.parse_job import ParseJob
 from app.models.user import User
+from app.models.user_preference import UserPreference
 from app.models.vacancy import Vacancy
 from app.models.website_publication import WebsitePublication
 
 __all__ = [
     "Base",
+    "AppSetting",
     "Application",
     "ApplicationEmailEvent",
     "ApplicationInterview",
@@ -30,6 +33,7 @@ __all__ = [
     "HiringRequest",
     "ParseJob",
     "User",
+    "UserPreference",
     "Vacancy",
     "WebsitePublication",
 ]

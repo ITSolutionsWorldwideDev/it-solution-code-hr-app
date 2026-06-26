@@ -12,6 +12,7 @@ import requests
 
 from app.config import settings
 from app.services.ai_service import parse_candidate_text, sanitize_text
+from app.services.settings_service import get_ai_settings_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,10 @@ def _get_vertex_model(model_name: str):
 
 
 def _configured_vertex_models() -> list[str]:
-    candidates = settings.vertex_generative_models or [settings.vertex_generative_model]
+    ai_settings = get_ai_settings_runtime()
+    candidates = [ai_settings.primary_jd_generation_model, *ai_settings.backup_jd_generation_models] or [
+        settings.vertex_generative_model
+    ]
     deduped: list[str] = []
     seen: set[str] = set()
     for candidate in candidates:
@@ -1406,6 +1410,7 @@ def generate_job_description_with_openai(
     tone: str | None = None,
     seniority: str | None = None,
 ) -> JobDescriptionGenerationResult:
+    ai_settings = get_ai_settings_runtime()
     normalized_job_title = sanitize_text(job_title or "") or "Open Position"
     normalized_department = sanitize_text(department or "") or "General"
     normalized_requirements = (
@@ -1426,7 +1431,7 @@ def generate_job_description_with_openai(
         country=country,
         years_experience=years_experience,
         perks=perks,
-        tone=tone,
+        tone=tone or ai_settings.prompt_tone_preset.replace("_", " "),
         seniority=seniority,
     )
 
@@ -1480,7 +1485,7 @@ def generate_job_description_with_openai(
         f"- City: {city or 'not specified'}\n"
         f"- Country: {country or 'not specified'}\n"
         f"- Perks and benefits guidance: {perks or 'not specified'}\n"
-        f"- Tone: {tone or 'professional'}\n"
+        f"- Tone: {tone or ai_settings.prompt_tone_preset.replace('_', ' ')}\n"
         f"- Seniority: {seniority or 'not specified'}\n"
         f"- Requirements from user: {normalized_requirements}\n\n"
         "Additional instructions:\n"

@@ -13,6 +13,7 @@ import { apiRequest } from "@/lib/api/client";
 import { getDisplayNameFromEmail, roleProfiles, type AppRole, type SessionUser } from "@/lib/session";
 
 type RoleContextValue = {
+  userId: number | null;
   email: string;
   role: AppRole;
   name: string;
@@ -26,13 +27,25 @@ type RoleContextValue = {
 const RoleContext = createContext<RoleContextValue | null>(null);
 
 type AuthSessionResponse = {
+  user_id: number;
   email: string;
   role: string;
+  name: string;
+};
+
+type UserSettingsResponse = {
+  profile: {
+    preferred_display_name: string;
+  };
+  preferences: {
+    reduced_motion: boolean;
+  };
 };
 
 export function RoleProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [session, setSessionState] = useState<SessionUser>({
+    userId: 0,
     email: "",
     role: "HR",
     name: roleProfiles.HR.name,
@@ -48,15 +61,33 @@ export function RoleProvider({ children }: { children: ReactNode }) {
           path: "/auth/me",
           method: "GET",
         });
+        const userSettings = await apiRequest<UserSettingsResponse>({
+          path: "/settings/me",
+          method: "GET",
+        }).catch(() => null);
 
         if (!isMounted) {
           return;
         }
 
-        const resolvedRole: AppRole = "HR";
-        const resolvedName = getDisplayNameFromEmail(authSession.email) || roleProfiles.HR.name;
+        const resolvedRole: AppRole = (
+          authSession.role === "Admin" ||
+          authSession.role === "Manager" ||
+          authSession.role === "Technical" ||
+          authSession.role === "HR"
+        ) ? authSession.role : "HR";
+        const resolvedName =
+          userSettings?.profile.preferred_display_name ||
+          authSession.name ||
+          getDisplayNameFromEmail(authSession.email) ||
+          roleProfiles[resolvedRole].name;
+
+        if (typeof document !== "undefined") {
+          document.documentElement.dataset.reducedMotion = userSettings?.preferences.reduced_motion ? "true" : "false";
+        }
 
         setSessionState({
+          userId: authSession.user_id,
           email: authSession.email,
           role: resolvedRole,
           name: resolvedName,
@@ -68,11 +99,15 @@ export function RoleProvider({ children }: { children: ReactNode }) {
         }
 
         setSessionState({
+          userId: 0,
           email: "",
           role: "HR",
           name: roleProfiles.HR.name,
         });
         setIsAuthenticated(false);
+        if (typeof document !== "undefined") {
+          document.documentElement.dataset.reducedMotion = "false";
+        }
       } finally {
         if (isMounted) {
           setIsHydrated(true);
@@ -89,6 +124,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
 
   const setRole = (nextRole: AppRole) => {
     const nextSession = {
+      userId: session.userId,
       email: session.email,
       role: nextRole,
       name: session.name || roleProfiles[nextRole].name,
@@ -109,6 +145,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     }).catch(() => undefined);
 
     const fallbackSession: SessionUser = {
+      userId: 0,
       email: "",
       role: "HR",
       name: roleProfiles.HR.name,
@@ -121,6 +158,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       email: session.email,
+      userId: session.userId || null,
       role: session.role,
       name: session.name,
       isAuthenticated,

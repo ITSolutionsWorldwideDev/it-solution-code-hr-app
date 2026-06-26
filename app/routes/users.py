@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Response, status
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.db import get_session
 from app.models.user import User
+from app.models.user_preference import UserPreference
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services import crud
 
@@ -34,5 +35,9 @@ def update_user(user_id: int, payload: UserUpdate, session: Session = Depends(ge
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete user", description="Delete a user by ID.")
 def delete_user(user_id: int, session: Session = Depends(get_session)):
     user = crud.get_or_404(session, User, user_id)
+    preferences = session.exec(select(UserPreference).where(UserPreference.user_id == user.id)).first()
+    if preferences is not None:
+        session.delete(preferences)
+        session.commit()
     crud.delete(session, user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

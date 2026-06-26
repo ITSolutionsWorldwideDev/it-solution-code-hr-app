@@ -15,6 +15,7 @@ from app.models.candidate import Candidate
 from app.models.enums import ApplicationStage, EmailStatus, EmailType, InterviewStageType, InterviewStatus
 from app.models.vacancy import Vacancy
 from app.services.crud import get_or_404
+from app.services.settings_service import get_recruitment_settings_runtime
 
 
 def list_public_interview_slots(session: Session, application_id: int) -> list[datetime]:
@@ -166,9 +167,10 @@ def _fetch_slots_from_n8n(
     vacancy: Vacancy,
     stage_type: InterviewStageType,
 ) -> list[datetime]:
+    recruitment_settings = get_recruitment_settings_runtime()
     timezone = ZoneInfo(settings.public_schedule_timezone)
     now_local = datetime.now(timezone)
-    window_end = now_local + timedelta(days=settings.public_schedule_days_ahead)
+    window_end = now_local + timedelta(days=recruitment_settings.default_days_ahead_for_scheduling)
     payload = {
         "application_id": application.id,
         "vacancy_id": vacancy.id,
@@ -179,8 +181,8 @@ def _fetch_slots_from_n8n(
         "timezone": settings.public_schedule_timezone,
         "window_start": now_local.isoformat(),
         "window_end": window_end.isoformat(),
-        "slot_minutes": settings.public_schedule_slot_minutes,
-        "duration_minutes": settings.public_schedule_slot_minutes,
+        "slot_minutes": recruitment_settings.default_interview_duration_minutes,
+        "duration_minutes": recruitment_settings.default_interview_duration_minutes,
         "interviewer_user_id": None,
         "interviewer_group": stage_type.value,
         "secret": settings.n8n_webhook_secret,
@@ -246,7 +248,7 @@ def _book_slot_with_n8n(
         "stage_type": stage_type.value,
         "scheduled_at": scheduled_at.isoformat(),
         "timezone": settings.public_schedule_timezone,
-        "duration_minutes": settings.public_schedule_slot_minutes,
+        "duration_minutes": get_recruitment_settings_runtime().default_interview_duration_minutes,
         "interviewer_user_id": None,
         "interviewer_group": stage_type.value,
         "secret": settings.n8n_webhook_secret,
@@ -268,10 +270,11 @@ def _book_slot_with_n8n(
 
 
 def _build_internal_slots(session: Session) -> list[datetime]:
+    recruitment_settings = get_recruitment_settings_runtime()
     timezone = ZoneInfo(settings.public_schedule_timezone)
     now_local = datetime.now(timezone)
-    slot_delta = timedelta(minutes=settings.public_schedule_slot_minutes)
-    now_cutoff = _to_utc_without_seconds(now_local + timedelta(hours=1))
+    slot_delta = timedelta(minutes=recruitment_settings.default_interview_duration_minutes)
+    now_cutoff = _to_utc_without_seconds(now_local + timedelta(hours=recruitment_settings.default_scheduling_lead_time_hours))
 
     taken_slots = {
         _to_utc_without_seconds(interview.scheduled_at)
@@ -286,19 +289,19 @@ def _build_internal_slots(session: Session) -> list[datetime]:
     }
 
     slots: list[datetime] = []
-    for day_offset in range(settings.public_schedule_days_ahead):
+    for day_offset in range(recruitment_settings.default_days_ahead_for_scheduling):
         current_day = (now_local + timedelta(days=day_offset)).date()
         if current_day.weekday() >= 5:
             continue
 
         current_slot = datetime.combine(
             current_day,
-            time(hour=settings.public_schedule_business_start_hour),
+            time(hour=recruitment_settings.default_business_start_hour),
             timezone,
         )
         day_end = datetime.combine(
             current_day,
-            time(hour=settings.public_schedule_business_end_hour),
+            time(hour=recruitment_settings.default_business_end_hour),
             timezone,
         )
 

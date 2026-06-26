@@ -12,6 +12,7 @@ from app.schemas.hiring_request import HiringRequestDecision
 from app.services.crud import get_or_404
 from app.services.openai_service import inject_job_description_apply_url
 from app.services.website_publish_service import auto_publish_vacancy_to_website
+from app.services.settings_service import get_general_settings_runtime, get_recruitment_settings_runtime
 
 
 def approve_hiring_request(
@@ -52,7 +53,9 @@ def approve_hiring_request(
     session.add(vacancy)
     session.flush()
 
-    apply_url = f"{settings.public_apply_base_url.rstrip('/')}/{vacancy.id}"
+    general_settings = get_general_settings_runtime(session=session)
+    recruitment_settings = get_recruitment_settings_runtime(session=session)
+    apply_url = f"{general_settings.public_apply_base_url.rstrip('/')}/{vacancy.id}"
     vacancy.description = inject_job_description_apply_url(
         description=vacancy.description,
         apply_url=apply_url,
@@ -61,7 +64,8 @@ def approve_hiring_request(
 
     session.commit()
     session.refresh(vacancy)
-    auto_publish_vacancy_to_website(session, vacancy, public_base_url=public_base_url)
+    if recruitment_settings.auto_publish_vacancy_after_approval:
+        auto_publish_vacancy_to_website(session, vacancy, public_base_url=public_base_url)
     session.refresh(hiring_request)
     return hiring_request
 

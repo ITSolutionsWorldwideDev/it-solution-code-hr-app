@@ -136,6 +136,19 @@ def ensure_candidate_resume_storage() -> None:
         )
 
 
+def ensure_user_auth_columns() -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                ALTER TABLE "user"
+                ADD COLUMN IF NOT EXISTS created_at TIMESTAMP(6) DEFAULT NOW(),
+                ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP(6)
+                """
+            )
+        )
+
+
 def get_session():
     with Session(engine) as session:
         yield session
@@ -166,6 +179,7 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     ensure_website_jobs_table()
     ensure_candidate_resume_storage()
+    ensure_user_auth_columns()
 
     with Session(engine) as session:
         ensure_default_departments(session)

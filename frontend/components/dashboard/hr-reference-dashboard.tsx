@@ -769,9 +769,13 @@ export function HRReferenceDashboard({
                     <span className="truncate">{vacancy.title}</span>
                     <span>{vacancy.applications}</span>
                     <span className="flex justify-end">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] border border-[#27414c] bg-[#15222b] text-[#93efff]">
+                      <Link
+                        href={`/vacancies/${vacancy.id}`}
+                        aria-label={`Open vacancy ${vacancy.title}`}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] border border-[#27414c] bg-[#15222b] text-[#93efff] transition hover:border-[#4f7d8f] hover:bg-[#1a2a34]"
+                      >
                         <ArrowUpRight className="h-4 w-4" />
-                      </span>
+                      </Link>
                     </span>
                   </div>
                 ))}

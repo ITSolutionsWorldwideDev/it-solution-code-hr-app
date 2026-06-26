@@ -20,6 +20,7 @@ from app.services.website_pdf_service import (
     build_website_pdf_for_vacancy,
     build_website_pdf_url,
 )
+from app.services.settings_service import get_general_settings_runtime, get_website_pdf_settings_runtime
 
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -69,7 +70,8 @@ def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_bas
         public_base_url=public_base_url,
         pdf_url=uploaded_pdf.ufs_url,
     )
-    schema_name, table_name = _parse_table_name(settings.website_jobs_table)
+    website_settings = get_website_pdf_settings_runtime(session=session)
+    schema_name, table_name = _parse_table_name(website_settings.active_website_publish_table_name)
     qualified_table_name = _qualify_table_name(schema_name, table_name)
 
     try:
@@ -79,7 +81,7 @@ def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_bas
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=(
-                        f"Website jobs table '{settings.website_jobs_table}' was not found. "
+                        f"Website jobs table '{website_settings.active_website_publish_table_name}' was not found. "
                         "Set WEBSITE_DATABASE_URL and WEBSITE_JOBS_TABLE to the website database."
                     ),
                 )
@@ -148,7 +150,8 @@ def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_bas
 
 def delete_vacancy_from_website(session: Session, vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
     mapped_fields = _build_mapped_fields(vacancy, public_base_url=public_base_url)
-    schema_name, table_name = _parse_table_name(settings.website_jobs_table)
+    website_settings = get_website_pdf_settings_runtime(session=session)
+    schema_name, table_name = _parse_table_name(website_settings.active_website_publish_table_name)
     qualified_table_name = _qualify_table_name(schema_name, table_name)
 
     try:
@@ -158,7 +161,7 @@ def delete_vacancy_from_website(session: Session, vacancy: Vacancy, *, public_ba
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=(
-                        f"Website jobs table '{settings.website_jobs_table}' was not found. "
+                        f"Website jobs table '{website_settings.active_website_publish_table_name}' was not found. "
                         "Set WEBSITE_DATABASE_URL and WEBSITE_JOBS_TABLE to the website database."
                     ),
                 )
@@ -235,6 +238,8 @@ def _build_mapped_fields(
     public_base_url: str,
     pdf_url: str | None = None,
 ) -> dict[str, object]:
+    general_settings = get_general_settings_runtime()
+    website_settings = get_website_pdf_settings_runtime()
     title = str(vacancy.title or "").strip()
 
     if not title:
@@ -249,14 +254,14 @@ def _build_mapped_fields(
     content = str(vacancy.description or "").strip()
     pdf_filename = build_website_pdf_filename(vacancy)
     resolved_pdf_url = pdf_url or build_website_pdf_url(filename=pdf_filename, public_base_url=public_base_url)
-    apply_url = f"{settings.public_apply_base_url.rstrip('/')}/{vacancy.id}"
+    apply_url = f"{general_settings.public_apply_base_url.rstrip('/')}/{vacancy.id}"
     slug = _build_website_job_slug(title)
 
-    created_by = settings.website_publisher_user_id
+    created_by = website_settings.website_publisher_user_id
     if created_by is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="WEBSITE_PUBLISHER_USER_ID is required for website publishing.",
+            detail="A website publisher user id is required for website publishing.",
         )
 
     return {

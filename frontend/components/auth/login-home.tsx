@@ -9,14 +9,30 @@ import { useRole } from "@/components/providers/role-provider";
 import { apiRequest } from "@/lib/api/client";
 import { Input } from "@/components/ui/input";
 import {
-  getDisplayNameFromEmail,
   roleLandingRoutes,
-  roleProfiles,
 } from "@/lib/session";
 
 type AuthSessionResponse = {
+  user_id: number;
   email: string;
-  role: "internal";
+  role: "HR" | "Technical" | "Manager" | "Admin";
+  name: string;
+};
+
+type PublicAuthSettingsResponse = {
+  login_support_message: string;
+  maintenance_banner_message: string;
+  maintenance_mode_notice_enabled: boolean;
+};
+
+type UserSettingsResponse = {
+  profile: {
+    preferred_display_name: string;
+    default_landing_page: string;
+  };
+  preferences: {
+    reduced_motion: boolean;
+  };
 };
 
 const platformHighlights = [
@@ -48,6 +64,8 @@ export function LoginHome() {
   const [nextRoute, setNextRoute] = useState(roleLandingRoutes.HR);
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loginSupportMessage, setLoginSupportMessage] = useState("Internal access uses your email address and the shared company password.");
+  const [maintenanceNotice, setMaintenanceNotice] = useState("");
   const canLogin = email.trim().length > 0 && password.trim().length > 0;
 
   useEffect(() => {
@@ -57,6 +75,39 @@ export function LoginHome() {
 
     const requestedRoute = new URLSearchParams(window.location.search).get("next");
     setNextRoute(requestedRoute || roleLandingRoutes.HR);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPublicAuthSettings = async () => {
+      try {
+        const payload = await apiRequest<PublicAuthSettingsResponse>({
+          path: "/settings/public-auth",
+          method: "GET",
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        setLoginSupportMessage(payload.login_support_message || "Internal access uses your email address and the shared company password.");
+        setMaintenanceNotice(
+          payload.maintenance_mode_notice_enabled ? payload.maintenance_banner_message : ""
+        );
+      } catch {
+        if (!cancelled) {
+          setLoginSupportMessage("Internal access uses your email address and the shared company password.");
+          setMaintenanceNotice("");
+        }
+      }
+    };
+
+    void loadPublicAuthSettings();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleLogin = async () => {
@@ -84,13 +135,27 @@ export function LoginHome() {
         }),
       });
 
-      const displayName = getDisplayNameFromEmail(authSession.email) || roleProfiles.HR.name;
+      const userSettings = await apiRequest<UserSettingsResponse>({
+        path: "/settings/me",
+        method: "GET",
+      }).catch(() => null);
+
+      const resolvedName =
+        userSettings?.profile.preferred_display_name ||
+        authSession.name;
+
+      if (typeof document !== "undefined") {
+        document.documentElement.dataset.reducedMotion = userSettings?.preferences.reduced_motion ? "true" : "false";
+      }
+
       setSession({
+        userId: authSession.user_id,
         email: authSession.email,
-        role: "HR",
-        name: displayName,
+        role: authSession.role,
+        name: resolvedName,
       });
-      router.push(nextRoute);
+      const fallbackRoute = userSettings?.profile.default_landing_page || roleLandingRoutes[authSession.role];
+      router.push(nextRoute || fallbackRoute);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Could not log in.");
     } finally {
@@ -143,6 +208,11 @@ export function LoginHome() {
                 id="employee-login"
                 className="mt-8 max-w-[960px] rounded-[30px] border border-white/8 bg-[linear-gradient(180deg,rgba(16,22,28,0.98)_0%,rgba(20,26,32,0.94)_100%)] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur"
               >
+                {maintenanceNotice ? (
+                  <div className="mb-4 rounded-[18px] border border-[#63e7ff]/20 bg-[#10161c] px-4 py-3 text-sm text-[#dbe8f2]">
+                    {maintenanceNotice}
+                  </div>
+                ) : null}
                 <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-[#dbe8f2]">Email</label>
@@ -185,7 +255,7 @@ export function LoginHome() {
                 ) : null}
 
                 <p className="mt-4 text-sm text-[#8fa2b5]">
-                  Internal access uses your email address and the shared company password.
+                  {loginSupportMessage}
                 </p>
 
               </div>

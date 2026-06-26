@@ -7,7 +7,6 @@ import {
   BadgeCheck,
   BriefcaseBusiness,
   FileText,
-  HelpCircle,
   LayoutDashboard,
   Plus,
   Settings,
@@ -92,18 +91,11 @@ export function Sidebar() {
 
         <div className="space-y-1 px-2 pb-4 pt-2">
           <Link
-            href="#"
+            href="/settings"
             className="flex items-center gap-4 rounded-xl px-6 py-4 text-[15px] text-[#c6d0ce] transition hover:bg-[#0e1722] hover:text-white"
           >
             <Settings className="h-5 w-5" />
             <span>Settings</span>
-          </Link>
-          <Link
-            href="#"
-            className="flex items-center gap-4 rounded-xl px-6 py-4 text-[15px] text-[#c6d0ce] transition hover:bg-[#0e1722] hover:text-white"
-          >
-            <HelpCircle className="h-5 w-5" />
-            <span>Support</span>
           </Link>
         </div>
       </div>

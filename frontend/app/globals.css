@@ -18,8 +18,18 @@ html {
   background-color: #0b141e;
 }
 
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
 body {
-  @apply font-sans antialiased;
+  @apply antialiased;
+  font-family: var(--font-inter), sans-serif;
   color: var(--app-text);
   background-color: #0b141e;
 }

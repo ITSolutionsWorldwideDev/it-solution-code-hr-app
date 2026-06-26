@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Hanken_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppScaleProvider } from "@/components/providers/app-scale-provider";
 import { RoleProvider } from "@/components/providers/role-provider";
@@ -17,6 +17,12 @@ const jetBrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
 });
 
+const hankenGrotesk = Hanken_Grotesk({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-hanken-grotesk",
+});
+
 export const metadata: Metadata = {
   title: "Talent Genie",
   description: "AI-powered recruitment workspace for modern hiring operations.",
@@ -29,7 +35,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${jetBrainsMono.variable}`}>
+      <body className={`${inter.variable} ${jetBrainsMono.variable} ${hankenGrotesk.variable}`}>
         <RoleProvider>
           <AppScaleProvider>{children}</AppScaleProvider>
         </RoleProvider>

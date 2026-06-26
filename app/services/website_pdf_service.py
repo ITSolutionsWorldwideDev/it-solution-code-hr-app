@@ -16,6 +16,7 @@ from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer
 
 from app.config import BASE_DIR, settings
 from app.models.vacancy import Vacancy
+from app.services.settings_service import get_website_pdf_settings_runtime
 
 
 _HEADING_ALIASES: dict[str, tuple[str, ...]] = {
@@ -126,13 +127,14 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
             detail="ReportLab is not installed on this backend.",
         ) from exc
 
+    website_settings = get_website_pdf_settings_runtime()
     styles = getSampleStyleSheet()
     styles.add(
         ParagraphStyle(
             name="WebsiteBody",
             parent=styles["BodyText"],
-            fontName="Times-Roman",
-            fontSize=11.5,
+            fontName=website_settings.pdf_body_font_family,
+            fontSize=website_settings.pdf_base_font_size,
             leading=19,
             textColor=colors.HexColor("#111111"),
             alignment=TA_LEFT,
@@ -143,8 +145,8 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
         ParagraphStyle(
             name="WebsiteHeading",
             parent=styles["Heading2"],
-            fontName="Times-Bold",
-            fontSize=17,
+            fontName=website_settings.pdf_heading_font_family,
+            fontSize=max(14, round(website_settings.pdf_base_font_size * website_settings.pdf_heading_scale, 1)),
             leading=22,
             textColor=colors.HexColor("#111111"),
             spaceBefore=14,
@@ -155,7 +157,7 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
         ParagraphStyle(
             name="WebsiteTitle",
             parent=styles["Heading1"],
-            fontName="Times-Bold",
+            fontName=website_settings.pdf_heading_font_family,
             fontSize=22,
             leading=26,
             textColor=colors.HexColor("#111111"),
@@ -204,11 +206,11 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
         slate = colors.HexColor("#5f8492")
         dark = colors.HexColor("#425766")
         background_asset_path = _ensure_template_background_asset()
-        header_asset_path, footer_asset_path = _ensure_template_branding_assets()
+        header_asset_path, footer_path = _ensure_template_branding_assets()
 
         page_canvas.saveState()
         apply_pdf_metadata(page_canvas)
-        if background_asset_path is not None and background_asset_path.exists():
+        if website_settings.active_pdf_brand_mode == "full_background_template" and background_asset_path is not None and background_asset_path.exists():
             _draw_asset_to_box(
                 page_canvas=page_canvas,
                 asset_path=background_asset_path,
@@ -233,7 +235,7 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
             page_canvas.rect(26 * mm, page_height - 48 * mm, 184 * mm, 5 * mm, fill=1, stroke=0)
 
             logo_path = _resolve_logo_path()
-            if logo_path is not None and logo_path.exists():
+            if website_settings.include_company_logo_in_pdf and logo_path is not None and logo_path.exists():
                 logo = Image(str(logo_path), width=34 * mm, height=34 * mm)
                 logo.drawOn(page_canvas, 32 * mm, page_height - 42 * mm)
 
@@ -242,12 +244,12 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
             page_canvas.drawString(65 * mm, page_height - 24 * mm, "IT Solutions")
             page_canvas.drawString(65 * mm, page_height - 33 * mm, "Worldwide")
 
-        if background_asset_path is not None and background_asset_path.exists():
+        if website_settings.active_pdf_brand_mode == "full_background_template" and background_asset_path is not None and background_asset_path.exists():
             pass
-        elif footer_asset_path is not None and footer_asset_path.exists():
+        elif website_settings.include_footer_branding and footer_path is not None and footer_path.exists():
             _draw_asset_full_width(
                 page_canvas=page_canvas,
-                asset_path=footer_asset_path,
+                asset_path=footer_path,
                 page_width=page_width,
                 y=0,
             )
@@ -261,9 +263,9 @@ def _render_pdf(*, pdf_path: Path, title: str, metadata: dict[str, str], section
     document = SimpleDocTemplate(
         str(pdf_path),
         pagesize=A4,
-        leftMargin=26 * mm,
-        rightMargin=24 * mm,
-        topMargin=39 * mm,
+        leftMargin=website_settings.pdf_side_margin_mm * mm,
+        rightMargin=website_settings.pdf_side_margin_mm * mm,
+        topMargin=website_settings.pdf_top_margin_mm * mm,
         bottomMargin=40 * mm,
         pageCompression=1,
     )
@@ -283,7 +285,9 @@ def _resolve_logo_path() -> Path | None:
 
 
 def _resolve_template_pdf_path() -> Path | None:
+    website_settings = get_website_pdf_settings_runtime()
     candidates = [
+        BASE_DIR / website_settings.active_pdf_template_name,
         BASE_DIR / "Letter Head ITWW HD.pdf",
         BASE_DIR / "ITSW TEMPLATE Posting.pdf",
     ]
@@ -294,6 +298,7 @@ def _resolve_template_pdf_path() -> Path | None:
 
 
 def _ensure_template_branding_assets() -> tuple[Path | None, Path | None]:
+    website_settings = get_website_pdf_settings_runtime()
     template_pdf_path = _resolve_template_pdf_path()
     if template_pdf_path is None:
         return None, None
@@ -301,7 +306,7 @@ def _ensure_template_branding_assets() -> tuple[Path | None, Path | None]:
     template_key = _slugify(template_pdf_path.stem) or "itsw-template"
     header_path = settings.website_pdf_output_dir / f"{template_key}-header.jpg"
     footer_path = settings.website_pdf_output_dir / f"{template_key}-footer.jpg"
-    if header_path.exists() and footer_path.exists():
+    if website_settings.reuse_cached_template_images and header_path.exists() and footer_path.exists():
         return header_path, footer_path
 
     try:
@@ -321,13 +326,14 @@ def _ensure_template_branding_assets() -> tuple[Path | None, Path | None]:
 
 
 def _ensure_template_background_asset() -> Path | None:
+    website_settings = get_website_pdf_settings_runtime()
     template_pdf_path = _resolve_template_pdf_path()
     if template_pdf_path is None:
         return None
 
     template_key = _slugify(template_pdf_path.stem) or "itsw-template"
     background_path = settings.website_pdf_output_dir / f"{template_key}-background.jpg"
-    if background_path.exists():
+    if website_settings.reuse_cached_template_images and background_path.exists():
         return background_path
 
     try:

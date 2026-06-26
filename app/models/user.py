@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Enum as SqlEnum, ForeignKey, String
+from sqlalchemy import DateTime, Enum as SqlEnum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -17,6 +18,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     role: Mapped[UserRole] = mapped_column(SqlEnum(UserRole), nullable=False)
     department_id: Mapped[int | None] = mapped_column(ForeignKey("department.id"), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     department: Mapped[Optional["Department"]] = relationship(back_populates="users")
     created_hiring_requests: Mapped[list["HiringRequest"]] = relationship(

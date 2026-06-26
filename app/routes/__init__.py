@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.routes import applications, auth, candidates, dashboard, departments, employees, hiring_requests, integrations, interviews, users, vacancies, webhooks, website_integrations, website_public
+from app.routes import applications, auth, candidates, dashboard, departments, employees, hiring_requests, integrations, interviews, settings, users, vacancies, webhooks, website_integrations, website_public
 
 
 router = APIRouter()
@@ -18,6 +18,7 @@ def api_root() -> dict[str, str]:
 
 router.include_router(users.router)
 router.include_router(auth.router)
+router.include_router(settings.router)
 router.include_router(departments.router)
 router.include_router(employees.router)
 router.include_router(hiring_requests.router)

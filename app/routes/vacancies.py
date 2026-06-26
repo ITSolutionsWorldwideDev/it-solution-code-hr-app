@@ -23,6 +23,7 @@ from app.services.talent_discovery_service import (
     suggest_talent_for_vacancy,
     trigger_talent_discovery_for_vacancy,
 )
+from app.services.settings_service import get_recruitment_settings_runtime
 from app.services.vacancy_service import clear_all_vacancies, delete_vacancy_with_dependencies
 from app.services.website_publish_service import auto_publish_vacancy_to_website
 
@@ -160,8 +161,13 @@ def update_vacancy(
     vacancy = crud.get_or_404(session, Vacancy, vacancy_id)
     previous_status = vacancy.status
     updated_vacancy = crud.update(session, vacancy, payload.model_dump(exclude_unset=True))
+    recruitment_settings = get_recruitment_settings_runtime(session=session)
 
-    if previous_status != updated_vacancy.status and updated_vacancy.status == VacancyStatus.OPEN:
+    if (
+        recruitment_settings.auto_publish_vacancy_after_approval
+        and previous_status != updated_vacancy.status
+        and updated_vacancy.status == VacancyStatus.OPEN
+    ):
         auto_publish_vacancy_to_website(
             session,
             updated_vacancy,
