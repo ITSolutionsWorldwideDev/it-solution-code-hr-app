@@ -105,6 +105,9 @@ def build_vertex_model_candidates() -> list[str]:
 
 class Settings(BaseModel):
     app_name: str = "AI Recruitment Backend"
+    auth_jwt_secret: str = os.getenv("AUTH_JWT_SECRET", "development-internal-auth-secret")
+    internal_login_password: str = os.getenv("INTERNAL_LOGIN_PASSWORD", "ITWW123")
+    auth_cookie_secure: bool = os.getenv("AUTH_COOKIE_SECURE", os.getenv("VERCEL", "0")) == "1"
     database_url: str = build_database_url()
     website_database_url: str | None = (
         normalize_database_url(os.getenv("WEBSITE_DATABASE_URL"))

@@ -1,22 +1,23 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, BriefcaseBusiness, Building2, ShieldCheck, Sparkles, Users } from "lucide-react";
+import { ArrowRight, Building2, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { useRole } from "@/components/providers/role-provider";
+import { apiRequest } from "@/lib/api/client";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import {
   getDisplayNameFromEmail,
-  prototypeRoles,
   roleLandingRoutes,
   roleProfiles,
-  roleWorkspaceLabels,
-  type AppRole,
 } from "@/lib/session";
+
+type AuthSessionResponse = {
+  email: string;
+  role: "internal";
+};
 
 const platformHighlights = [
   {
@@ -44,8 +45,9 @@ export function LoginHome() {
   const { setSession } = useRole();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [selectedRole, setSelectedRole] = useState<AppRole>("HR");
   const [nextRoute, setNextRoute] = useState(roleLandingRoutes.HR);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const canLogin = email.trim().length > 0 && password.trim().length > 0;
 
   useEffect(() => {
@@ -54,20 +56,46 @@ export function LoginHome() {
     }
 
     const requestedRoute = new URLSearchParams(window.location.search).get("next");
-    setNextRoute(requestedRoute || roleLandingRoutes[selectedRole]);
-  }, [selectedRole]);
+    setNextRoute(requestedRoute || roleLandingRoutes.HR);
+  }, []);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!canLogin) {
       return;
     }
 
-    const displayName = getDisplayNameFromEmail(email) || roleProfiles[selectedRole].name;
-    setSession({
-      role: selectedRole,
-      name: displayName,
-    });
-    router.push(nextRoute);
+    const normalizedEmail = email.trim();
+    const emailInput = normalizedEmail.toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
+      setErrorMessage("Enter a valid email address.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage("");
+
+    try {
+      const authSession = await apiRequest<AuthSessionResponse>({
+        path: "/auth/login",
+        method: "POST",
+        body: JSON.stringify({
+          email: emailInput,
+          password,
+        }),
+      });
+
+      const displayName = getDisplayNameFromEmail(authSession.email) || roleProfiles.HR.name;
+      setSession({
+        email: authSession.email,
+        role: "HR",
+        name: displayName,
+      });
+      router.push(nextRoute);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not log in.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -111,21 +139,11 @@ export function LoginHome() {
                 visibility in one intelligent recruitment environment.
               </p>
 
-              <div className="mt-7 flex flex-wrap gap-4">
-                <Link
-                  href="/jobs"
-                  className="inline-flex h-[58px] items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.05] px-7 text-[1rem] font-semibold text-white transition hover:border-[#93efff]/40 hover:bg-white/[0.08]"
-                >
-                  <BriefcaseBusiness className="h-5 w-5 text-[#93efff]" />
-                  View Open Jobs
-                </Link>
-              </div>
-
               <div
                 id="employee-login"
                 className="mt-8 max-w-[960px] rounded-[30px] border border-white/8 bg-[linear-gradient(180deg,rgba(16,22,28,0.98)_0%,rgba(20,26,32,0.94)_100%)] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur"
               >
-                <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+                <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-[#dbe8f2]">Email</label>
                     <Input
@@ -151,33 +169,23 @@ export function LoginHome() {
                       }}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-[#dbe8f2]">Workspace</label>
-                    <Select
-                      value={selectedRole}
-                      onChange={(event) => setSelectedRole(event.target.value as AppRole)}
-                      className="h-14"
-                    >
-                      {prototypeRoles.map((role) => (
-                        <option key={role} value={role}>
-                          {roleWorkspaceLabels[role]}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
                   <button
                     type="button"
-                    onClick={handleLogin}
-                    disabled={!canLogin}
+                    onClick={() => void handleLogin()}
+                    disabled={!canLogin || isSubmitting}
                     className="inline-flex h-[68px] items-center justify-center gap-3 rounded-full bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-9 text-[1.08rem] font-semibold text-[#06141c] shadow-[0_16px_36px_rgba(0,0,0,0.22)] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100 lg:h-14 lg:text-[1rem]"
                   >
-                    Log in
+                    {isSubmitting ? "Signing in..." : "Log in"}
                     <ArrowRight className="h-5 w-5" />
                   </button>
                 </div>
 
+                {errorMessage ? (
+                  <p className="mt-4 text-sm text-[#ffb4b4]">{errorMessage}</p>
+                ) : null}
+
                 <p className="mt-4 text-sm text-[#8fa2b5]">
-                  Choose a temporary workspace for the prototype. HR manages intake and shortlists, Technical reviews interview candidates, and Management handles final selection and offers.
+                  Internal access uses your email address and the shared company password.
                 </p>
 
               </div>

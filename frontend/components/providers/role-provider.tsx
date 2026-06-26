@@ -9,9 +9,11 @@ import {
   type ReactNode,
 } from "react";
 
-import { roleProfiles, type AppRole, type SessionUser } from "@/lib/session";
+import { apiRequest } from "@/lib/api/client";
+import { getDisplayNameFromEmail, roleProfiles, type AppRole, type SessionUser } from "@/lib/session";
 
 type RoleContextValue = {
+  email: string;
   role: AppRole;
   name: string;
   isAuthenticated: boolean;
@@ -22,76 +24,103 @@ type RoleContextValue = {
 };
 
 const RoleContext = createContext<RoleContextValue | null>(null);
-const storageKey = "ai-recruitment-session";
+
+type AuthSessionResponse = {
+  email: string;
+  role: string;
+};
 
 export function RoleProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [session, setSessionState] = useState<SessionUser>({
+    email: "",
     role: "HR",
     name: roleProfiles.HR.name,
   });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const storedSession = window.localStorage.getItem(storageKey);
+    let isMounted = true;
 
-    if (!storedSession) {
-      setIsHydrated(true);
-      return;
-    }
+    const hydrateSession = async () => {
+      try {
+        const authSession = await apiRequest<AuthSessionResponse>({
+          path: "/auth/me",
+          method: "GET",
+        });
 
-    try {
-      const parsed = JSON.parse(storedSession) as Partial<SessionUser>;
+        if (!isMounted) {
+          return;
+        }
 
-      if (
-        parsed.role &&
-        parsed.role in roleProfiles &&
-        typeof parsed.name === "string" &&
-        parsed.name.trim()
-      ) {
+        const resolvedRole: AppRole = "HR";
+        const resolvedName = getDisplayNameFromEmail(authSession.email) || roleProfiles.HR.name;
+
         setSessionState({
-          role: parsed.role,
-          name: parsed.name,
+          email: authSession.email,
+          role: resolvedRole,
+          name: resolvedName,
         });
         setIsAuthenticated(true);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setSessionState({
+          email: "",
+          role: "HR",
+          name: roleProfiles.HR.name,
+        });
+        setIsAuthenticated(false);
+      } finally {
+        if (isMounted) {
+          setIsHydrated(true);
+        }
       }
-    } catch {
-      window.localStorage.removeItem(storageKey);
-    } finally {
-      setIsHydrated(true);
-    }
+    };
+
+    void hydrateSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const setRole = (nextRole: AppRole) => {
     const nextSession = {
+      email: session.email,
       role: nextRole,
       name: session.name || roleProfiles[nextRole].name,
     };
 
     setSessionState(nextSession);
-    setIsAuthenticated(true);
-    window.localStorage.setItem(storageKey, JSON.stringify(nextSession));
   };
 
   const setSession = (nextSession: SessionUser) => {
     setSessionState(nextSession);
     setIsAuthenticated(true);
-    window.localStorage.setItem(storageKey, JSON.stringify(nextSession));
   };
 
   const clearSession = () => {
-    const fallbackSession = {
-      role: "HR" as AppRole,
+    void apiRequest({
+      path: "/auth/logout",
+      method: "POST",
+    }).catch(() => undefined);
+
+    const fallbackSession: SessionUser = {
+      email: "",
+      role: "HR",
       name: roleProfiles.HR.name,
     };
 
     setSessionState(fallbackSession);
     setIsAuthenticated(false);
-    window.localStorage.removeItem(storageKey);
   };
 
   const value = useMemo(
     () => ({
+      email: session.email,
       role: session.role,
       name: session.name,
       isAuthenticated,

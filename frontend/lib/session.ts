@@ -4,6 +4,7 @@ export const prototypeRoles = ["HR", "Technical", "Manager"] as const;
 export type AppRole = (typeof appRoles)[number];
 
 export type SessionUser = {
+  email: string;
   name: string;
   role: AppRole;
 };

@@ -48,6 +48,7 @@ export async function apiRequest<T>({ path, ...options }: RequestOptions): Promi
   try {
     response = await fetch(resolveApiPath(path), {
       ...options,
+      credentials: "include",
       headers: {
         ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...(options.headers ?? {}),
