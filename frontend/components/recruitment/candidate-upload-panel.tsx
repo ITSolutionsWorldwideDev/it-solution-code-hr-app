@@ -1284,13 +1284,13 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               {files.length > 0 ? (
                 <>
                   <h3 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
-                    File toegevoegd
+                    Files added
                   </h3>
                   <p className="mt-2 text-[1.05rem] font-medium text-[#a9e9ff]">
-                    {files.length} CV{files.length === 1 ? "" : "'s"} geselecteerd
+                    {files.length} CV{files.length === 1 ? "" : "s"} selected
                   </p>
                   <p className="mt-3 text-[0.98rem] text-[#bdc8cd]">
-                    Klik om meer bestanden toe te voegen of je selectie te vervangen.
+                    Click to add more files or replace your current selection.
                   </p>
                 </>
               ) : (

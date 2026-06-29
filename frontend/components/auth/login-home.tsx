@@ -1,14 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
-import { ArrowRight, Building2, ShieldCheck, Sparkles, Users } from "lucide-react";
+import { startTransition, useEffect, useState } from "react";
+import { ArrowRight, Building2, LoaderCircle, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { useRole } from "@/components/providers/role-provider";
 import { apiRequest } from "@/lib/api/client";
 import { Input } from "@/components/ui/input";
 import {
+  getDisplayNameFromEmail,
   roleLandingRoutes,
 } from "@/lib/session";
 
@@ -23,16 +24,6 @@ type PublicAuthSettingsResponse = {
   login_support_message: string;
   maintenance_banner_message: string;
   maintenance_mode_notice_enabled: boolean;
-};
-
-type UserSettingsResponse = {
-  profile: {
-    preferred_display_name: string;
-    default_landing_page: string;
-  };
-  preferences: {
-    reduced_motion: boolean;
-  };
 };
 
 const platformHighlights = [
@@ -64,6 +55,7 @@ export function LoginHome() {
   const [nextRoute, setNextRoute] = useState(roleLandingRoutes.HR);
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatusMessage, setSubmitStatusMessage] = useState("");
   const [loginSupportMessage, setLoginSupportMessage] = useState("Internal access uses your email address and the shared company password.");
   const [maintenanceNotice, setMaintenanceNotice] = useState("");
   const canLogin = email.trim().length > 0 && password.trim().length > 0;
@@ -124,6 +116,7 @@ export function LoginHome() {
 
     setIsSubmitting(true);
     setErrorMessage("");
+    setSubmitStatusMessage("Verifying your credentials...");
 
     try {
       const authSession = await apiRequest<AuthSessionResponse>({
@@ -135,29 +128,25 @@ export function LoginHome() {
         }),
       });
 
-      const userSettings = await apiRequest<UserSettingsResponse>({
-        path: "/settings/me",
-        method: "GET",
-      }).catch(() => null);
-
+      setSubmitStatusMessage("Opening your workspace...");
+      const resolvedRole = authSession.role;
       const resolvedName =
-        userSettings?.profile.preferred_display_name ||
-        authSession.name;
-
-      if (typeof document !== "undefined") {
-        document.documentElement.dataset.reducedMotion = userSettings?.preferences.reduced_motion ? "true" : "false";
-      }
-
+        authSession.name ||
+        getDisplayNameFromEmail(authSession.email) ||
+        "Internal User";
       setSession({
         userId: authSession.user_id,
         email: authSession.email,
-        role: authSession.role,
+        role: resolvedRole,
         name: resolvedName,
       });
-      const fallbackRoute = userSettings?.profile.default_landing_page || roleLandingRoutes[authSession.role];
-      router.push(nextRoute || fallbackRoute);
+      const fallbackRoute = roleLandingRoutes[resolvedRole];
+      startTransition(() => {
+        router.push(nextRoute || fallbackRoute);
+      });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Could not log in.");
+      setSubmitStatusMessage("");
     } finally {
       setIsSubmitting(false);
     }
@@ -223,6 +212,7 @@ export function LoginHome() {
                         onChange={(event) => setEmail(event.target.value)}
                         placeholder="bob@itsolutions.com"
                         className="h-14"
+                        disabled={isSubmitting}
                       />
                     </div>
                     <div className="space-y-2">
@@ -233,6 +223,7 @@ export function LoginHome() {
                         onChange={(event) => setPassword(event.target.value)}
                         placeholder="password123"
                         className="h-14"
+                        disabled={isSubmitting}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") {
                             handleLogin();
@@ -246,13 +237,29 @@ export function LoginHome() {
                       disabled={!canLogin || isSubmitting}
                       className="inline-flex h-[68px] items-center justify-center gap-3 rounded-full bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-9 text-[1.08rem] font-semibold text-[#06141c] shadow-[0_16px_36px_rgba(0,0,0,0.22)] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100 lg:h-14 lg:text-[1rem]"
                     >
-                      {isSubmitting ? "Signing in..." : "Log in"}
-                      <ArrowRight className="h-5 w-5" />
+                      {isSubmitting ? (
+                        <>
+                          <LoaderCircle className="h-5 w-5 animate-spin" />
+                          Signing in...
+                        </>
+                      ) : (
+                        <>
+                          Log in
+                          <ArrowRight className="h-5 w-5" />
+                        </>
+                      )}
                     </button>
                   </div>
 
                   {errorMessage ? (
                     <p className="mt-4 text-sm text-[#ffb4b4]">{errorMessage}</p>
+                  ) : null}
+
+                  {isSubmitting && submitStatusMessage ? (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-[#a9e9ff]">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      <span>{submitStatusMessage}</span>
+                    </div>
                   ) : null}
 
                   <p className="mt-4 text-sm text-[#8fa2b5]">
