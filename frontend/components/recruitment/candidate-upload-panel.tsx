@@ -1272,15 +1272,37 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               onClick={() => fileInputRef.current?.click()}
               className="group flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#3e484c] bg-[#1b232c]/50 px-6 py-14 text-center transition hover:border-[#72d0ed]/50 hover:bg-[#222b33]"
             >
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#72d0ed]/10 text-[#a9e9ff] transition group-hover:scale-110">
-                <FileUp className="h-8 w-8" />
+              <div
+                className={`mb-4 flex h-16 w-16 items-center justify-center rounded-full transition group-hover:scale-110 ${
+                  files.length > 0
+                    ? "bg-[#72d0ed] text-[#003642]"
+                    : "bg-[#72d0ed]/10 text-[#a9e9ff]"
+                }`}
+              >
+                {files.length > 0 ? <CheckCircle2 className="h-8 w-8" /> : <FileUp className="h-8 w-8" />}
               </div>
-              <h3 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
-                Drag and drop resumes here
-              </h3>
-              <p className="mt-2 text-[1rem] text-[#bdc8cd]">
-                or <span className="text-[#a9e9ff] underline">browse your files</span>
-              </p>
+              {files.length > 0 ? (
+                <>
+                  <h3 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
+                    File toegevoegd
+                  </h3>
+                  <p className="mt-2 text-[1.05rem] font-medium text-[#a9e9ff]">
+                    {files.length} CV{files.length === 1 ? "" : "'s"} geselecteerd
+                  </p>
+                  <p className="mt-3 text-[0.98rem] text-[#bdc8cd]">
+                    Klik om meer bestanden toe te voegen of je selectie te vervangen.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
+                    Drag and drop resumes here
+                  </h3>
+                  <p className="mt-2 text-[1rem] text-[#bdc8cd]">
+                    or <span className="text-[#a9e9ff] underline">browse your files</span>
+                  </p>
+                </>
+              )}
               <div className="mt-7 flex items-center gap-4 text-[0.78rem] font-medium uppercase tracking-[0.16em] text-[#889297]">
                 <span>PDF</span>
                 <span>&bull;</span>
