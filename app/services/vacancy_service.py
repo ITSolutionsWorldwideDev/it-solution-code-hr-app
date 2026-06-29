@@ -7,6 +7,7 @@ from app.models.candidate_match import CandidateMatch
 from app.models.parse_job import ParseJob
 from app.models.potential_match import PotentialMatch
 from app.models.vacancy import Vacancy
+from app.services.job_description_backfill_service import build_premium_job_description, should_backfill_job_description
 from app.services.openai_service import inject_job_description_apply_url
 from app.services.application_workflow_service import delete_application_from_pipeline
 from app.services.crud import get_or_404
@@ -45,6 +46,29 @@ def backfill_vacancy_apply_urls(session: Session) -> int:
         ensure_vacancy_apply_url(session=session, vacancy=vacancy, commit=False)
         if vacancy.description != original_description:
             updated_count += 1
+
+    if updated_count:
+        session.commit()
+
+    return updated_count
+
+
+def backfill_legacy_vacancy_descriptions(session: Session) -> int:
+    vacancies = list(session.exec(select(Vacancy)).all())
+    updated_count = 0
+
+    for vacancy in vacancies:
+        if not should_backfill_job_description(vacancy.description):
+            continue
+
+        apply_url = build_vacancy_apply_url(session=session, vacancy=vacancy)
+        premium_description = build_premium_job_description(vacancy=vacancy, apply_url=apply_url)
+        if premium_description == vacancy.description:
+            continue
+
+        vacancy.description = premium_description
+        session.add(vacancy)
+        updated_count += 1
 
     if updated_count:
         session.commit()

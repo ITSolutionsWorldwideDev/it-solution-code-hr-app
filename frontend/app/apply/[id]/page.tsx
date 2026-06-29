@@ -13,7 +13,14 @@ import {
 import type { ReactNode } from "react";
 
 import { PublicApplyForm } from "@/components/recruitment/public-apply-form";
-import { cleanInlineJobText, normalizeJobText, parseJobSections, type ParsedJobSections } from "@/lib/job-text";
+import {
+  cleanInlineJobText,
+  isCandidateFacingNoise,
+  normalizeJobText,
+  parseJobSections,
+  sanitizeCandidateFacingLines,
+  type ParsedJobSections,
+} from "@/lib/job-text";
 import type { PublishedWebsiteJobApiRecord, VacancyApiRecord } from "@/lib/recruitment-types";
 
 type ApplyPageProps = {
@@ -118,14 +125,19 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
 
             <section>
               <SectionTitle title="Key Responsibilities" />
-              <div className="space-y-8 pl-12">
+              <div className="grid gap-4 md:grid-cols-2">
                 {content.responsibilities.map((item, index) => (
-                  <div key={`${item.title}-${index}`}>
-                    <h3 className="mb-2 flex items-center gap-2 font-semibold text-[#8aebff]">
+                  <div
+                    key={`${item.title}-${index}`}
+                    className="rounded-2xl border border-[#3c494c]/60 bg-[#122131] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+                  >
+                    <h3 className="flex items-center gap-2 text-[1.02rem] font-semibold text-[#8aebff]">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#8aebff]" />
                       {item.title}
                     </h3>
-                    <p className="text-[1rem] leading-8 text-[#bbc9cd]">{item.description}</p>
+                    {item.description ? (
+                      <p className="mt-3 text-[0.98rem] leading-8 text-[#bbc9cd]">{item.description}</p>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -133,9 +145,12 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
 
             <section>
               <SectionTitle title="Requirements & Qualifications" />
-              <ul className="space-y-5 pl-12">
+              <ul className="grid gap-4 md:grid-cols-2">
                 {content.requirements.map((item, index) => (
-                  <li key={`${item}-${index}`} className="flex items-start gap-4 text-[1rem] leading-8 text-[#bbc9cd]">
+                  <li
+                    key={`${item}-${index}`}
+                    className="flex items-start gap-4 rounded-2xl border border-[#3c494c]/60 bg-[#0f1c2b] p-5 text-[1rem] leading-8 text-[#bbc9cd]"
+                  >
                     <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-[#7bd1fa]" />
                     <span>{item}</span>
                   </li>
@@ -309,7 +324,8 @@ function buildCandidateFacingContent(
     [];
 
   const responsibilities = normalizeLabeledItems(
-    firstSectionLines(parsedSections, ["Key Responsibilities"]) ??
+    sanitizeCandidateFacingLines(
+      firstSectionLines(parsedSections, ["Key Responsibilities"]) ??
       extractBulletSection(normalizedDescription, ["Key Responsibilities"], [
         "Requirements & Qualifications",
         "What You'll Bring",
@@ -319,24 +335,28 @@ function buildCandidateFacingContent(
         "How to Apply",
       ]) ??
       vacancy.required_skills,
+    ),
   );
 
-  const requirements =
+  const requirements = sanitizeCandidateFacingLines(
     firstSectionLines(parsedSections, ["Requirements & Qualifications", "What You'll Bring"]) ??
-    extractBulletSection(normalizedDescription, ["Requirements & Qualifications", "What You'll Bring"], [
+      extractBulletSection(normalizedDescription, ["Requirements & Qualifications", "What You'll Bring"], [
       "Nice to Have",
       "Working Arrangements and Benefits",
       "What We Offer",
       "How to Apply",
-    ]) ??
-    vacancy.required_skills;
+      ]) ??
+      vacancy.required_skills,
+  );
 
   const offerItems = normalizeLabeledItems(
-    firstSectionLines(parsedSections, ["What We Offer", "Working Arrangements and Benefits"]) ??
+    sanitizeCandidateFacingLines(
+      firstSectionLines(parsedSections, ["What We Offer", "Working Arrangements and Benefits"]) ??
       extractBulletSection(normalizedDescription, ["What We Offer", "Working Arrangements and Benefits"], [
         "How to Apply",
       ]) ??
       [],
+    ),
   );
 
   const shortSummary =
@@ -462,14 +482,9 @@ function normalizeLabeledItems(items: string[]) {
       };
     })
     .filter((item) => item.title.length > 0)
-    .map((item) =>
-      item.description
-        ? item
-        : {
-            title: item.title,
-            description: item.title,
-          },
-    );
+    .filter((item) => !isCandidateFacingNoise(item.title))
+    .filter((item) => !item.description || !isCandidateFacingNoise(item.description))
+    .filter((item) => item.description.trim().toLowerCase() !== item.title.trim().toLowerCase());
 }
 
 function matchSection(description: string, headings: string[], nextHeadings: string[]): string | null {

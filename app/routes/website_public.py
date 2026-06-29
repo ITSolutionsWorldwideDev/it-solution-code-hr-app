@@ -8,6 +8,7 @@ from app.models.vacancy import Vacancy
 from app.models.website_publication import WebsitePublication
 from app.schemas.website_job import WebsiteJobRead
 from app.services import crud
+from app.services.public_job_text_service import sanitize_public_job_description
 
 
 router = APIRouter(prefix="/website/jobs", tags=["Website Jobs"])
@@ -20,7 +21,7 @@ def _build_website_job(*, vacancy: Vacancy, publication: WebsitePublication) -> 
         vacancy_id=vacancy.id,
         job_info_id=publication.job_info_id,
         title=vacancy.title,
-        description=vacancy.description,
+        description=sanitize_public_job_description(vacancy.description),
         required_skills=list(vacancy.required_skills or []),
         experience_level=vacancy.experience_level,
         department_id=vacancy.department_id,

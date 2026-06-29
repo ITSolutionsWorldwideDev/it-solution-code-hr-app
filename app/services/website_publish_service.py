@@ -21,6 +21,7 @@ from app.services.website_pdf_service import (
     build_website_pdf_url,
 )
 from app.services.settings_service import get_general_settings_runtime, get_website_pdf_settings_runtime
+from app.services.public_job_text_service import sanitize_public_job_description
 
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -496,3 +497,69 @@ def _delete_publication_mapping(*, session: Session, vacancy_id: int) -> None:
 
     session.delete(mapping)
     session.commit()
+
+
+def backfill_published_job_content(session: Session) -> int:
+    website_settings = get_website_pdf_settings_runtime(session=session)
+    schema_name, table_name = _parse_table_name(website_settings.active_website_publish_table_name)
+    qualified_table_name = _qualify_table_name(schema_name, table_name)
+    mappings = list(session.exec(select(WebsitePublication)).all())
+    vacancies = list(session.exec(select(Vacancy)).all())
+    vacancy_by_id: dict[int, Vacancy] = {vacancy.id: vacancy for vacancy in vacancies}
+    vacancy_by_job_info_id = {
+        mapping.job_info_id: vacancy_by_id.get(mapping.vacancy_id)
+        for mapping in mappings
+    }
+    vacancy_by_title = {
+        str(vacancy.title or "").strip().lower(): vacancy
+        for vacancy in vacancy_by_id.values()
+        if str(vacancy.title or "").strip()
+    }
+    updated_count = 0
+
+    with _get_website_engine().begin() as connection:
+        columns = _load_table_columns(connection, schema_name, table_name)
+        if "content" not in columns:
+            return 0
+        job_info_id_column = _resolve_job_info_id_column(columns)
+        title_column = _quote_identifier("title") if "title" in columns else None
+        rows = connection.execute(
+            text(
+                f"SELECT {_quote_identifier(job_info_id_column)}, "
+                f"{title_column + ', ' if title_column else ''}"
+                f"{_quote_identifier('content')} "
+                f"FROM {qualified_table_name}"
+            )
+        ).fetchall()
+
+        for row in rows:
+            job_info_id = int(row[0])
+            row_title = str(row[1] or "").strip() if title_column else ""
+            current_content = str(row[2] if title_column else row[1] or "")
+            mapped_vacancy = vacancy_by_job_info_id.get(job_info_id) or vacancy_by_title.get(row_title.lower())
+            sanitized_content = (
+                str(mapped_vacancy.description or "").strip()
+                if mapped_vacancy is not None
+                else sanitize_public_job_description(current_content)
+            )
+
+            if sanitized_content == current_content.strip():
+                continue
+
+            payload: dict[str, object] = {
+                "content": sanitized_content,
+            }
+            if "updated_at" in columns:
+                payload["updated_at"] = datetime.utcnow()
+
+            _update_job_info(
+                connection=connection,
+                qualified_table_name=qualified_table_name,
+                payload=payload,
+                job_info_id_column=job_info_id_column,
+                job_info_id=job_info_id,
+                columns=columns,
+            )
+            updated_count += 1
+
+    return updated_count
