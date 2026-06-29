@@ -7,7 +7,7 @@ import { LoaderCircle, Sparkles } from "lucide-react";
 import { apiRequest } from "@/lib/api/client";
 import type {
   DepartmentOption,
-  HiringScope,
+  EngagementType,
   JobDescriptionGenerateResponse,
 } from "@/lib/recruitment-types";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,7 @@ export function HiringRequestForm() {
   const [departmentId, setDepartmentId] = useState("");
   const [budget, setBudget] = useState("");
   const [isInternship, setIsInternship] = useState(false);
-  const [hiringScope, setHiringScope] = useState<HiringScope>("external");
+  const [engagementType, setEngagementType] = useState<EngagementType>("payroll");
   const [requirements, setRequirements] = useState("");
   const [description, setDescription] = useState("");
   const [generatedSkills, setGeneratedSkills] = useState<string[]>([]);
@@ -80,7 +80,7 @@ export function HiringRequestForm() {
           department: selectedDepartment?.name ?? "General",
           budget: budget || null,
           is_internship: isInternship,
-          hiring_scope: hiringScope,
+          engagement_type: engagementType,
           requirements,
         }),
       });
@@ -117,7 +117,7 @@ export function HiringRequestForm() {
         parsed_data: {
           budget,
           is_internship: isInternship,
-          hiring_scope: hiringScope,
+          engagement_type: engagementType,
           generated_required_skills: generatedSkills,
           generation_state: generateState,
         },
@@ -145,7 +145,7 @@ export function HiringRequestForm() {
           parsed_data: {
             budget,
             is_internship: isInternship,
-            hiring_scope: hiringScope,
+            engagement_type: engagementType,
             location: "Location not set",
             employment_type: isInternship ? "Internship" : "Full-time",
             generated_required_skills: generatedSkills,
@@ -184,6 +184,36 @@ export function HiringRequestForm() {
         </FormField>
 
         <div className="grid gap-5 md:grid-cols-2">
+          <FormField label="Hiring type" hint="Choose a regular hire or an internship.">
+            <Select
+              value={isInternship ? "internship" : "standard"}
+              onChange={(event) => {
+                const nextIsInternship = event.target.value === "internship";
+                setIsInternship(nextIsInternship);
+                if (nextIsInternship) {
+                  setBudget("");
+                  setEngagementType("payroll");
+                }
+              }}
+            >
+              <option value="standard">Professional role</option>
+              <option value="internship">Internship</option>
+            </Select>
+          </FormField>
+
+          <FormField label="Contract basis">
+            <Select
+              value={engagementType}
+              onChange={(event) => setEngagementType(event.target.value as EngagementType)}
+              disabled={isInternship}
+            >
+              <option value="payroll">Employed</option>
+              <option value="freelance">ZZP / Freelance</option>
+            </Select>
+          </FormField>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-2">
           <FormField label="Department">
             <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
               <option value="" disabled>
@@ -197,38 +227,19 @@ export function HiringRequestForm() {
             </Select>
           </FormField>
 
-          <FormField label="Max budget">
+          <FormField label={isInternship ? "Compensation" : engagementType === "freelance" ? "Target freelance rate" : "Max budget"}>
             <Input
               value={budget}
               onChange={(event) => setBudget(event.target.value)}
-              placeholder={isInternship ? "No salary generated for internships" : "EUR 75,000"}
+              placeholder={
+                isInternship
+                  ? "No salary generated for internships"
+                  : engagementType === "freelance"
+                    ? "EUR 85 - 110 per hour"
+                    : "EUR 75,000"
+              }
               disabled={isInternship}
             />
-          </FormField>
-        </div>
-
-        <div className="grid gap-5 md:grid-cols-2">
-          <FormField label="Role type">
-            <Select
-              value={isInternship ? "internship" : "standard"}
-              onChange={(event) => {
-                const nextIsInternship = event.target.value === "internship";
-                setIsInternship(nextIsInternship);
-                if (nextIsInternship) {
-                  setBudget("");
-                }
-              }}
-            >
-              <option value="standard">Standard role</option>
-              <option value="internship">Internship</option>
-            </Select>
-          </FormField>
-
-          <FormField label="Hiring scope">
-            <Select value={hiringScope} onChange={(event) => setHiringScope(event.target.value as HiringScope)}>
-              <option value="external">External hire</option>
-              <option value="internal">Internal hire</option>
-            </Select>
           </FormField>
         </div>
 

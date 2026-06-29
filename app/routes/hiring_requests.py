@@ -49,7 +49,7 @@ def generate_job_description(payload: JobDescriptionGenerateRequest):
         department=payload.department,
         budget=payload.budget,
         is_internship=payload.is_internship,
-        hiring_scope=payload.hiring_scope,
+        engagement_type=payload.engagement_type,
         requirements=payload.requirements,
         start_date=payload.start_date,
         employment_type=payload.employment_type,

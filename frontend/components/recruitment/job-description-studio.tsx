@@ -23,7 +23,7 @@ import {
 import { apiRequest } from "@/lib/api/client";
 import type {
   DepartmentOption,
-  HiringScope,
+  EngagementType,
   JobDescriptionGenerateResponse,
 } from "@/lib/recruitment-types";
 import { Button } from "@/components/ui/button";
@@ -81,7 +81,7 @@ export function JobDescriptionStudio() {
   const [departmentId, setDepartmentId] = useState("");
   const [maxBudget, setMaxBudget] = useState("");
   const [isInternship, setIsInternship] = useState(false);
-  const [hiringScope, setHiringScope] = useState<HiringScope>("external");
+  const [engagementType, setEngagementType] = useState<EngagementType>("payroll");
   const [startDate, setStartDate] = useState("");
   const [employmentType, setEmploymentType] = useState("Full-time");
   const [workHours, setWorkHours] = useState("");
@@ -127,7 +127,7 @@ export function JobDescriptionStudio() {
         departmentId?: string;
         maxBudget?: string;
         isInternship?: boolean;
-        hiringScope?: HiringScope;
+        engagementType?: EngagementType;
         startDate?: string;
         employmentType?: string;
         workHours?: string;
@@ -146,7 +146,7 @@ export function JobDescriptionStudio() {
       setDepartmentId(draft.departmentId ?? "");
       setMaxBudget(draft.maxBudget ?? "");
       setIsInternship(Boolean(draft.isInternship));
-      setHiringScope(draft.hiringScope === "internal" ? "internal" : "external");
+      setEngagementType(draft.engagementType === "freelance" ? "freelance" : "payroll");
       setStartDate(draft.startDate ?? "");
       setEmploymentType(draft.employmentType ?? "Full-time");
       setWorkHours(draft.workHours ?? "");
@@ -181,7 +181,7 @@ export function JobDescriptionStudio() {
         departmentId,
         maxBudget,
         isInternship,
-        hiringScope,
+        engagementType,
         startDate,
         employmentType,
         workHours,
@@ -201,10 +201,10 @@ export function JobDescriptionStudio() {
     country,
     departmentId,
     draftReady,
+    engagementType,
     employmentType,
     generatedDescription,
     generatedSkills,
-    hiringScope,
     isInternship,
     jobTitle,
     maxBudget,
@@ -243,6 +243,11 @@ export function JobDescriptionStudio() {
   }, [generatedDescription]);
 
   const renderedDescription = useMemo(() => {
+    const isHeaderMetaLine = (value: string) =>
+      /^(?:\*\*)?(Job Title|Location|Employment Type|Compensation|Rate Indication|Start Date):/i.test(
+        value
+      );
+
     const renderInlineContent = (value: string, keyPrefix: string) => {
       const nodes: React.ReactNode[] = [];
       let cursor = 0;
@@ -328,6 +333,26 @@ export function JobDescriptionStudio() {
 
       if (trimmedLine.startsWith("*")) {
         const bulletContent = trimmedLine.replace(/^\*\s+/, "");
+
+        if (bulletContent.startsWith("### ")) {
+          return (
+            <h3 key={`line-${lineIndex}`} className="mt-7 mb-3 text-[1.35rem] font-semibold text-white first:mt-0">
+              {renderInlineContent(bulletContent.slice(4), `line-${lineIndex}`)}
+            </h3>
+          );
+        }
+
+        if (isHeaderMetaLine(bulletContent)) {
+          return (
+            <p
+              key={`line-${lineIndex}`}
+              className="mb-3 min-h-[1.8rem] text-[1rem] leading-8 text-[#d9e5ee] last:mb-0"
+            >
+              {renderInlineContent(bulletContent, `line-${lineIndex}`)}
+            </p>
+          );
+        }
+
         return (
           <div key={`line-${lineIndex}`} className="mb-3 flex items-start gap-3 text-[1rem] leading-8 text-[#d9e5ee] last:mb-0">
             <span className="mt-3 h-2 w-2 shrink-0 rounded-full bg-[#63a9ff]" />
@@ -360,7 +385,7 @@ export function JobDescriptionStudio() {
           department: selectedDepartment?.name ?? "General",
           budget: maxBudget || null,
           is_internship: isInternship,
-          hiring_scope: hiringScope,
+          engagement_type: engagementType,
           start_date: startDate || null,
           employment_type: employmentType || null,
           work_hours: workHours || null,
@@ -410,7 +435,7 @@ export function JobDescriptionStudio() {
             max_budget: maxBudget,
             budget: maxBudget,
             is_internship: isInternship,
-            hiring_scope: hiringScope,
+            engagement_type: engagementType,
             start_date: startDate || null,
             city: city || null,
             country: country || null,
@@ -449,7 +474,7 @@ export function JobDescriptionStudio() {
     setDepartmentId("");
     setMaxBudget("");
     setIsInternship(false);
-    setHiringScope("external");
+    setEngagementType("payroll");
     setStartDate("");
     setEmploymentType("Full-time");
     setWorkHours("");
@@ -488,7 +513,7 @@ export function JobDescriptionStudio() {
                 </div>
               </div>
               <p className="max-w-xl text-sm leading-7 text-[#98afbf]">
-                Describe as much or as little as you want. AI can still generate a draft, and for standard roles it can suggest a salary range based on the selected country. Internship roles skip salary generation automatically.
+                Describe as much or as little as you want. AI can still generate a draft, and for standard roles it can suggest either a salary range or a ZZP rate based on the selected country and contract basis. Internship roles skip compensation generation automatically.
               </p>
             </div>
 
@@ -541,7 +566,9 @@ export function JobDescriptionStudio() {
                 </span>
               </div>
               <p className="mt-3 truncate text-sm font-medium text-white">
-                {isInternship ? `Internship • ${hiringScope}` : `${workModel || "Hybrid"} • ${hiringScope}`}
+                {isInternship
+                  ? `Internship | ${engagementType === "freelance" ? "ZZP" : "Employed"}`
+                  : `${workModel || "Hybrid"} | ${engagementType === "freelance" ? "ZZP" : "Employed"}`}
               </p>
             </div>
           </div>
@@ -554,6 +581,45 @@ export function JobDescriptionStudio() {
               className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] text-[1.05rem] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
             />
           </StudioField>
+
+          <div className="grid gap-5 md:grid-cols-2">
+            <StudioField label="Hiring type" hint="Choose a regular hire or an internship.">
+              <Select
+                value={isInternship ? "internship" : "standard"}
+                onChange={(event) => {
+                  const nextIsInternship = event.target.value === "internship";
+                  setIsInternship(nextIsInternship);
+                  if (nextIsInternship) {
+                    setEmploymentType("Internship");
+                    setMaxBudget("");
+                    setYearsExperience("");
+                    setEngagementType("payroll");
+                  } else if (employmentType === "Internship") {
+                    setEmploymentType("Full-time");
+                  }
+                }}
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
+              >
+                <option value="standard">Professional role</option>
+                <option value="internship">Internship</option>
+              </Select>
+            </StudioField>
+
+            <StudioField
+              label="Contract basis"
+              hint="Choose whether this role is a salaried position or a freelance ZZP assignment."
+            >
+              <Select
+                value={engagementType}
+                onChange={(event) => setEngagementType(event.target.value as EngagementType)}
+                disabled={isInternship}
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b] disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                <option value="payroll">Employed</option>
+                <option value="freelance">ZZP / Freelance</option>
+              </Select>
+            </StudioField>
+          </div>
 
           <div className="grid gap-5 md:grid-cols-2">
             <StudioField label="Department">
@@ -574,50 +640,34 @@ export function JobDescriptionStudio() {
             </StudioField>
 
             <StudioField
-              label={isInternship ? "Compensation" : "Max budget"}
-              hint={isInternship ? "Internship roles skip salary generation automatically." : undefined}
+              label={
+                isInternship
+                  ? "Compensation"
+                  : engagementType === "freelance"
+                    ? "Target freelance rate"
+                    : "Max budget"
+              }
+              hint={
+                isInternship
+                  ? "Internship roles skip salary generation automatically."
+                  : engagementType === "freelance"
+                    ? "If left empty, AI suggests a ZZP freelance rate based on country and seniority."
+                    : undefined
+              }
             >
               <Input
                 value={maxBudget}
                 onChange={(event) => setMaxBudget(event.target.value)}
-                placeholder={isInternship ? "No salary generated for internships" : "EUR 55,000"}
+                placeholder={
+                  isInternship
+                    ? "No salary generated for internships"
+                    : engagementType === "freelance"
+                      ? "EUR 85 - 110 per hour"
+                      : "EUR 55,000"
+                }
                 disabled={isInternship}
                 className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b] disabled:cursor-not-allowed disabled:opacity-55"
               />
-            </StudioField>
-          </div>
-
-          <div className="grid gap-5 md:grid-cols-2">
-            <StudioField label="Role type">
-              <Select
-                value={isInternship ? "internship" : "standard"}
-                onChange={(event) => {
-                  const nextIsInternship = event.target.value === "internship";
-                  setIsInternship(nextIsInternship);
-                  if (nextIsInternship) {
-                    setEmploymentType("Internship");
-                    setMaxBudget("");
-                    setYearsExperience("");
-                  } else if (employmentType === "Internship") {
-                    setEmploymentType("Full-time");
-                  }
-                }}
-                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
-              >
-                <option value="standard">Standard role</option>
-                <option value="internship">Internship</option>
-              </Select>
-            </StudioField>
-
-            <StudioField label="Hiring scope" hint="Choose whether the role targets internal or external candidates.">
-              <Select
-                value={hiringScope}
-                onChange={(event) => setHiringScope(event.target.value as HiringScope)}
-                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
-              >
-                <option value="external">External hire</option>
-                <option value="internal">Internal hire</option>
-              </Select>
             </StudioField>
           </div>
 
@@ -785,8 +835,8 @@ export function JobDescriptionStudio() {
         </div>
 
         <div className="px-6 py-6">
-          <div className="rounded-[22px] border border-[#18252c] bg-[#111517] p-4">
-            <div className="flex flex-wrap items-center gap-3 border-b border-[#1a242a] px-2 pb-4 text-[#a9bac6]">
+            <div className="rounded-[22px] border border-[#18252c] bg-[#111517] p-4">
+              <div className="flex flex-wrap items-center gap-3 border-b border-[#1a242a] px-2 pb-4 text-[#a9bac6]">
               <Bold className="h-4 w-4" />
               <Italic className="h-4 w-4" />
               <List className="h-4 w-4" />

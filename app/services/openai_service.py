@@ -1251,6 +1251,7 @@ def _estimate_budget(
     *,
     budget: str | None,
     is_internship: bool,
+    engagement_type: str | None,
     seniority: str | None,
     years_experience: str | None,
     country: str | None,
@@ -1262,7 +1263,29 @@ def _estimate_budget(
         return sanitize_text(budget)
 
     clean_country = sanitize_text(country or "").lower()
+    normalized_engagement_type = sanitize_text(engagement_type or "").lower() or "payroll"
     context = " ".join(filter(None, [seniority, years_experience, clean_country])).lower()
+
+    if normalized_engagement_type == "freelance":
+        freelance_bands = {
+            "netherlands": ("EUR 45 - 65 per hour", "EUR 70 - 95 per hour", "EUR 95 - 125 per hour"),
+            "belgium": ("EUR 40 - 60 per hour", "EUR 60 - 85 per hour", "EUR 85 - 115 per hour"),
+            "germany": ("EUR 50 - 70 per hour", "EUR 75 - 100 per hour", "EUR 100 - 135 per hour"),
+            "france": ("EUR 42 - 58 per hour", "EUR 60 - 85 per hour", "EUR 85 - 120 per hour"),
+            "united kingdom": ("GBP 250 - 350 per day", "GBP 350 - 500 per day", "GBP 500 - 700 per day"),
+            "uk": ("GBP 250 - 350 per day", "GBP 350 - 500 per day", "GBP 500 - 700 per day"),
+            "united states": ("USD 55 - 80 per hour", "USD 80 - 120 per hour", "USD 120 - 165 per hour"),
+            "usa": ("USD 55 - 80 per hour", "USD 80 - 120 per hour", "USD 120 - 165 per hour"),
+        }
+        junior_band, mid_band, senior_band = freelance_bands.get(
+            clean_country,
+            ("EUR 45 - 65 per hour", "EUR 70 - 95 per hour", "EUR 95 - 125 per hour"),
+        )
+        if any(token in context for token in {"senior", "lead", "architect", "principal", "7", "8", "9", "10"}):
+            return senior_band
+        if any(token in context for token in {"mid", "medior", "intermediate", "3", "4", "5", "6"}):
+            return mid_band
+        return junior_band
 
     salary_bands = {
         "netherlands": ("EUR 45,000 - 65,000 gross annually", "EUR 65,000 - 90,000 gross annually", "EUR 90,000 - 120,000 gross annually"),
@@ -1329,7 +1352,7 @@ def _generate_job_description_fallback(
     department: str | None,
     budget: str | None,
     is_internship: bool = False,
-    hiring_scope: str | None = None,
+    engagement_type: str | None = None,
     requirements: str | None,
     start_date: str | None = None,
     employment_type: str | None = None,
@@ -1352,8 +1375,8 @@ def _generate_job_description_fallback(
     style = sanitize_text(tone) or "professional"
     seniority_label = sanitize_text(seniority) or "appropriate"
     experience_label = sanitize_text(years_experience) or "relevant"
-    hiring_scope_label = sanitize_text(hiring_scope or "") or "external"
-    candidate_origin_label = "internal talent" if hiring_scope_label.lower() == "internal" else "external talent"
+    normalized_engagement_type = sanitize_text(engagement_type or "") or "payroll"
+    employment_basis_label = "freelance zzp talent" if normalized_engagement_type.lower() == "freelance" else "employed talent"
     skills = _infer_required_skills_from_text(
         normalized_job_title,
         normalized_department,
@@ -1367,6 +1390,7 @@ def _generate_job_description_fallback(
         salary_indication=_estimate_budget(
             budget=budget,
             is_internship=is_internship,
+            engagement_type=normalized_engagement_type,
             seniority=seniority,
             years_experience=years_experience,
             country=country,
@@ -1383,11 +1407,11 @@ def _generate_job_description_fallback(
         start_date=start_date,
         source_body="",
         is_internship=is_internship,
-        hiring_scope=hiring_scope_label,
+        engagement_type=normalized_engagement_type,
     )
 
     summary = (
-        f"{normalized_job_title} for {normalized_department} in {location}, aimed at {candidate_origin_label} "
+        f"{normalized_job_title} for {normalized_department} in {location}, aimed at {employment_basis_label} "
         f"with {experience_label.lower()} experience."
     )
 
@@ -1398,6 +1422,7 @@ def _generate_job_description_fallback(
         suggested_max_budget=_estimate_budget(
             budget=budget,
             is_internship=is_internship,
+            engagement_type=normalized_engagement_type,
             seniority=seniority,
             years_experience=years_experience,
             country=country,
@@ -1411,7 +1436,7 @@ def generate_job_description_with_openai(
     department: str | None,
     budget: str | None,
     is_internship: bool = False,
-    hiring_scope: str | None = None,
+    engagement_type: str | None = None,
     requirements: str | None,
     start_date: str | None = None,
     employment_type: str | None = None,
@@ -1427,8 +1452,8 @@ def generate_job_description_with_openai(
     ai_settings = get_ai_settings_runtime()
     normalized_job_title = sanitize_text(job_title or "") or "Open Position"
     normalized_department = sanitize_text(department or "") or "General"
-    normalized_hiring_scope = sanitize_text(hiring_scope or "") or "external"
-    candidate_origin_label = "internal talent" if normalized_hiring_scope.lower() == "internal" else "external talent"
+    normalized_engagement_type = sanitize_text(engagement_type or "") or "payroll"
+    employment_basis_label = "freelance zzp talent" if normalized_engagement_type.lower() == "freelance" else "in-loondienst talent"
     normalized_requirements = (
         sanitize_text(requirements or "")
         or "No specific requirements were provided, so write a realistic draft based on the role, department, and current hiring market."
@@ -1439,7 +1464,7 @@ def generate_job_description_with_openai(
         department=normalized_department,
         budget=budget,
         is_internship=is_internship,
-        hiring_scope=normalized_hiring_scope,
+        engagement_type=normalized_engagement_type,
         requirements=normalized_requirements,
         start_date=start_date,
         employment_type=employment_type,
@@ -1466,13 +1491,14 @@ def generate_job_description_with_openai(
         "5. Use a subtle horizontal rule (---) directly after the job title block to cleanly separate the header from the content.\n"
         "6. Eliminate all double or redundant line breaks to keep the text compact, readable, and highly scannable.\n"
         "7. If the role is an internship, do not generate salary, compensation amounts, or budget suggestions anywhere in the draft.\n"
+        "8. If the role is freelance or ZZP, generate freelance rate indications instead of annual salary ranges.\n"
     )
     compensation_instruction = (
         "*   **Learning & Support:** Focus on mentorship, learning value, supervision, and internship-friendly benefits.\n"
         "*   **Flexibility & Team Exposure:** Reflect the provided work setup and collaboration model.\n"
         "*   **Growth & Career Development:** Emphasize coaching, hands-on experience, and future growth opportunities.\n\n"
         if is_internship
-        else "*   **Compensation & Benefits:** Use the provided salary and benefits context when available.\n"
+        else "*   **Rate & Contract Setup:** Use a freelance ZZP rate indication when the role is freelance, and use salary context only for employed roles.\n"
         "*   **Flexibility & Autonomy:** Reflect the provided work setup and ownership level.\n"
         "*   **Growth & Well-being:** Use realistic development and support benefits.\n\n"
     )
@@ -1503,7 +1529,7 @@ def generate_job_description_with_openai(
         f"**Apply here:** {JOB_DESCRIPTION_APPLY_URL_PLACEHOLDER}\n\n"
         "Runtime input:\n"
         f"- Department: {normalized_department}\n"
-        f"- Candidate source: {candidate_origin_label}\n"
+        f"- Contract basis: {normalized_engagement_type}\n"
         f"- Internship role: {'yes' if is_internship else 'no'}\n"
         f"- Budget: {budget or 'not specified'}\n"
         f"- Start date: {start_date or 'not specified'}\n"
@@ -1519,9 +1545,9 @@ def generate_job_description_with_openai(
         "Additional instructions:\n"
         "- Make the draft specific to the actual role, not a generic company template.\n"
         "- Anchor the entire draft to the exact job title provided.\n"
-        f"- Write the role as a search for {candidate_origin_label}, not the opposite.\n"
-        "- If the role is for internal talent, frame the opportunity around internal mobility, progression, and cross-functional impact.\n"
-        "- If the role is for external talent, frame the opportunity like a standard external hiring campaign.\n"
+        f"- Write the role as a search for {employment_basis_label}.\n"
+        "- If the role is freelance or ZZP, use rate language such as per hour or per day where appropriate instead of annual salary language.\n"
+        "- If the role is employed, use gross annual salary language when compensation is included.\n"
         "- If the role is an internship, do not mention salary bands, annual compensation, gross salary, or budget placeholders.\n"
         "- If the role is an internship, keep the tone suitable for entry-level or student candidates and emphasize mentorship, learning, and hands-on exposure.\n"
         "- Do not introduce other domains, role families, or enterprise specialisms unless they are explicitly mentioned in the input.\n"
@@ -1594,7 +1620,7 @@ def _build_long_form_job_description(
     start_date: str | None,
     source_body: str,
     is_internship: bool = False,
-    hiring_scope: str | None = None,
+    engagement_type: str | None = None,
 ) -> str:
     def _to_display_title(value: str) -> str:
         cleaned = sanitize_text(value)
@@ -1618,8 +1644,8 @@ def _build_long_form_job_description(
     clean_perks = sanitize_text(perks or "") or "Holiday allowance, pension plan, paid time off, learning budget, and home office support where relevant."
     display_job_title = _to_display_title(job_title)
     display_department = _to_display_title(department)
-    normalized_hiring_scope = sanitize_text(hiring_scope or "") or "external"
-    candidate_origin_label = "internal talent" if normalized_hiring_scope.lower() == "internal" else "external talent"
+    normalized_engagement_type = sanitize_text(engagement_type or "") or "payroll"
+    employment_basis_label = "freelance ZZP talent" if normalized_engagement_type.lower() == "freelance" else "employed talent"
 
     requirement_lines = [
         line.strip(" -\t")
@@ -1724,6 +1750,12 @@ def _build_long_form_job_description(
             ]
             if is_internship
             else [
+                "Flexible collaboration setup with clear scope and delivery ownership.",
+                "Fast decision-making, professional stakeholder exposure, and meaningful project work.",
+                "Strong rate transparency and a structured engagement model.",
+            ]
+            if normalized_engagement_type == "freelance"
+            else [
                 "Competitive salary package with performance-based growth opportunities.",
                 "Paid time off and holiday allowance.",
                 "Learning and development support.",
@@ -1732,10 +1764,10 @@ def _build_long_form_job_description(
         )
     offer_block = "\n".join(f"- {line}" for line in offer_lines)
     role_intro = (
-        f"This internship sits within our {display_department} function and is designed for {candidate_origin_label} who want to build practical experience while contributing to day-to-day delivery. "
+        f"This internship sits within our {display_department} function and is designed for {employment_basis_label} who want to build practical experience while contributing to day-to-day delivery. "
         f"You will combine structured execution, mentorship, stakeholder exposure, and hands-on learning to create value from {start_date_label.lower()} onward."
         if is_internship
-        else f"This {display_job_title} opportunity sits within our {display_department} function and is designed for {candidate_origin_label} who can turn role-specific expertise into measurable business impact. "
+        else f"This {display_job_title} opportunity sits within our {display_department} function and is designed for {employment_basis_label} who can turn role-specific expertise into measurable business impact. "
         f"You will combine structured execution, stakeholder alignment, and practical problem solving to deliver outcomes that support growth from {start_date_label.lower()} onward."
     )
     header_lines = [
@@ -1745,7 +1777,9 @@ def _build_long_form_job_description(
         f"**Employment Type:** {employment_type or 'Full-time'}  ",
     ]
     if not is_internship:
-        header_lines.append(f"**Compensation:** {salary_indication_label}  ")
+        header_lines.append(
+            f"**{'Rate Indication' if normalized_engagement_type == 'freelance' else 'Compensation'}:** {salary_indication_label}  "
+        )
     header_lines.append(f"**Start Date:** {start_date_label}")
 
     return (

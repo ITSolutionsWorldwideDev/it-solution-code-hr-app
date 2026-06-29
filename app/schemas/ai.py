@@ -8,7 +8,7 @@ class JobDescriptionGenerateRequest(BaseSchema):
     department: str | None = None
     budget: str | None = None
     is_internship: bool = False
-    hiring_scope: str | None = None
+    engagement_type: str | None = None
     requirements: str | None = None
     start_date: str | None = None
     employment_type: str | None = None

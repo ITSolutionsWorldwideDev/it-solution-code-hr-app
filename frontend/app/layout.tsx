@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Hanken_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppScaleProvider } from "@/components/providers/app-scale-provider";
@@ -26,6 +26,11 @@ const hankenGrotesk = Hanken_Grotesk({
 export const metadata: Metadata = {
   title: "Talent Genie",
   description: "AI-powered recruitment workspace for modern hiring operations.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
