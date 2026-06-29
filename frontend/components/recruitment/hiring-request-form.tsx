@@ -5,7 +5,11 @@ import Link from "next/link";
 import { LoaderCircle, Sparkles } from "lucide-react";
 
 import { apiRequest } from "@/lib/api/client";
-import type { DepartmentOption, JobDescriptionGenerateResponse } from "@/lib/recruitment-types";
+import type {
+  DepartmentOption,
+  HiringScope,
+  JobDescriptionGenerateResponse,
+} from "@/lib/recruitment-types";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -35,6 +39,8 @@ export function HiringRequestForm() {
   const [jobTitle, setJobTitle] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [budget, setBudget] = useState("");
+  const [isInternship, setIsInternship] = useState(false);
+  const [hiringScope, setHiringScope] = useState<HiringScope>("external");
   const [requirements, setRequirements] = useState("");
   const [description, setDescription] = useState("");
   const [generatedSkills, setGeneratedSkills] = useState<string[]>([]);
@@ -73,12 +79,19 @@ export function HiringRequestForm() {
           job_title: jobTitle,
           department: selectedDepartment?.name ?? "General",
           budget: budget || null,
+          is_internship: isInternship,
+          hiring_scope: hiringScope,
           requirements,
         }),
       });
 
       setDescription(response.generated_job_description);
       setGeneratedSkills(response.generated_required_skills);
+      if (isInternship) {
+        setBudget("");
+      } else if (!budget && response.suggested_max_budget) {
+        setBudget(response.suggested_max_budget);
+      }
       setGenerateState("generated");
     } catch (error) {
       setGenerateState("error");
@@ -103,6 +116,8 @@ export function HiringRequestForm() {
         match_score: null,
         parsed_data: {
           budget,
+          is_internship: isInternship,
+          hiring_scope: hiringScope,
           generated_required_skills: generatedSkills,
           generation_state: generateState,
         },
@@ -129,8 +144,10 @@ export function HiringRequestForm() {
           match_score: null,
           parsed_data: {
             budget,
+            is_internship: isInternship,
+            hiring_scope: hiringScope,
             location: "Location not set",
-            employment_type: "Full-time",
+            employment_type: isInternship ? "Internship" : "Full-time",
             generated_required_skills: generatedSkills,
             generation_state: generateState,
           },
@@ -184,8 +201,34 @@ export function HiringRequestForm() {
             <Input
               value={budget}
               onChange={(event) => setBudget(event.target.value)}
-              placeholder="EUR 75,000"
+              placeholder={isInternship ? "No salary generated for internships" : "EUR 75,000"}
+              disabled={isInternship}
             />
+          </FormField>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-2">
+          <FormField label="Role type">
+            <Select
+              value={isInternship ? "internship" : "standard"}
+              onChange={(event) => {
+                const nextIsInternship = event.target.value === "internship";
+                setIsInternship(nextIsInternship);
+                if (nextIsInternship) {
+                  setBudget("");
+                }
+              }}
+            >
+              <option value="standard">Standard role</option>
+              <option value="internship">Internship</option>
+            </Select>
+          </FormField>
+
+          <FormField label="Hiring scope">
+            <Select value={hiringScope} onChange={(event) => setHiringScope(event.target.value as HiringScope)}>
+              <option value="external">External hire</option>
+              <option value="internal">Internal hire</option>
+            </Select>
           </FormField>
         </div>
 

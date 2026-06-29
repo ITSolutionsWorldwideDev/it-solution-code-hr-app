@@ -21,7 +21,11 @@ import {
 } from "lucide-react";
 
 import { apiRequest } from "@/lib/api/client";
-import type { DepartmentOption, JobDescriptionGenerateResponse } from "@/lib/recruitment-types";
+import type {
+  DepartmentOption,
+  HiringScope,
+  JobDescriptionGenerateResponse,
+} from "@/lib/recruitment-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -76,6 +80,8 @@ export function JobDescriptionStudio() {
   const [jobTitle, setJobTitle] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [maxBudget, setMaxBudget] = useState("");
+  const [isInternship, setIsInternship] = useState(false);
+  const [hiringScope, setHiringScope] = useState<HiringScope>("external");
   const [startDate, setStartDate] = useState("");
   const [employmentType, setEmploymentType] = useState("Full-time");
   const [workHours, setWorkHours] = useState("");
@@ -120,6 +126,8 @@ export function JobDescriptionStudio() {
         jobTitle?: string;
         departmentId?: string;
         maxBudget?: string;
+        isInternship?: boolean;
+        hiringScope?: HiringScope;
         startDate?: string;
         employmentType?: string;
         workHours?: string;
@@ -137,6 +145,8 @@ export function JobDescriptionStudio() {
       setJobTitle(draft.jobTitle ?? "");
       setDepartmentId(draft.departmentId ?? "");
       setMaxBudget(draft.maxBudget ?? "");
+      setIsInternship(Boolean(draft.isInternship));
+      setHiringScope(draft.hiringScope === "internal" ? "internal" : "external");
       setStartDate(draft.startDate ?? "");
       setEmploymentType(draft.employmentType ?? "Full-time");
       setWorkHours(draft.workHours ?? "");
@@ -170,6 +180,8 @@ export function JobDescriptionStudio() {
         jobTitle,
         departmentId,
         maxBudget,
+        isInternship,
+        hiringScope,
         startDate,
         employmentType,
         workHours,
@@ -192,6 +204,8 @@ export function JobDescriptionStudio() {
     employmentType,
     generatedDescription,
     generatedSkills,
+    hiringScope,
+    isInternship,
     jobTitle,
     maxBudget,
     perks,
@@ -345,6 +359,8 @@ export function JobDescriptionStudio() {
           job_title: jobTitle,
           department: selectedDepartment?.name ?? "General",
           budget: maxBudget || null,
+          is_internship: isInternship,
+          hiring_scope: hiringScope,
           start_date: startDate || null,
           employment_type: employmentType || null,
           work_hours: workHours || null,
@@ -360,7 +376,7 @@ export function JobDescriptionStudio() {
       setGeneratedDescription(response.generated_job_description);
       setGeneratedSkills(response.generated_required_skills);
       setSummary(response.summary ?? null);
-      if (!maxBudget && response.suggested_max_budget) {
+      if (!isInternship && !maxBudget && response.suggested_max_budget) {
         setMaxBudget(response.suggested_max_budget);
       }
       setGenerateState("generated");
@@ -393,6 +409,8 @@ export function JobDescriptionStudio() {
           parsed_data: {
             max_budget: maxBudget,
             budget: maxBudget,
+            is_internship: isInternship,
+            hiring_scope: hiringScope,
             start_date: startDate || null,
             city: city || null,
             country: country || null,
@@ -430,6 +448,8 @@ export function JobDescriptionStudio() {
     setJobTitle("");
     setDepartmentId("");
     setMaxBudget("");
+    setIsInternship(false);
+    setHiringScope("external");
     setStartDate("");
     setEmploymentType("Full-time");
     setWorkHours("");
@@ -468,7 +488,7 @@ export function JobDescriptionStudio() {
                 </div>
               </div>
               <p className="max-w-xl text-sm leading-7 text-[#98afbf]">
-                Describe as much or as little as you want. AI can still generate a draft, and if salary is empty it will suggest one based on the selected country.
+                Describe as much or as little as you want. AI can still generate a draft, and for standard roles it can suggest a salary range based on the selected country. Internship roles skip salary generation automatically.
               </p>
             </div>
 
@@ -521,7 +541,7 @@ export function JobDescriptionStudio() {
                 </span>
               </div>
               <p className="mt-3 truncate text-sm font-medium text-white">
-                {workModel || "Hybrid"}
+                {isInternship ? `Internship • ${hiringScope}` : `${workModel || "Hybrid"} • ${hiringScope}`}
               </p>
             </div>
           </div>
@@ -553,13 +573,51 @@ export function JobDescriptionStudio() {
               </Select>
             </StudioField>
 
-            <StudioField label="Max budget">
+            <StudioField
+              label={isInternship ? "Compensation" : "Max budget"}
+              hint={isInternship ? "Internship roles skip salary generation automatically." : undefined}
+            >
               <Input
                 value={maxBudget}
                 onChange={(event) => setMaxBudget(event.target.value)}
-                placeholder="EUR 55,000"
-                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
+                placeholder={isInternship ? "No salary generated for internships" : "EUR 55,000"}
+                disabled={isInternship}
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b] disabled:cursor-not-allowed disabled:opacity-55"
               />
+            </StudioField>
+          </div>
+
+          <div className="grid gap-5 md:grid-cols-2">
+            <StudioField label="Role type">
+              <Select
+                value={isInternship ? "internship" : "standard"}
+                onChange={(event) => {
+                  const nextIsInternship = event.target.value === "internship";
+                  setIsInternship(nextIsInternship);
+                  if (nextIsInternship) {
+                    setEmploymentType("Internship");
+                    setMaxBudget("");
+                    setYearsExperience("");
+                  } else if (employmentType === "Internship") {
+                    setEmploymentType("Full-time");
+                  }
+                }}
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
+              >
+                <option value="standard">Standard role</option>
+                <option value="internship">Internship</option>
+              </Select>
+            </StudioField>
+
+            <StudioField label="Hiring scope" hint="Choose whether the role targets internal or external candidates.">
+              <Select
+                value={hiringScope}
+                onChange={(event) => setHiringScope(event.target.value as HiringScope)}
+                className="h-14 rounded-[14px] border-[#1c262c] bg-[#101214] focus:border-[#18d8ea]/40 focus:bg-[#12181b]"
+              >
+                <option value="external">External hire</option>
+                <option value="internal">Internal hire</option>
+              </Select>
             </StudioField>
           </div>
 
@@ -593,6 +651,7 @@ export function JobDescriptionStudio() {
                 <option value="Full-time">Full-time</option>
                 <option value="Part-time">Part-time</option>
                 <option value="Contract">Contract</option>
+                <option value="Internship">Internship</option>
               </Select>
             </StudioField>
 

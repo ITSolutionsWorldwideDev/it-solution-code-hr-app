@@ -1250,10 +1250,14 @@ def _infer_required_skills_from_text(*values: str) -> list[str]:
 def _estimate_budget(
     *,
     budget: str | None,
+    is_internship: bool,
     seniority: str | None,
     years_experience: str | None,
     country: str | None,
 ) -> str | None:
+    if is_internship:
+        return None
+
     if budget:
         return sanitize_text(budget)
 
@@ -1324,6 +1328,8 @@ def _generate_job_description_fallback(
     job_title: str | None,
     department: str | None,
     budget: str | None,
+    is_internship: bool = False,
+    hiring_scope: str | None = None,
     requirements: str | None,
     start_date: str | None = None,
     employment_type: str | None = None,
@@ -1346,6 +1352,8 @@ def _generate_job_description_fallback(
     style = sanitize_text(tone) or "professional"
     seniority_label = sanitize_text(seniority) or "appropriate"
     experience_label = sanitize_text(years_experience) or "relevant"
+    hiring_scope_label = sanitize_text(hiring_scope or "") or "external"
+    candidate_origin_label = "internal talent" if hiring_scope_label.lower() == "internal" else "external talent"
     skills = _infer_required_skills_from_text(
         normalized_job_title,
         normalized_department,
@@ -1358,6 +1366,7 @@ def _generate_job_description_fallback(
         location=location,
         salary_indication=_estimate_budget(
             budget=budget,
+            is_internship=is_internship,
             seniority=seniority,
             years_experience=years_experience,
             country=country,
@@ -1373,11 +1382,13 @@ def _generate_job_description_fallback(
         seniority=seniority_label,
         start_date=start_date,
         source_body="",
+        is_internship=is_internship,
+        hiring_scope=hiring_scope_label,
     )
 
     summary = (
-        f"{normalized_job_title} for {normalized_department} in {location}, aimed at a {seniority_label.lower()} candidate with "
-        f"{experience_label.lower()} experience."
+        f"{normalized_job_title} for {normalized_department} in {location}, aimed at {candidate_origin_label} "
+        f"with {experience_label.lower()} experience."
     )
 
     return JobDescriptionGenerationResult(
@@ -1386,6 +1397,7 @@ def _generate_job_description_fallback(
         summary=summary,
         suggested_max_budget=_estimate_budget(
             budget=budget,
+            is_internship=is_internship,
             seniority=seniority,
             years_experience=years_experience,
             country=country,
@@ -1398,6 +1410,8 @@ def generate_job_description_with_openai(
     job_title: str | None,
     department: str | None,
     budget: str | None,
+    is_internship: bool = False,
+    hiring_scope: str | None = None,
     requirements: str | None,
     start_date: str | None = None,
     employment_type: str | None = None,
@@ -1413,6 +1427,8 @@ def generate_job_description_with_openai(
     ai_settings = get_ai_settings_runtime()
     normalized_job_title = sanitize_text(job_title or "") or "Open Position"
     normalized_department = sanitize_text(department or "") or "General"
+    normalized_hiring_scope = sanitize_text(hiring_scope or "") or "external"
+    candidate_origin_label = "internal talent" if normalized_hiring_scope.lower() == "internal" else "external talent"
     normalized_requirements = (
         sanitize_text(requirements or "")
         or "No specific requirements were provided, so write a realistic draft based on the role, department, and current hiring market."
@@ -1422,6 +1438,8 @@ def generate_job_description_with_openai(
         job_title=normalized_job_title,
         department=normalized_department,
         budget=budget,
+        is_internship=is_internship,
+        hiring_scope=normalized_hiring_scope,
         requirements=normalized_requirements,
         start_date=start_date,
         employment_type=employment_type,
@@ -1447,6 +1465,16 @@ def generate_job_description_with_openai(
         "4. Use clean bullet points for Responsibilities, Requirements, and What We Offer. Always bold the first few words or labels of each bullet point.\n"
         "5. Use a subtle horizontal rule (---) directly after the job title block to cleanly separate the header from the content.\n"
         "6. Eliminate all double or redundant line breaks to keep the text compact, readable, and highly scannable.\n"
+        "7. If the role is an internship, do not generate salary, compensation amounts, or budget suggestions anywhere in the draft.\n"
+    )
+    compensation_instruction = (
+        "*   **Learning & Support:** Focus on mentorship, learning value, supervision, and internship-friendly benefits.\n"
+        "*   **Flexibility & Team Exposure:** Reflect the provided work setup and collaboration model.\n"
+        "*   **Growth & Career Development:** Emphasize coaching, hands-on experience, and future growth opportunities.\n\n"
+        if is_internship
+        else "*   **Compensation & Benefits:** Use the provided salary and benefits context when available.\n"
+        "*   **Flexibility & Autonomy:** Reflect the provided work setup and ownership level.\n"
+        "*   **Growth & Well-being:** Use realistic development and support benefits.\n\n"
     )
     user_prompt = (
         "USE THIS EXACT STRUCTURE AND TARGET DATA:\n\n"
@@ -1469,14 +1497,14 @@ def generate_job_description_with_openai(
         "*   **Technical Skills:** Base this directly on the user input and inferred relevant tools only.\n"
         "*   **Soft Skills:** Use polished, role-relevant communication, analytical, and autonomy traits.\n\n"
         "### **What We Offer**\n"
-        "*   **Compensation & Benefits:** Use the provided salary and benefits context when available.\n"
-        "*   **Flexibility & Autonomy:** Reflect the provided work setup and ownership level.\n"
-        "*   **Growth & Well-being:** Use realistic development and support benefits.\n\n"
+        f"{compensation_instruction}"
         "### **How to Apply**\n"
         "Interested candidates are invited to submit their application directly via the link below:  \n"
         f"**Apply here:** {JOB_DESCRIPTION_APPLY_URL_PLACEHOLDER}\n\n"
         "Runtime input:\n"
         f"- Department: {normalized_department}\n"
+        f"- Candidate source: {candidate_origin_label}\n"
+        f"- Internship role: {'yes' if is_internship else 'no'}\n"
         f"- Budget: {budget or 'not specified'}\n"
         f"- Start date: {start_date or 'not specified'}\n"
         f"- Employment type: {employment_type or 'not specified'}\n"
@@ -1491,6 +1519,11 @@ def generate_job_description_with_openai(
         "Additional instructions:\n"
         "- Make the draft specific to the actual role, not a generic company template.\n"
         "- Anchor the entire draft to the exact job title provided.\n"
+        f"- Write the role as a search for {candidate_origin_label}, not the opposite.\n"
+        "- If the role is for internal talent, frame the opportunity around internal mobility, progression, and cross-functional impact.\n"
+        "- If the role is for external talent, frame the opportunity like a standard external hiring campaign.\n"
+        "- If the role is an internship, do not mention salary bands, annual compensation, gross salary, or budget placeholders.\n"
+        "- If the role is an internship, keep the tone suitable for entry-level or student candidates and emphasize mentorship, learning, and hands-on exposure.\n"
         "- Do not introduce other domains, role families, or enterprise specialisms unless they are explicitly mentioned in the input.\n"
         "- Never introduce topics such as SAP, S/4HANA, master data, ERP, governance, procurement, or engineering ownership unless the user explicitly asked for them.\n"
         "- Do not echo the user's raw prompt text back as responsibilities or requirements.\n"
@@ -1535,7 +1568,9 @@ def generate_job_description_with_openai(
         if skill
     ]
     result.summary = sanitize_text(result.summary) or fallback.summary
-    if not result.suggested_max_budget:
+    if is_internship:
+        result.suggested_max_budget = None
+    elif not result.suggested_max_budget:
         result.suggested_max_budget = fallback.suggested_max_budget
 
     return result
@@ -1558,6 +1593,8 @@ def _build_long_form_job_description(
     seniority: str,
     start_date: str | None,
     source_body: str,
+    is_internship: bool = False,
+    hiring_scope: str | None = None,
 ) -> str:
     def _to_display_title(value: str) -> str:
         cleaned = sanitize_text(value)
@@ -1581,6 +1618,8 @@ def _build_long_form_job_description(
     clean_perks = sanitize_text(perks or "") or "Holiday allowance, pension plan, paid time off, learning budget, and home office support where relevant."
     display_job_title = _to_display_title(job_title)
     display_department = _to_display_title(department)
+    normalized_hiring_scope = sanitize_text(hiring_scope or "") or "external"
+    candidate_origin_label = "internal talent" if normalized_hiring_scope.lower() == "internal" else "external talent"
 
     requirement_lines = [
         line.strip(" -\t")
@@ -1641,6 +1680,12 @@ def _build_long_form_job_description(
         f"If you thrive in a structured environment that values analytical thinking, accountability, and continuous development, "
         f"you will be well positioned to succeed in this role."
     )
+    if is_internship:
+        about_us = (
+            f"At {company_name}, we invest in early-career talent through structured learning, close collaboration, and meaningful hands-on work. "
+            f"Our {display_department} teams create an environment where interns can build confidence, learn from experienced colleagues, and contribute to projects that matter. "
+            f"This internship is designed to offer practical exposure, coaching, and a strong foundation for long-term professional growth."
+        )
 
     responsibility_titles = [
         "Core Delivery & Execution",
@@ -1671,38 +1716,57 @@ def _build_long_form_job_description(
         if line.strip()
     ]
     if not offer_lines:
-        offer_lines = [
-            "Competitive salary package with performance-based growth opportunities.",
-            "Paid time off and holiday allowance.",
-            "Learning and development support.",
-            "A collaborative and professional working environment.",
-        ]
+        offer_lines = (
+            [
+                "Structured mentorship and close coaching from experienced team members.",
+                "Hands-on learning with meaningful project exposure.",
+                "Professional development support and a collaborative working environment.",
+            ]
+            if is_internship
+            else [
+                "Competitive salary package with performance-based growth opportunities.",
+                "Paid time off and holiday allowance.",
+                "Learning and development support.",
+                "A collaborative and professional working environment.",
+            ]
+        )
     offer_block = "\n".join(f"- {line}" for line in offer_lines)
+    role_intro = (
+        f"This internship sits within our {display_department} function and is designed for {candidate_origin_label} who want to build practical experience while contributing to day-to-day delivery. "
+        f"You will combine structured execution, mentorship, stakeholder exposure, and hands-on learning to create value from {start_date_label.lower()} onward."
+        if is_internship
+        else f"This {display_job_title} opportunity sits within our {display_department} function and is designed for {candidate_origin_label} who can turn role-specific expertise into measurable business impact. "
+        f"You will combine structured execution, stakeholder alignment, and practical problem solving to deliver outcomes that support growth from {start_date_label.lower()} onward."
+    )
+    header_lines = [
+        f"### **{company_name}**",
+        f"**Job Title:** {display_job_title}  ",
+        f"**Location:** {location}{f' ({work_model})' if work_model else ''}  ",
+        f"**Employment Type:** {employment_type or 'Full-time'}  ",
+    ]
+    if not is_internship:
+        header_lines.append(f"**Compensation:** {salary_indication_label}  ")
+    header_lines.append(f"**Start Date:** {start_date_label}")
 
     return (
-        f"### **{company_name}**\n"
-        f"**Job Title:** {display_job_title}  \n"
-        f"**Location:** {location}{f' ({work_model})' if work_model else ''}  \n"
-        f"**Employment Type:** {employment_type or 'Full-time'}  \n"
-        f"**Compensation:** {salary_indication_label}  \n"
-        f"**Start Date:** {start_date_label}\n\n"
-        f"---\n\n"
-        f"### **About Us**\n"
-        f"{about_us}\n\n"
-        f"### **The Role**\n"
-        f"This {display_job_title} opportunity sits within our {display_department} function and is designed for a candidate who can turn role-specific expertise into measurable business impact. "
-        f"You will combine structured execution, stakeholder alignment, and practical problem solving to deliver outcomes that support growth from {start_date_label.lower()} onward.\n\n"
-        f"### **Key Responsibilities**\n"
-        f"{''.join(f'*   **{title}:** {item}\n' for title, item in zip(responsibility_titles, responsibility_items[:6], strict=False))}\n"
-        f"### **Requirements & Qualifications**\n"
-        f"*   **Experience:** {experience_label} of relevant hands-on experience in a comparable {display_job_title} or related role.\n"
-        f"*   **Education:** Bachelor's degree or equivalent professional experience related to {display_job_title}, {display_department}, or a closely related discipline.\n"
-        f"*   **Technical Skills:** {', '.join(skill_lines[:6]) if skill_lines else 'Role-relevant tools and structured working methods'}.\n"
-        f"*   **Soft Skills:** Strong ability to translate requirements into practical execution, evaluate outcomes, and communicate clearly with stakeholders.\n"
-        f"*   **Additional Strengths:** {'; '.join(nice_to_have_items[:3])}.\n\n"
-        f"### **What We Offer**\n"
-        f"{offer_block}\n\n"
-        f"### **How to Apply**\n"
-        f"Interested candidates are invited to submit their application directly via the link below:  \n"
-        f"**Apply here:** {JOB_DESCRIPTION_APPLY_URL_PLACEHOLDER}"
+        "\n".join(header_lines)
+        + "\n\n"
+        + "---\n\n"
+        + "### **About Us**\n"
+        + f"{about_us}\n\n"
+        + "### **The Role**\n"
+        + f"{role_intro}\n\n"
+        + "### **Key Responsibilities**\n"
+        + f"{''.join(f'*   **{title}:** {item}\n' for title, item in zip(responsibility_titles, responsibility_items[:6], strict=False))}\n"
+        + "### **Requirements & Qualifications**\n"
+        + f"*   **Experience:** {experience_label} of relevant hands-on experience in a comparable {display_job_title} or related role.\n"
+        + f"*   **Education:** Bachelor's degree or equivalent professional experience related to {display_job_title}, {display_department}, or a closely related discipline.\n"
+        + f"*   **Technical Skills:** {', '.join(skill_lines[:6]) if skill_lines else 'Role-relevant tools and structured working methods'}.\n"
+        + "*   **Soft Skills:** Strong ability to translate requirements into practical execution, evaluate outcomes, and communicate clearly with stakeholders.\n"
+        + f"*   **Additional Strengths:** {'; '.join(nice_to_have_items[:3])}.\n\n"
+        + "### **What We Offer**\n"
+        + f"{offer_block}\n\n"
+        + "### **How to Apply**\n"
+        + "Interested candidates are invited to submit their application directly via the link below:  \n"
+        + f"**Apply here:** {JOB_DESCRIPTION_APPLY_URL_PLACEHOLDER}"
     ).strip()

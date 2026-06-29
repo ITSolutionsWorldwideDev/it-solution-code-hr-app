@@ -453,6 +453,8 @@ export type JobDescriptionGenerateResponse = {
   suggested_max_budget?: string | null;
 };
 
+export type HiringScope = "external" | "internal";
+
 export type DashboardSummaryKpiApiRecord = {
   label: string;
   value: string;

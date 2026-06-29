@@ -38,7 +38,7 @@ def get_hiring_request(request_id: int, session: Session = Depends(get_session))
     description="Use Vertex AI / Gemini to generate an editable job description draft and extracted required skills for a hiring request.",
 )
 def generate_job_description(payload: JobDescriptionGenerateRequest):
-    if not payload.budget and not (payload.country and payload.country.strip()):
+    if not payload.is_internship and not payload.budget and not (payload.country and payload.country.strip()):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="What country do I need to base the salary on?",
@@ -48,6 +48,8 @@ def generate_job_description(payload: JobDescriptionGenerateRequest):
         job_title=payload.job_title,
         department=payload.department,
         budget=payload.budget,
+        is_internship=payload.is_internship,
+        hiring_scope=payload.hiring_scope,
         requirements=payload.requirements,
         start_date=payload.start_date,
         employment_type=payload.employment_type,
