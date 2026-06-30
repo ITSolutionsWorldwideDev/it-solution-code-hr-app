@@ -304,9 +304,24 @@ It stores:
 
 Optional second database from `WEBSITE_DATABASE_URL`.
 
-It is used for website-side publication data, especially:
+It is used for website-side publication and website-side intake data, especially:
 
 - `jobs_infos`
+- `job_applications`
+- website-side `users`
+
+Important production detail:
+
+- `DATABASE_URL` and `WEBSITE_DATABASE_URL` are often **different databases**
+- `DATABASE_URL` should point to the HR platform database
+- `WEBSITE_DATABASE_URL` should point to the ITWW website database
+- if `WEBSITE_DATABASE_URL` is missing, code falls back to `DATABASE_URL`
+
+Important website publication detail:
+
+- `jobs_infos.created_by` must reference a real `users.user_id` in the **website database**
+- the value comes from `WEBSITE_PUBLISHER_USER_ID`
+- if that user id does not exist, website publish fails with an `IntegrityError`
 
 ### Database bootstrap behavior
 
@@ -317,12 +332,20 @@ Current bootstrap behavior includes:
 
 - `SQLModel.metadata.create_all(...)`
 - `jobs_infos` table bootstrap in the website database
+- candidate resume/blob storage bootstrap
+- `parse_jobs` file/blob storage bootstrap
 - user auth columns bootstrap
 - default departments bootstrap
 - vacancy apply-link backfill for existing vacancies
 - settings schema bootstrap
 
 This is important for new developers: schema changes are currently applied in code, not through Alembic migrations.
+
+Important startup behavior:
+
+- locally, the backend runs `init_db()` in a background thread on startup
+- on Vercel, `init_db()` only runs when `RUN_DB_INIT_ON_STARTUP=1`
+- if you restore or move a database and the app suddenly misses columns, tables, or default data, start by enabling `RUN_DB_INIT_ON_STARTUP=1` for one backend deploy
 
 ## Job Description, LinkedIn, And Apply Links
 
@@ -362,13 +385,35 @@ If a LinkedIn JD looks wrong, start by inspecting:
 
 Website publication is handled by:
 
+- [app/routes/website_integrations.py](app/routes/website_integrations.py)
 - [app/services/website_publish_service.py](app/services/website_publish_service.py)
 - [app/models/website_publication.py](app/models/website_publication.py)
+- [app/services/uploadthing_service.py](app/services/uploadthing_service.py)
 
 The main idea:
 
-- a vacancy is mapped to a website-side publication record
-- website job content can be pushed to the website database
+- the frontend triggers `POST /api/integrations/website/publish`
+- the backend loads the HR vacancy from the HR database
+- the backend generates an ITWW-style PDF
+- the backend uploads that PDF to UploadThing and gets back a public URL
+- the backend writes or updates `jobs_infos` in the website database
+- the backend stores the HR-to-website mapping in `website_publication`
+
+Important environment variables for this flow:
+
+- `WEBSITE_DATABASE_URL`
+- `WEBSITE_JOBS_TABLE` (normally `jobs_infos`)
+- `WEBSITE_PUBLISHER_USER_ID`
+- `UPLOADTHING_APP_ID`
+- `UPLOADTHING_SECRET`
+- `UPLOADTHING_TOKEN`
+
+Important current constraints we validated during debugging:
+
+- `jobs_infos.title` is unique in the current website database
+- duplicate title rows can therefore trigger `IntegrityError`
+- `created_by` must point to a real website-side user id
+- if publish keeps failing after an env change, confirm the backend was actually redeployed and is not still running with old values
 
 ### Website PDF generation
 
@@ -413,6 +458,19 @@ That flow stores:
 - candidate details
 - the application record
 - downstream parsing/matching information
+
+Current important behavior:
+
+- the canonical public base is now effectively `/careers/...`
+- `POST /api/applications/public-submit` also accepts `legacy_application_id` and `website_job_info_id`
+- the website/admin app can forward legacy website applications directly into the HR backend without relying on an n8n polling loop
+- there is also a backend-side recovery endpoint `POST /api/integrations/website/sync-applications` for syncing `job_applications` rows from the website DB into the HR app
+
+Important files:
+
+- [app/services/application_service.py](app/services/application_service.py)
+- [app/services/website_application_sync_service.py](app/services/website_application_sync_service.py)
+- [itww-admin/src/app/api/jobs-application/route.ts](itww-admin/src/app/api/jobs-application/route.ts)
 
 ## Running Locally
 
@@ -473,6 +531,7 @@ DATABASE_URL=postgresql+psycopg://...
 WEBSITE_DATABASE_URL=postgresql+psycopg://...
 WEBSITE_JOBS_TABLE=jobs_infos
 WEBSITE_PUBLISHER_USER_ID=1
+RUN_DB_INIT_ON_STARTUP=0
 AUTH_JWT_SECRET=replace-with-a-long-random-secret
 INTERNAL_LOGIN_PASSWORD=ITWW123
 AUTH_COOKIE_SECURE=0
@@ -481,16 +540,16 @@ UPLOADTHING_SECRET=...
 UPLOADTHING_TOKEN=...
 VERTEX_PROJECT_ID=...
 VERTEX_LOCATION=europe-west1
-VERTEX_GENERATIVE_MODEL=gemini-2.0-flash
-VERTEX_GENERATIVE_MODELS=gemini-2.0-flash,gemini-1.5-flash,gemini-1.5-pro
-VERTEX_EMBEDDING_MODEL=text-embedding-004
+VERTEX_GENERATIVE_MODEL=gemini-3.1-flash-lite
+VERTEX_GENERATIVE_MODELS=gemini-3.1-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro,gemini-2.0-flash
+VERTEX_EMBEDDING_MODEL=gemini-embedding-001
 N8N_HR_INVITE_WEBHOOK_URL=http://localhost:5678/webhook/hr-approval-email
 N8N_WEBHOOK_SECRET=development-n8n-secret
 N8N_LINKEDIN_PREVIEW_WEBHOOK_URL=http://localhost:5678/webhook/linkedin-preview-v2
 N8N_CALENDAR_AVAILABILITY_WEBHOOK_URL=http://localhost:5678/webhook/calendar-availability
 CAL_COM_BOOKING_BASE_URL=https://your-org.cal.com/hr-intake
 CAL_COM_WEBHOOK_SECRET=...
-PUBLIC_APPLY_BASE_URL=http://localhost:3000/apply
+PUBLIC_APPLY_BASE_URL=http://localhost:3000/careers
 PUBLIC_SCHEDULE_BASE_URL=http://localhost:3000/candidate/schedule
 PUBLIC_SCHEDULE_TIMEZONE=Europe/Amsterdam
 PUBLIC_SCHEDULE_DAYS_AHEAD=14
@@ -504,26 +563,57 @@ CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,...
 
 Important note:
 
-- `PUBLIC_APPLY_BASE_URL` is normalized by code in some flows and may end up behaving as a `/careers/...` base for public links
+- `DATABASE_URL` should point to the HR database, not the website database
+- `WEBSITE_DATABASE_URL` should point to the website database when website publication or website-side apply sync is in use
+- `RUN_DB_INIT_ON_STARTUP=1` is useful for the first Vercel deploy after restoring or moving a database
+- `PUBLIC_APPLY_BASE_URL` should be treated as a `/careers/...` base for public links
 
 ### Frontend
 
-Main frontend variable:
+Main frontend variables:
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api
+NEXT_PUBLIC_PUBLIC_APPLY_BASE_URL=http://localhost:3000/careers
 ```
 
 If not set, the frontend falls back to:
 
 - `https://it-solution-code-hr-app-backend.vercel.app/api`
 
+Important behavior:
+
+- in the browser, a localhost-style `NEXT_PUBLIC_API_BASE_URL` is rewritten to `/backend-api` for local development
+- if this value is wrong or the backend is unreachable, some screens show explicit fetch errors, while the dashboard may simply fall back to zeros
+
+### Secondary app (`itww-admin`)
+
+Important variables for the secondary admin/website app:
+
+```env
+DATABASE_URL=postgresql+psycopg://...
+HR_BACKEND_API_BASE_URL=https://it-solution-code-hr-app-backend.vercel.app/api
+UPLOADTHING_APP_ID=...
+UPLOADTHING_SECRET=...
+UPLOADTHING_TOKEN=...
+```
+
+Important note:
+
+- `itww-admin` usually talks to the website database, not the HR database
+- if the website/admin project reads `jobs_infos` and `job_applications`, its `DATABASE_URL` should stay pointed at the website DB
+
 ## Deployment Notes
 
 ### Vercel
 
-The frontend is deployed on Vercel.
-The backend can also run hosted and is expected to be reachable by the frontend through `NEXT_PUBLIC_API_BASE_URL`.
+The repo is usually deployed as multiple Vercel projects:
+
+- the main frontend
+- the FastAPI backend
+- the optional `itww-admin` website/admin app
+
+The frontend is expected to reach the backend through `NEXT_PUBLIC_API_BASE_URL`.
 
 Important deployment caveats:
 
@@ -536,6 +626,58 @@ That is why:
 
 - resume storage falls back to `/tmp/resumes` on Vercel
 - website PDF output falls back to `/tmp/job-pdfs` on Vercel
+
+Useful hosted endpoints:
+
+- backend health: `/health`
+- backend docs: `/docs`
+
+If a new database is connected on Vercel and the app still behaves like the old one:
+
+1. confirm the env vars were saved in the correct project
+2. redeploy the project
+3. temporarily enable `RUN_DB_INIT_ON_STARTUP=1` for the backend
+
+## Troubleshooting
+
+### Dashboard shows zeros even though the database has data
+
+This does not always mean the HR database is empty.
+
+Current frontend behavior:
+
+- some dashboard fetches fall back to empty arrays / zero-like values when the API request fails
+- more explicit screens may show `Could not reach the API: Failed to fetch`
+
+Start by checking:
+
+- `NEXT_PUBLIC_API_BASE_URL`
+- backend `/health`
+- backend `/docs`
+- browser Network tab for failed API requests
+
+### `Publish to Website` fails with `IntegrityError`
+
+The most common current causes are:
+
+- `WEBSITE_DATABASE_URL` points to the wrong database
+- `WEBSITE_PUBLISHER_USER_ID` does not exist in the website DB `users` table
+- `jobs_infos.title` already exists and the unique title constraint rejects the insert
+- the backend was not redeployed after changing environment variables
+
+Helpful checks:
+
+- verify a manual insert into `jobs_infos` works with the chosen `created_by`
+- check whether the same title already exists in `jobs_infos`
+- check the HR-side `website_publication` mapping table
+
+### Public website applications are not appearing inside the HR app
+
+Current recovery path:
+
+- confirm `WEBSITE_DATABASE_URL` points to the real website DB
+- confirm the website/admin app forwards `legacy_application_id` and `website_job_info_id`
+- use `POST /api/integrations/website/sync-applications` to backfill or recover website-side applications without relying on an n8n polling workflow
 
 ## Known Current Constraints
 
