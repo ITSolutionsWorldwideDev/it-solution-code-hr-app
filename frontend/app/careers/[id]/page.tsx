@@ -7,7 +7,6 @@ import {
   CircleDollarSign,
   Clock3,
   MapPin,
-  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -34,6 +33,7 @@ type CandidateFacingContent = {
   location: string;
   compensation: string;
   shortSummary: string;
+  summaryHighlights: string[];
   intro: string;
   techStack: string;
   employmentType: string;
@@ -96,17 +96,32 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
               <span className="rounded bg-[#00799e]/20 px-3 py-1 font-mono text-[12px] font-medium uppercase tracking-[0.12em] text-[#8aebff] ring-1 ring-inset ring-[#8aebff]/30">
                 Open Role
               </span>
-              <span className="text-sm text-[#bbc9cd]">• {formatPostedLabel(vacancy.created_at)}</span>
+              <span className="text-sm text-[#bbc9cd]">{formatPostedLabel(vacancy.created_at)}</span>
             </div>
 
             <h1 className="font-['Hanken_Grotesk'] text-[4.6rem] font-bold lowercase leading-none tracking-[-0.05em] text-[#8aebff]">
               {vacancy.title}
             </h1>
 
-            <div className="mt-6 flex flex-wrap gap-8 text-[#d4e4fa]">
-              <MetadataItem icon={<BriefcaseBusiness className="h-4 w-4" />} value={content.department} />
-              <MetadataItem icon={<MapPin className="h-4 w-4" />} value={content.location} />
-              <MetadataItem icon={<CircleDollarSign className="h-4 w-4" />} value={content.compensation} />
+            <div className="mt-6 flex flex-wrap gap-4 text-[#d4e4fa]">
+              <MetadataItem
+                icon={<BriefcaseBusiness className="h-4 w-4" />}
+                emoji="\uD83D\uDCBC"
+                label="Department"
+                value={content.department}
+              />
+              <MetadataItem
+                icon={<MapPin className="h-4 w-4" />}
+                emoji="\uD83D\uDCCD"
+                label="Location"
+                value={content.location}
+              />
+              <MetadataItem
+                icon={<CircleDollarSign className="h-4 w-4" />}
+                emoji="\uD83D\uDCB6"
+                label="Compensation"
+                value={content.compensation}
+              />
             </div>
 
             <p className="mt-8 max-w-3xl text-[1.08rem] leading-9 text-[#bbc9cd]">{content.intro}</p>
@@ -126,14 +141,22 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
                 A global technology leader specializing in enterprise AI integration and scalable digital
                 infrastructure.
               </p>
-              <div className="mt-5 text-sm font-medium text-[#8aebff]">View Company Profile ↗</div>
+              <div className="mt-5 text-sm font-medium text-[#8aebff]">View Company Profile</div>
             </div>
           </aside>
 
-          <div className="space-y-12 lg:col-span-8">
+          <div className="space-y-8 lg:col-span-8">
             <section className="rounded-2xl border border-[#3c494c] bg-[#122131] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
-              <h2 className="font-['Hanken_Grotesk'] text-[2rem] font-semibold text-white">Short Summary</h2>
-              <p className="mt-4 text-[1rem] leading-9 text-[#bbc9cd]">{content.shortSummary}</p>
+              <SectionTitle title="Short Summary" />
+              <p className="text-[1.02rem] leading-8 text-[#cbd7e6]">{content.shortSummary}</p>
+
+              <ul className="mt-6 grid gap-3 md:grid-cols-2">
+                {content.summaryHighlights.map((item, index) => (
+                  <BulletCard key={`${item}-${index}`} tone="accent">
+                    {item}
+                  </BulletCard>
+                ))}
+              </ul>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <InfoTile icon={<Sparkles className="h-4 w-4" />} label="Tech Stack" value={content.techStack} />
@@ -141,48 +164,52 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
               </div>
             </section>
 
-            <section>
+            <section className="rounded-2xl border border-[#3c494c]/60 bg-[#122131] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
               <SectionTitle title="Key Responsibilities" />
               <div className="grid gap-4 md:grid-cols-2">
                 {content.responsibilities.map((item, index) => (
                   <div
                     key={`${item.title}-${index}`}
-                    className="rounded-2xl border border-[#3c494c]/60 bg-[#122131] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+                    className="rounded-2xl border border-[#3c494c]/60 bg-[#0f1c2b] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
                   >
-                    <h3 className="flex items-center gap-2 text-[1.02rem] font-semibold text-[#8aebff]">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#8aebff]" />
+                    <h3 className="flex items-center gap-3 text-[1.05rem] font-semibold text-white">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#8aebff]/12 text-[#8aebff] ring-1 ring-inset ring-[#8aebff]/20">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
                       {item.title}
                     </h3>
                     {item.description ? (
-                      <p className="mt-3 text-[0.98rem] leading-8 text-[#bbc9cd]">{item.description}</p>
+                      <p className="mt-3 pl-11 text-[0.98rem] leading-8 text-[#bbc9cd]">{item.description}</p>
                     ) : null}
                   </div>
                 ))}
               </div>
             </section>
 
-            <section>
-              <SectionTitle title="Requirements & Qualifications" />
+            <section className="rounded-2xl border border-[#3c494c]/60 bg-[#122131] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
+              <SectionTitle title="Skills & Requirements" />
               <ul className="grid gap-4 md:grid-cols-2">
                 {content.requirements.map((item, index) => (
-                  <li
-                    key={`${item}-${index}`}
-                    className="flex items-start gap-4 rounded-2xl border border-[#3c494c]/60 bg-[#0f1c2b] p-5 text-[1rem] leading-8 text-[#bbc9cd]"
-                  >
-                    <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-[#7bd1fa]" />
-                    <span>{item}</span>
-                  </li>
+                  <BulletCard key={`${item}-${index}`}>{item}</BulletCard>
                 ))}
               </ul>
             </section>
 
             <section className="rounded-2xl border border-[#3c494c]/60 bg-[#122131] p-8 shadow-[0_24px_60px_rgba(0,0,0,0.16)]">
-              <h2 className="font-['Hanken_Grotesk'] text-[2rem] font-semibold text-white">What We Offer</h2>
-              <div className="mt-6 grid gap-8 md:grid-cols-2">
+              <SectionTitle title="What We Offer" />
+              <div className="mt-6 grid gap-6 md:grid-cols-2">
                 {content.offerItems.map((item, index) => (
-                  <div key={`${item.title}-${index}`} className="space-y-2">
-                    <p className="font-semibold text-white">{item.title}</p>
-                    <p className="text-sm leading-7 text-[#bbc9cd]">{item.description}</p>
+                  <div
+                    key={`${item.title}-${index}`}
+                    className="rounded-2xl border border-[#3c494c]/60 bg-[#0f1c2b] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+                  >
+                    <p className="flex items-center gap-3 text-[1rem] font-semibold text-white">
+                      <span className="text-[1.05rem]" aria-hidden="true">
+                        *
+                      </span>
+                      {item.title}
+                    </p>
+                    <p className="mt-3 text-sm leading-7 text-[#bbc9cd]">{item.description}</p>
                   </div>
                 ))}
               </div>
@@ -195,7 +222,7 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
         <div className="mx-auto flex w-full max-w-[1280px] flex-col justify-between gap-6 px-6 py-10 lg:flex-row lg:px-10">
           <div>
             <p className="font-['Hanken_Grotesk'] text-[2rem] font-semibold text-white">Talent Genie AI</p>
-            <p className="mt-2 text-sm text-[#bbc9cd]">© 2024 Talent Genie AI. All rights reserved.</p>
+            <p className="mt-2 text-sm text-[#bbc9cd]">(c) 2024 Talent Genie AI. All rights reserved.</p>
           </div>
           <div className="flex flex-wrap gap-8 text-sm text-[#bbc9cd]">
             <span className="hover:text-[#8aebff]">Privacy Policy</span>
@@ -266,11 +293,29 @@ function mapVacancyToPublishedWebsiteJob(vacancy: VacancyApiRecord): PublishedWe
   };
 }
 
-function MetadataItem({ icon, value }: { icon: ReactNode; value: string }) {
+function MetadataItem({
+  icon,
+  emoji,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  emoji: string;
+  label: string;
+  value: string;
+}) {
   return (
-    <div className="flex items-center gap-2 text-[1rem] text-[#d4e4fa]">
-      <span className="text-[#8aebff]">{icon}</span>
-      <span className="font-medium">{value}</span>
+    <div className="flex min-h-[68px] items-center gap-3 rounded-2xl border border-[#3c494c]/70 bg-[#102031]/78 px-4 py-3 shadow-[0_16px_34px_rgba(0,0,0,0.14)]">
+      <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#8aebff]/20 bg-[#8aebff]/10 text-[1.15rem] shadow-[0_10px_24px_rgba(47,217,244,0.12)]">
+        <span aria-hidden="true">{emoji}</span>
+      </span>
+      <div className="flex min-w-0 flex-col">
+        <span className="mb-1 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] text-[#89a7bb]">
+          <span className="text-[#8aebff]">{icon}</span>
+          {label}
+        </span>
+        <span className="truncate text-[1rem] font-semibold text-[#f3f8ff]">{value}</span>
+      </div>
     </div>
   );
 }
@@ -289,10 +334,31 @@ function InfoTile({ icon, label, value }: { icon: ReactNode; label: string; valu
 
 function SectionTitle({ title }: { title: string }) {
   return (
-    <h2 className="mb-6 flex items-center gap-4 font-['Hanken_Grotesk'] text-[2rem] font-semibold text-white">
-      <span className="h-px w-10 bg-[#8aebff]" />
-      {title}
-    </h2>
+    <div className="mb-6 border-b border-[#8aebff]/15 pb-4">
+      <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[#8aebff]">Section</p>
+      <h2 className="mt-2 flex items-center gap-4 font-['Hanken_Grotesk'] text-[2rem] font-semibold tracking-[-0.03em] text-white">
+        <span className="h-2.5 w-2.5 rounded-full bg-[#8aebff] shadow-[0_0_18px_rgba(138,235,255,0.55)]" />
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+function BulletCard({
+  children,
+  tone = "default",
+}: {
+  children: ReactNode;
+  tone?: "default" | "accent";
+}) {
+  const bulletTone = tone === "accent" ? "bg-[#8aebff]" : "bg-[#7bd1fa]";
+  const borderTone = tone === "accent" ? "border-[#8aebff]/30 bg-[#132538]" : "border-[#3c494c]/60 bg-[#0f1c2b]";
+
+  return (
+    <li className={`flex items-start gap-4 rounded-2xl border p-5 text-[1rem] leading-8 text-[#d4e4fa] ${borderTone}`}>
+      <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${bulletTone}`} />
+      <span className="text-[#c7d7e4]">{children}</span>
+    </li>
   );
 }
 
@@ -326,25 +392,25 @@ function buildCandidateFacingContent(
   const responsibilities = normalizeLabeledItems(
     sanitizeCandidateFacingLines(
       firstSectionLines(parsedSections, ["Key Responsibilities"]) ??
-      extractBulletSection(normalizedDescription, ["Key Responsibilities"], [
-        "Requirements & Qualifications",
-        "What You'll Bring",
-        "Nice to Have",
-        "Working Arrangements and Benefits",
-        "What We Offer",
-        "How to Apply",
-      ]) ??
-      vacancy.required_skills,
+        extractBulletSection(normalizedDescription, ["Key Responsibilities"], [
+          "Requirements & Qualifications",
+          "What You'll Bring",
+          "Nice to Have",
+          "Working Arrangements and Benefits",
+          "What We Offer",
+          "How to Apply",
+        ]) ??
+        vacancy.required_skills,
     ),
   );
 
   const requirements = sanitizeCandidateFacingLines(
     firstSectionLines(parsedSections, ["Requirements & Qualifications", "What You'll Bring"]) ??
       extractBulletSection(normalizedDescription, ["Requirements & Qualifications", "What You'll Bring"], [
-      "Nice to Have",
-      "Working Arrangements and Benefits",
-      "What We Offer",
-      "How to Apply",
+        "Nice to Have",
+        "Working Arrangements and Benefits",
+        "What We Offer",
+        "How to Apply",
       ]) ??
       vacancy.required_skills,
   );
@@ -352,10 +418,10 @@ function buildCandidateFacingContent(
   const offerItems = normalizeLabeledItems(
     sanitizeCandidateFacingLines(
       firstSectionLines(parsedSections, ["What We Offer", "Working Arrangements and Benefits"]) ??
-      extractBulletSection(normalizedDescription, ["What We Offer", "Working Arrangements and Benefits"], [
-        "How to Apply",
-      ]) ??
-      [],
+        extractBulletSection(normalizedDescription, ["What We Offer", "Working Arrangements and Benefits"], [
+          "How to Apply",
+        ]) ??
+        [],
     ),
   );
 
@@ -363,6 +429,7 @@ function buildCandidateFacingContent(
     firstSectionParagraph(parsedSections, ["Short Summary", "Overview"]) ??
     extractSingleParagraphSection(normalizedDescription, ["Short Summary", "Overview"], ["About the Role", "The Role"]) ??
     buildShortSummary(vacancy.title, department, vacancy.required_skills, compensation);
+  const summaryHighlights = buildSummaryHighlights(shortSummary, vacancy.required_skills, employmentType, location);
 
   const intro =
     aboutRoleParagraphs[0] ??
@@ -373,6 +440,7 @@ function buildCandidateFacingContent(
     location,
     compensation,
     shortSummary,
+    summaryHighlights,
     intro,
     techStack: vacancy.required_skills.slice(0, 4).join(", ") || "Not specified",
     employmentType,
@@ -417,6 +485,25 @@ function firstSectionParagraph(parsedSections: ParsedJobSections, sectionNames: 
 function buildShortSummary(title: string, department: string, skills: string[], compensation: string): string {
   const topSignals = skills.slice(0, 4).join(", ") || "strong collaboration and role-specific experience";
   return `The ${title} in the ${department} team will focus on high-impact delivery, strong cross-functional collaboration, and clear business outcomes. Expected strengths include ${topSignals}. Compensation: ${compensation}.`;
+}
+
+function buildSummaryHighlights(summary: string, skills: string[], employmentType: string, location: string): string[] {
+  const normalized = summary
+    .split(/(?<=[.!?])\s+/)
+    .map((item) => cleanInlineJobText(item))
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const highlights = [
+    ...normalized,
+    skills.length > 0 ? `Core stack: ${skills.slice(0, 4).join(", ")}.` : "",
+    employmentType ? `Working model: ${employmentType}.` : "",
+    location ? `Location: ${location}.` : "",
+  ]
+    .map((item) => cleanInlineJobText(item))
+    .filter(Boolean);
+
+  return Array.from(new Set(highlights)).slice(0, 4);
 }
 
 function extractParagraphSection(
@@ -525,6 +612,6 @@ function readString(record: Record<string, unknown>, key: string): string | null
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function escapeRegExp(value: string): string {
+function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
