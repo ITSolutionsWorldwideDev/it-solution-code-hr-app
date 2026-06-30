@@ -1,103 +1,95 @@
 # Talent Genie / IT Solutions Worldwide Recruitment Platform
 
-This repository contains the current internal recruitment platform used to manage:
+This repository contains the current recruitment platform that IT Solutions Worldwide uses for:
 
 - hiring requests
-- AI-generated job descriptions
-- vacancies
-- public careers pages and application intake
-- candidate parsing and matching
+- AI-assisted job description generation
+- vacancy management
+- website publication
+- public careers pages and applications
+- CV parsing and candidate matching
 - shortlist and pipeline workflows
-- LinkedIn post previews
-- website publishing and branded website PDF generation
-- lightweight internal login and personal settings
+- interview scheduling
+- internal settings and access control
 
-The codebase is split into a FastAPI backend and a Next.js frontend. There are also older or secondary apps in the repository, but the main product lives in `app/` and `frontend/`.
+This README was rewritten against the actual codebase on `2026-06-30`. It is meant to describe how the app works today, not how it used to work.
 
-## Current Architecture
+## What Is The Main App
 
-### Main backend
+The main product is split into:
 
-The backend lives in `app/` and is built with:
+- `app/`
+  FastAPI backend
+- `frontend/`
+  Next.js internal + public frontend
 
-- `FastAPI`
-- `SQLModel` / SQLAlchemy
-- `PostgreSQL`
-- `PyJWT`
-- `ReportLab`
-- `pypdf`
-
-Main entrypoints:
-
-- [app/main.py](app/main.py)
-- [app/config.py](app/config.py)
-- [app/db.py](app/db.py)
-- [app/routes/__init__.py](app/routes/__init__.py)
-
-### Main frontend
-
-The frontend lives in `frontend/` and is built with:
-
-- `Next.js 15`
-- `React 19`
-- `TypeScript`
-- `Tailwind CSS`
-
-Main entrypoints:
-
-- [frontend/app/layout.tsx](frontend/app/layout.tsx)
-- [frontend/next.config.ts](frontend/next.config.ts)
-- [frontend/lib/api/client.ts](frontend/lib/api/client.ts)
-
-### Secondary folders
-
-These folders exist, but they are not the primary internal app:
+Other folders exist, but they are secondary:
 
 - `itww-admin/`
-  Secondary website/admin app code. Keep it only if you need the separate website-side logic.
+  older/secondary website-side admin code
 - `design-sandbox/`
-  UI sandbox / experiments.
+  UI experiments
 - `storage/`
-  Local output for resumes and generated PDFs.
+  local runtime file output
 - `resumes/`
-  Local resume samples or working files.
+  legacy/local resume files
 
-## What The Product Does Today
+If you are fixing the live recruitment product, start in `app/` and `frontend/`.
 
-The platform currently supports this end-to-end flow:
+## High-Level Product Flow
 
-1. A hiring request is created and approved.
-2. Approval creates a vacancy.
-3. AI can generate or refine the vacancy/job description.
-4. The vacancy can be published to the website database.
-5. A branded website PDF can be generated from the vacancy JD.
-6. A LinkedIn preview can be generated for the vacancy.
-7. Public candidates apply through the careers/apply flow.
-8. CVs are stored, parsed, matched, and surfaced to recruiters.
-9. Recruiters review candidates in shortlist and pipeline views.
-10. Interview scheduling and reminders are supported through integrations.
+The app currently works like this:
+
+1. HR creates a hiring request.
+2. A hiring request can get an AI-generated JD draft.
+3. Approving a hiring request creates a vacancy.
+4. The vacancy starts with status `open`.
+5. A vacancy can be published to the website database.
+6. Public job pages read from the backend's published vacancy mapping.
+7. Candidates apply through the public careers page.
+8. The backend stores the resume, parses it, creates or updates the candidate, creates or updates the application, and stores parse metadata.
+9. Recruiters work through ranking, shortlist, pipeline, interviews, and offer stages.
+
+Important: a vacancy being `open` is not the same as a vacancy being published to the website.
 
 ## Repository Layout
 
 ```text
 .
 |- app/                    FastAPI backend
-|- frontend/               Next.js internal frontend
-|- itww-admin/             Secondary website/admin app
+|- frontend/               Next.js app
+|- itww-admin/             Secondary website/admin code
 |- design-sandbox/         UI sandbox
 |- storage/                Local generated files
-|- resumes/                Local resume files
-|- requirements.txt        Python dependencies
+|- resumes/                Local resume samples
+|- requirements.txt        Backend dependencies
 `- README.md               This document
 ```
 
-## Backend Overview
+## Backend Architecture
 
-### Route groups
+Important backend entrypoints:
 
-All backend routes are mounted under `/api`.
+- `app/main.py`
+- `app/config.py`
+- `app/db.py`
+- `app/routes/__init__.py`
 
-Current route groups:
+Core backend stack:
+
+- `FastAPI`
+- `SQLModel` / SQLAlchemy
+- `PostgreSQL`
+- `PyJWT`
+- `pypdf`
+- `python-docx`
+- `ReportLab`
+
+The backend is mounted under `/api`.
+
+### Mounted route groups
+
+Current backend route groups:
 
 - `/api/auth`
 - `/api/settings`
@@ -110,70 +102,41 @@ Current route groups:
 - `/api/applications`
 - `/api/interviews`
 - `/api/integrations/n8n`
-- `/api/website-integrations`
-- `/api/website-public`
+- `/api/integrations/website`
+- `/api/website/jobs`
 - `/api/webhooks`
 - `/api/dashboard`
 
-Interactive docs:
+Useful local docs:
 
 - `http://127.0.0.1:8000/docs`
 - `http://127.0.0.1:8000/redoc`
 
-### Important backend models
+## Frontend Architecture
 
-Main data models in `app/models/`:
+Important frontend entrypoints:
 
-- `User`
-- `UserPreference`
-- `AppSetting`
-- `Department`
-- `HiringRequest`
-- `Vacancy`
-- `Candidate`
-- `Application`
-- `ApplicationStageEvent`
-- `ApplicationInterview`
-- `ApplicationEmailEvent`
-- `CandidateMatch`
-- `PotentialMatch`
-- `CandidateRoleSuggestion`
-- `ParseJob`
-- `WebsitePublication`
+- `frontend/app/layout.tsx`
+- `frontend/app/page.tsx`
+- `frontend/lib/api/client.ts`
+- `frontend/next.config.ts`
 
-### Important backend services
+Frontend stack:
 
-Core services you will touch most often:
+- `Next.js 15`
+- `React 19`
+- `TypeScript`
+- `Tailwind CSS`
 
-- [app/services/openai_service.py](app/services/openai_service.py)
-  JD generation and JD apply-link injection helpers.
-- [app/services/linkedin_service.py](app/services/linkedin_service.py)
-  LinkedIn preview/publish payload normalization.
-- [app/services/website_publish_service.py](app/services/website_publish_service.py)
-  Website publication flow.
-- [app/services/website_pdf_service.py](app/services/website_pdf_service.py)
-  Website PDF generation with the branded letterhead template.
-- [app/services/application_workflow_service.py](app/services/application_workflow_service.py)
-  Application stage transitions and shortlist logic.
-- [app/services/candidate_service.py](app/services/candidate_service.py)
-  Candidate creation, parsing support, and matching flows.
-- [app/services/talent_discovery_service.py](app/services/talent_discovery_service.py)
-  Hidden talent and candidate discovery.
-- [app/services/settings_service.py](app/services/settings_service.py)
-  App settings defaults, personal settings, and runtime access behavior.
-- [app/services/auth_service.py](app/services/auth_service.py)
-  JWT cookie auth helpers.
-- [app/services/vacancy_service.py](app/services/vacancy_service.py)
-  Vacancy cleanup and vacancy apply-link backfill helpers.
+### Important frontend routes
 
-## Frontend Overview
-
-### Main app routes
-
-Current important frontend routes in `frontend/app/`:
+Internal workspace routes:
 
 - `/login`
 - `/dashboard`
+- `/dashboard/admin`
+- `/dashboard/hr`
+- `/dashboard/technical`
 - `/hiring-requests`
 - `/vacancies`
 - `/vacancies/[id]`
@@ -193,524 +156,591 @@ Public routes:
 - `/apply/[id]`
 - `/candidate/schedule/[applicationId]`
 
-### Important frontend areas
+Important note:
 
-- `frontend/components/recruitment/`
-  Main recruitment product UI.
-- `frontend/components/dashboard/`
-  Dashboard views and summary cards.
-- `frontend/components/layout/`
-  Sidebar, top bar, and shell.
-- `frontend/components/auth/`
-  Internal login flow.
-- `frontend/components/settings/`
-  Personal settings page.
-- `frontend/components/providers/role-provider.tsx`
-  Session hydration and auth-aware frontend state.
-- `frontend/lib/api/client.ts`
-  Shared fetch wrapper with `credentials: "include"`.
-- `frontend/lib/session.ts`
-  Frontend role/session helpers.
+- `/careers/[id]` and `/apply/[id]` both render public vacancy detail pages
+- the canonical public vacancy links generated by the backend are based on `PUBLIC_APPLY_BASE_URL`
+- today that base should point to `/careers`, not `/apply`
+
+## Data Model: The Important Truths
+
+The backend has more models than this, but these are the ones that define the real system behavior:
+
+- `HiringRequest`
+- `Vacancy`
+- `Candidate`
+- `Application`
+- `ParseJob`
+- `CandidateMatch`
+- `PotentialMatch`
+- `WebsitePublication`
+- `ApplicationInterview`
+- `ApplicationStageEvent`
+- `ApplicationEmailEvent`
+- `User`
+- `UserPreference`
+- `AppSetting`
+
+### Vacancy status is separate from website publish state
+
+Current vacancy statuses live in `app/models/enums.py`:
+
+- `open`
+- `closed`
+- `on_hold`
+
+There is no `posted` vacancy status in the code today.
+
+Website publication is tracked separately through `WebsitePublication`.
+
+That means:
+
+- `open` means the vacancy is active in the internal system
+- `published` means a mapping exists between the vacancy and the website jobs table
+- a vacancy can be `open` and still not be published
+- deleting a website publication does not automatically change vacancy status to `closed`
+
+This distinction is important. A lot of confusion in the project came from treating `open` and `posted` as the same thing.
+
+## Hiring Requests And Vacancy Creation
+
+The main hiring request flow lives in:
+
+- `app/routes/hiring_requests.py`
+- `app/services/hiring_request_service.py`
+
+How it works today:
+
+1. HR creates a hiring request.
+2. The frontend can ask the backend to generate a JD draft through `POST /api/hiring-requests/generate-job-description`.
+3. Approving a hiring request through `POST /api/hiring-requests/{id}/approve` creates a vacancy.
+4. That vacancy is created with status `open`.
+5. The backend injects an apply URL into the JD text during approval.
+6. If recruitment settings allow it, approval also attempts automatic website publish.
+
+Important behavior:
+
+- approving a hiring request creates a vacancy only once
+- vacancies created from hiring requests start as `open`
+- auto website publish from approval can fail silently in the sense that the approval still succeeds while publish only logs a warning
+
+## Vacancy Update And Auto Publish Logic
+
+The vacancy update logic lives in `app/routes/vacancies.py`.
+
+Auto publish currently triggers only when all of these are true:
+
+- `auto_publish_vacancy_after_approval` is enabled in runtime settings
+- the vacancy status actually changes
+- the new status becomes `open`
+
+That means:
+
+- `closed` -> `open` can trigger auto publish
+- `on_hold` -> `open` can trigger auto publish
+- `open` -> `open` does not trigger auto publish
+- editing the JD text while the vacancy is already `open` does not trigger auto publish
+
+This is why a newly generated or edited JD does not always show up on the website by itself.
+
+## Website Publishing
+
+Website publication lives in:
+
+- `app/routes/website_integrations.py`
+- `app/services/website_publish_service.py`
+- `app/services/website_pdf_service.py`
+- `app/routes/website_public.py`
+
+### Current publish actions
+
+The internal UI uses these endpoints:
+
+- `POST /api/integrations/website/preview`
+- `POST /api/integrations/website/generate-pdf`
+- `POST /api/integrations/website/publish`
+- `POST /api/integrations/website/delete`
+- `POST /api/integrations/website/sync-applications`
+
+### What publish actually does
+
+Publishing a vacancy:
+
+1. generates a branded PDF
+2. uploads the PDF through UploadThing
+3. maps vacancy fields into the website jobs table
+4. inserts or updates the website job row
+5. stores the mapping in `WebsitePublication`
+
+Deleting a vacancy from the website:
+
+1. looks up the website row via `WebsitePublication` or title lookup
+2. deletes the website row
+3. removes the local `WebsitePublication` mapping
+
+### Current public website API
+
+Public job pages do not read directly from the website database.
+
+The Next.js public pages call:
+
+- `GET /api/website/jobs/`
+- `GET /api/website/jobs/{vacancy_id}`
+
+Those endpoints read:
+
+- `WebsitePublication`
+- the matching `Vacancy`
+
+So the public frontend depends on successful website publication mapping inside the recruitment backend.
+
+### Required website DB assumptions
+
+The website jobs table must exist and must contain these required columns:
+
+- `title`
+- `location`
+- `type`
+- `published`
+- `created_by`
+
+The publish service also expects a primary key column that is either:
+
+- `job_info_id`
+- `id`
+
+### Common website publish blockers
+
+Website publish fails when:
+
+- `WEBSITE_DATABASE_URL` points to the wrong database
+- `WEBSITE_JOBS_TABLE` points to the wrong table
+- `WEBSITE_PUBLISHER_USER_ID` is missing
+- `WEBSITE_PUBLISHER_USER_ID` does not exist in the website DB `users` table
+- the vacancy has no title
+- the website row cannot be inserted or updated
+
+### Public URL rules
+
+These values matter a lot:
+
+- backend `PUBLIC_APPLY_BASE_URL`
+- backend `PUBLIC_SCHEDULE_BASE_URL`
+- frontend `NEXT_PUBLIC_PUBLIC_APPLY_BASE_URL`
+- frontend `NEXT_PUBLIC_API_BASE_URL`
+
+The most important rule:
+
+- use the canonical frontend domain
+- do not use temporary Vercel deployment aliases as the public base URL
+
+For example, current public links should look like:
+
+- `https://talentgenie.vercel.app/careers/{vacancyId}`
+- `https://talentgenie.vercel.app/candidate/schedule/{applicationId}`
+
+Not like an old temporary deployment hostname.
+
+## Public Application Flow
+
+The current public apply flow is code-driven and synchronous from the app's point of view.
+
+Frontend:
+
+- `frontend/components/recruitment/public-apply-form.tsx`
+- posts to `POST /api/applications/public-submit`
+
+Backend:
+
+- `app/routes/applications.py`
+- `app/services/application_service.py`
+- `app/services/cv_pipeline_service.py`
+
+What happens on public submit:
+
+1. the resume file is stored
+2. the vacancy is loaded
+3. a placeholder candidate is created or reused
+4. an application is created or reused
+5. a `ParseJob` record is created
+6. the backend parses the file
+7. the candidate is created or updated
+8. the application is updated with parse and match status
+
+Important truth:
+
+- parsing for the current public apply flow does not depend on n8n
+
+## HR Manual CV Import Flow
+
+The current HR upload UI uses:
+
+- `frontend/components/recruitment/candidate-upload-panel.tsx`
+
+That component posts to:
+
+- `POST /api/candidates/manual-import`
+
+The backend then uses:
+
+- `app/services/cv_pipeline_service.py`
+
+What happens:
+
+1. one or more files are uploaded
+2. files are stored locally or in the configured runtime directory
+3. the shared parse pipeline runs
+4. candidates are created or updated
+5. matching is computed against the selected vacancy or open vacancies
+
+Important truth:
+
+- the main HR upload flow also does not depend on n8n
+
+## CV Parsing: What Still Exists And What Is Actually Used
+
+Current candidate parsing endpoints:
+
+- `POST /api/candidates/manual-import`
+- `POST /api/candidates/upload-url`
+- `POST /api/candidates/parse-cv`
+- `POST /api/candidates/parse-cv-batch`
+- `POST /api/applications/public-submit`
+
+The main product paths used by the current frontend are:
+
+- `manual-import`
+- `public-submit`
+
+The direct `parse-cv`, `parse-cv-batch`, and `upload-url` endpoints still exist and still work, but they are not the main UI flow.
+
+### Legacy parse queue note
+
+The old queue-style n8n parse ingress has been removed from the backend.
+
+Removed legacy parse endpoints:
+
+- `GET /api/candidates/parse-jobs`
+- `POST /api/candidates/queue-parse-cv`
+- `POST /api/candidates/queue-parse-cv-batch`
+- `POST /api/integrations/n8n/process-parse`
+
+Important: `ParseJob` still exists and is still used. It was not removed because the active parsing flow still stores parse metadata there.
+
+### Supported resume file types
+
+The shared parser currently supports:
+
+- `PDF`
+- `DOCX`
+- `DOC`
+
+Behavior today:
+
+- `PDF` and `DOCX` are parsed
+- `DOC` is stored but marked as `unsupported_format`
+- unsupported or failed parsing falls back to `pending_manual_review`
+
+## Matching And Candidate Records
+
+The shared parse pipeline lives in `app/services/cv_pipeline_service.py`.
+
+The core path is `process_candidate_file(...)`.
+
+That pipeline is responsible for:
+
+- extracting resume text
+- creating or reusing placeholder candidates
+- creating or updating the real candidate record
+- storing resume bytes and file metadata on the candidate
+- creating or updating application metadata
+- updating `ParseJob`
+- computing a match state against a selected vacancy or open vacancies
+
+Current match statuses you will see in practice:
+
+- `matched`
+- `potential_fit`
+- `pending_manual_review`
+
+## Interviews And Scheduling
+
+Interview logic lives in:
+
+- `app/routes/interviews.py`
+- `app/routes/applications.py`
+- `app/services/application_workflow_service.py`
+- `app/services/calendar_availability_service.py`
+- `app/services/cal_webhook_service.py`
+
+Public scheduling routes:
+
+- `GET /api/applications/public-schedule/{application_id}`
+- `POST /api/applications/public-schedule/{application_id}`
+
+Cal.com webhook route:
+
+- `POST /api/webhooks/cal`
+
+The public schedule page route is:
+
+- `/candidate/schedule/[applicationId]`
+
+## What Still Uses n8n
+
+n8n is still part of the system, but not for the main parsing flow.
+
+Current n8n-backed behavior includes:
+
+- LinkedIn preview generation
+- HR invite delivery and callbacks
+- some interview email flows
+- optional calendar availability / booking webhooks depending on env configuration
+
+Relevant routes and services:
+
+- `POST /api/integrations/n8n/linkedin-preview`
+- `POST /api/integrations/n8n/hr-invite-result`
+- `POST /api/applications/{id}/send-hr-invite`
+- `POST /api/applications/{id}/mark-invite-sent`
+- `POST /api/applications/{id}/send-email`
+- `app/services/hr_invite_service.py`
+- `app/services/linkedin_service.py`
+- `app/services/calendar_availability_service.py`
+
+If someone says "parsing goes through n8n", that is no longer true for the main app flow.
 
 ## Authentication
 
-### Current auth model
+Auth lives in:
 
-The app currently uses a lightweight internal login model.
+- `app/routes/auth.py`
+- `app/services/auth_service.py`
+- `app/services/settings_service.py`
+- `frontend/components/auth/login-home.tsx`
+- `frontend/components/providers/role-provider.tsx`
 
-Important behavior:
+How auth works today:
 
-- there is one shared internal password
-- the password comes from `INTERNAL_LOGIN_PASSWORD`
-- users log in with an email address plus the shared password
-- the backend validates email format and password
-- the backend issues an HTTP-only JWT cookie
-- users are auto-created in the `user` table on first successful login
-- auto-created users default to role `HR` unless changed in data/settings
+- users log in with email + shared internal password
+- the shared password comes from `INTERNAL_LOGIN_PASSWORD`
+- the backend creates an HTTP-only JWT session cookie
+- users can be auto-created on first login depending on access settings
+- auto-created users default to `HR` unless settings or data say otherwise
 
-Important files:
+Hosted/Vercel note:
 
-- [app/routes/auth.py](app/routes/auth.py)
-- [app/services/auth_service.py](app/services/auth_service.py)
-- [frontend/components/auth/login-home.tsx](frontend/components/auth/login-home.tsx)
-- [frontend/components/providers/role-provider.tsx](frontend/components/providers/role-provider.tsx)
+- frontend and backend run on separate domains
+- cookie config therefore matters
+- hosted auth typically needs `Secure=true` and `SameSite=none`
 
-### Live Vercel auth note
+If login works locally but not on Vercel, first inspect:
 
-The hosted frontend and hosted backend run on separate Vercel domains.
-Because of that, the backend now forces hosted auth cookies to:
-
-- `Secure = true`
-- `SameSite = none`
-
-That logic lives in [app/services/settings_service.py](app/services/settings_service.py).
-
-If settings or authenticated API calls work locally but fail on Vercel, start by checking cookie behavior and cross-domain frontend/backend configuration.
+- cookie settings
+- `CORS_ORIGINS`
+- `CORS_ORIGIN_REGEX`
+- frontend `NEXT_PUBLIC_API_BASE_URL`
 
 ## Settings
 
-### Current state
-
-The backend contains a broader settings system, but the frontend intentionally exposes only a small personal settings page today.
-
-Current `/settings` UI:
-
-- `Profile`
-  - full name
-  - email (read-only)
-  - preferred display name
-  - default landing page
-- `Preferences`
-  - default landing page
-  - reduced motion
-
-Important behavior:
-
-- preferred display name updates the visible workspace name
-- default landing page is used after login when there is no explicit `next` route
-- reduced motion updates frontend behavior through `html[data-reduced-motion="true"]`
-
-Important files:
-
-- [frontend/app/settings/page.tsx](frontend/app/settings/page.tsx)
-- [frontend/components/settings/settings-page.tsx](frontend/components/settings/settings-page.tsx)
-- [app/routes/settings.py](app/routes/settings.py)
-- [app/services/settings_service.py](app/services/settings_service.py)
-
-### Important implementation note
-
-The settings page uses `useSearchParams()`, so the page route wraps the client component in `Suspense` to satisfy production builds.
-
-## Databases
-
-### 1. Main HR database
-
-This is the main backend database from `DATABASE_URL`.
-
-It stores:
-
-- users
-- preferences
-- hiring requests
-- vacancies
-- candidates
-- applications
-- interviews
-- stage history
-- AI match records
-- website publication mappings
-
-### 2. Website database
-
-Optional second database from `WEBSITE_DATABASE_URL`.
-
-It is used for website-side publication and website-side intake data, especially:
-
-- `jobs_infos`
-- `job_applications`
-- website-side `users`
-
-Important production detail:
-
-- `DATABASE_URL` and `WEBSITE_DATABASE_URL` are often **different databases**
-- `DATABASE_URL` should point to the HR platform database
-- `WEBSITE_DATABASE_URL` should point to the ITWW website database
-- if `WEBSITE_DATABASE_URL` is missing, code falls back to `DATABASE_URL`
-
-Important website publication detail:
-
-- `jobs_infos.created_by` must reference a real `users.user_id` in the **website database**
-- the value comes from `WEBSITE_PUBLISHER_USER_ID`
-- if that user id does not exist, website publish fails with an `IntegrityError`
-
-### Database bootstrap behavior
-
-There are no formal migrations in this repository.
-Instead, the backend currently relies on runtime bootstrap helpers in [app/db.py](app/db.py) and parts of [app/services/settings_service.py](app/services/settings_service.py).
-
-Current bootstrap behavior includes:
-
-- `SQLModel.metadata.create_all(...)`
-- `jobs_infos` table bootstrap in the website database
-- candidate resume/blob storage bootstrap
-- `parse_jobs` file/blob storage bootstrap
-- user auth columns bootstrap
-- default departments bootstrap
-- vacancy apply-link backfill for existing vacancies
-- settings schema bootstrap
-
-This is important for new developers: schema changes are currently applied in code, not through Alembic migrations.
-
-Important startup behavior:
-
-- locally, the backend runs `init_db()` in a background thread on startup
-- on Vercel, `init_db()` only runs when `RUN_DB_INIT_ON_STARTUP=1`
-- if you restore or move a database and the app suddenly misses columns, tables, or default data, start by enabling `RUN_DB_INIT_ON_STARTUP=1` for one backend deploy
-
-## Job Description, LinkedIn, And Apply Links
-
-### JD generation
-
-The job description pipeline uses AI plus fallback logic in [app/services/openai_service.py](app/services/openai_service.py).
-
-Important detail:
-
-- the platform injects a `How to Apply` section into job descriptions
-- the apply link is meant to point to the public careers/apply route for the vacancy
-
-### LinkedIn preview
-
-LinkedIn preview generation is handled through:
-
-- [app/routes/integrations.py](app/routes/integrations.py)
-- [app/services/linkedin_service.py](app/services/linkedin_service.py)
-- [frontend/components/recruitment/linkedin-preview-card.tsx](frontend/components/recruitment/linkedin-preview-card.tsx)
-
-Important current behavior:
-
-- placeholders such as `[PLAK HIER JE URL]`, `[Application Link]`, and legacy approval placeholders are normalized
-- the backend now self-heals missing apply links on vacancy read/create/update
-- backend startup backfills existing vacancy descriptions with real apply links
-
-If a LinkedIn JD looks wrong, start by inspecting:
-
-- the vacancy `description`
-- the generated `apply_url`
-- `inject_job_description_apply_url(...)`
-- `_normalize_linkedin_post_text(...)`
-
-## Website Publishing And PDF Generation
-
-### Website publication
-
-Website publication is handled by:
-
-- [app/routes/website_integrations.py](app/routes/website_integrations.py)
-- [app/services/website_publish_service.py](app/services/website_publish_service.py)
-- [app/models/website_publication.py](app/models/website_publication.py)
-- [app/services/uploadthing_service.py](app/services/uploadthing_service.py)
-
-The main idea:
-
-- the frontend triggers `POST /api/integrations/website/publish`
-- the backend loads the HR vacancy from the HR database
-- the backend generates an ITWW-style PDF
-- the backend uploads that PDF to UploadThing and gets back a public URL
-- the backend writes or updates `jobs_infos` in the website database
-- the backend stores the HR-to-website mapping in `website_publication`
-
-Important environment variables for this flow:
-
-- `WEBSITE_DATABASE_URL`
-- `WEBSITE_JOBS_TABLE` (normally `jobs_infos`)
-- `WEBSITE_PUBLISHER_USER_ID`
-- `UPLOADTHING_APP_ID`
-- `UPLOADTHING_SECRET`
-- `UPLOADTHING_TOKEN`
-
-Important current constraints we validated during debugging:
-
-- `jobs_infos.title` is unique in the current website database
-- duplicate title rows can therefore trigger `IntegrityError`
-- `created_by` must point to a real website-side user id
-- if publish keeps failing after an env change, confirm the backend was actually redeployed and is not still running with old values
-
-### Website PDF generation
-
-Website PDF generation is handled by:
-
-- [app/services/website_pdf_service.py](app/services/website_pdf_service.py)
+Settings routes live in `app/routes/settings.py`.
 
 Current important behavior:
 
-- uses `Letter Head ITWW HD.pdf`
-- removes markdown artifacts before rendering
-- uses branded layout and typography
-- keeps text positioned clear of the header artwork
-- caches template-derived assets when needed
+- `/api/settings`
+  returns settings categories based on user role
+- `/api/settings/me`
+  returns personal settings
+- `/api/settings/system`
+  returns admin diagnostics
+- `/api/settings/public-auth`
+  returns public login-page messaging
 
-## Public Candidate Flow
+The settings system is broader than the current frontend UI, so do not assume every stored category is exposed in the app.
 
-### Public careers and apply pages
-
-The public-facing frontend routes are:
-
-- `/jobs`
-- `/careers/[id]`
-- `/apply/[id]`
-
-Important files:
-
-- [frontend/app/jobs/page.tsx](frontend/app/jobs/page.tsx)
-- [frontend/app/careers/[id]/page.tsx](frontend/app/careers/[id]/page.tsx)
-- [frontend/app/apply/[id]/page.tsx](frontend/app/apply/[id]/page.tsx)
-- [frontend/components/recruitment/public-apply-form.tsx](frontend/components/recruitment/public-apply-form.tsx)
-
-### Public application intake
-
-The backend receives public submissions through:
-
-- [app/routes/applications.py](app/routes/applications.py)
-
-That flow stores:
-
-- uploaded CV data
-- candidate details
-- the application record
-- downstream parsing/matching information
-
-Current important behavior:
-
-- the canonical public base is now effectively `/careers/...`
-- `POST /api/applications/public-submit` also accepts `legacy_application_id` and `website_job_info_id`
-- the website/admin app can forward legacy website applications directly into the HR backend without relying on an n8n polling loop
-- there is also a backend-side recovery endpoint `POST /api/integrations/website/sync-applications` for syncing `job_applications` rows from the website DB into the HR app
-
-Important files:
-
-- [app/services/application_service.py](app/services/application_service.py)
-- [app/services/website_application_sync_service.py](app/services/website_application_sync_service.py)
-- [itww-admin/src/app/api/jobs-application/route.ts](itww-admin/src/app/api/jobs-application/route.ts)
-
-## Running Locally
+## Local Development
 
 ### Backend
 
-From the repository root:
+Install dependencies:
 
 ```powershell
-cd "C:\Coding Projects\IT Solution Code"
-.\.venv\Scripts\pip.exe install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
+
+Run the backend:
+
+```powershell
+.venv\Scripts\uvicorn app.main:app --reload
+```
+
+Default local backend URL:
+
+- `http://127.0.0.1:8000`
 
 ### Frontend
 
-In a second terminal:
+Install dependencies:
 
 ```powershell
-cd "C:\Coding Projects\IT Solution Code\frontend"
+cd frontend
 npm install
+```
+
+Run the frontend:
+
+```powershell
 npm run dev
 ```
 
-Default URLs:
+Default local frontend URL:
 
-- frontend: `http://localhost:3000`
-- backend API docs: `http://127.0.0.1:8000/docs`
-- backend health: `http://127.0.0.1:8000/health`
+- `http://localhost:3000`
 
-## Frontend Build Notes
+### Build checks
 
-### Dev indicators
+Frontend production build:
 
-The Next.js dev indicator popup is disabled in:
+```powershell
+cd frontend
+npm run build
+```
 
-- [frontend/next.config.ts](frontend/next.config.ts)
+## Environment Variables That Matter Most
 
-Current config:
+This is not every variable in the system. These are the ones that usually decide whether the app works.
 
-- `devIndicators: false`
-
-### Local API rewrite
-
-The frontend rewrites `/backend-api/*` to the local FastAPI server in development:
-
-- `/backend-api/:path* -> http://127.0.0.1:8000/api/:path*`
-
-This allows the browser to keep working even when the frontend is opened through a different local host/device name.
-
-## Environment Variables
-
-### Backend
-
-Primary backend variables from `.env` / `.env.example`:
+### Backend core
 
 ```env
 DATABASE_URL=postgresql+psycopg://...
+AUTH_JWT_SECRET=replace-me
+INTERNAL_LOGIN_PASSWORD=replace-me
+```
+
+### Backend website publishing
+
+```env
 WEBSITE_DATABASE_URL=postgresql+psycopg://...
 WEBSITE_JOBS_TABLE=jobs_infos
 WEBSITE_PUBLISHER_USER_ID=1
-RUN_DB_INIT_ON_STARTUP=0
-AUTH_JWT_SECRET=replace-with-a-long-random-secret
-INTERNAL_LOGIN_PASSWORD=ITWW123
-AUTH_COOKIE_SECURE=0
+PUBLIC_APPLY_BASE_URL=https://talentgenie.vercel.app/careers
+PUBLIC_SCHEDULE_BASE_URL=https://talentgenie.vercel.app/candidate/schedule
+```
+
+### Backend parsing / storage / AI
+
+```env
 UPLOADTHING_APP_ID=...
 UPLOADTHING_SECRET=...
 UPLOADTHING_TOKEN=...
 VERTEX_PROJECT_ID=...
 VERTEX_LOCATION=europe-west1
 VERTEX_GENERATIVE_MODEL=gemini-3.1-flash-lite
-VERTEX_GENERATIVE_MODELS=gemini-3.1-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro,gemini-2.0-flash
 VERTEX_EMBEDDING_MODEL=gemini-embedding-001
-N8N_HR_INVITE_WEBHOOK_URL=http://localhost:5678/webhook/hr-approval-email
-N8N_WEBHOOK_SECRET=development-n8n-secret
-N8N_LINKEDIN_PREVIEW_WEBHOOK_URL=http://localhost:5678/webhook/linkedin-preview-v2
-N8N_CALENDAR_AVAILABILITY_WEBHOOK_URL=http://localhost:5678/webhook/calendar-availability
-CAL_COM_BOOKING_BASE_URL=https://your-org.cal.com/hr-intake
-CAL_COM_WEBHOOK_SECRET=...
-PUBLIC_APPLY_BASE_URL=http://localhost:3000/careers
-PUBLIC_SCHEDULE_BASE_URL=http://localhost:3000/candidate/schedule
-PUBLIC_SCHEDULE_TIMEZONE=Europe/Amsterdam
-PUBLIC_SCHEDULE_DAYS_AHEAD=14
-PUBLIC_SCHEDULE_SLOT_MINUTES=30
-PUBLIC_SCHEDULE_BUSINESS_START_HOUR=9
-PUBLIC_SCHEDULE_BUSINESS_END_HOUR=17
 RESUME_UPLOAD_DIR=storage/resumes
 WEBSITE_PDF_OUTPUT_DIR=storage/website-job-pdfs
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,...
 ```
-
-Important note:
-
-- `DATABASE_URL` should point to the HR database, not the website database
-- `WEBSITE_DATABASE_URL` should point to the website database when website publication or website-side apply sync is in use
-- `RUN_DB_INIT_ON_STARTUP=1` is useful for the first Vercel deploy after restoring or moving a database
-- `PUBLIC_APPLY_BASE_URL` should be treated as a `/careers/...` base for public links
 
 ### Frontend
 
-Main frontend variables:
-
 ```env
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api
-NEXT_PUBLIC_PUBLIC_APPLY_BASE_URL=http://localhost:3000/careers
+NEXT_PUBLIC_API_BASE_URL=https://it-solution-code-hr-app-backend.vercel.app/api
+NEXT_PUBLIC_PUBLIC_APPLY_BASE_URL=https://talentgenie.vercel.app/careers
 ```
 
-If not set, the frontend falls back to:
-
-- `https://it-solution-code-hr-app-backend.vercel.app/api`
-
-Important behavior:
-
-- in the browser, a localhost-style `NEXT_PUBLIC_API_BASE_URL` is rewritten to `/backend-api` for local development
-- if this value is wrong or the backend is unreachable, some screens show explicit fetch errors, while the dashboard may simply fall back to zeros
-
-### Secondary app (`itww-admin`)
-
-Important variables for the secondary admin/website app:
+### n8n-related envs still used
 
 ```env
-DATABASE_URL=postgresql+psycopg://...
-HR_BACKEND_API_BASE_URL=https://it-solution-code-hr-app-backend.vercel.app/api
-UPLOADTHING_APP_ID=...
-UPLOADTHING_SECRET=...
-UPLOADTHING_TOKEN=...
+N8N_HR_INVITE_WEBHOOK_URL=...
+N8N_HR_APPROVAL_WEBHOOK_URL=...
+N8N_HR_REJECTION_WEBHOOK_URL=...
+N8N_TECHNICAL_INVITE_WEBHOOK_URL=...
+N8N_TECHNICAL_REJECTION_WEBHOOK_URL=...
+N8N_MANAGEMENT_INVITE_WEBHOOK_URL=...
+N8N_MANAGEMENT_REJECTION_WEBHOOK_URL=...
+N8N_ONBOARDING_APPROVAL_WEBHOOK_URL=...
+N8N_WEBHOOK_SECRET=...
+N8N_LINKEDIN_PREVIEW_WEBHOOK_URL=...
+N8N_CALENDAR_AVAILABILITY_WEBHOOK_URL=...
+N8N_CALENDAR_BOOKING_WEBHOOK_URL=...
 ```
 
-Important note:
+## Production / Vercel Notes
 
-- `itww-admin` usually talks to the website database, not the HR database
-- if the website/admin project reads `jobs_infos` and `job_applications`, its `DATABASE_URL` should stay pointed at the website DB
+Frontend and backend are deployed separately.
 
-## Deployment Notes
+Practical rules:
 
-### Vercel
+- use the frontend's stable production domain for public links
+- use the backend's stable production domain for `NEXT_PUBLIC_API_BASE_URL`
+- do not point public link envs at a random temporary Vercel deployment alias
+- if public vacancy links fail with `DEPLOYMENT_NOT_FOUND`, check the base URL envs first
 
-The repo is usually deployed as multiple Vercel projects:
+## Common Gotchas
 
-- the main frontend
-- the FastAPI backend
-- the optional `itww-admin` website/admin app
+### "The JD was generated, why is it not on the website?"
 
-The frontend is expected to reach the backend through `NEXT_PUBLIC_API_BASE_URL`.
+Because JD generation and website publish are different things.
 
-Important deployment caveats:
+The usual reasons are:
 
-- the frontend and backend may run on different Vercel domains
-- auth therefore depends on correct cookie settings
-- Vercel serverless runtime only allows writing to `/tmp`
-- local storage paths are different from hosted paths
+- the vacancy was already `open`, so no new auto-publish trigger fired
+- website publish failed due to env or DB configuration
+- the vacancy was never manually published
 
-That is why:
+### "The vacancy is open, so why is it not posted?"
 
-- resume storage falls back to `/tmp/resumes` on Vercel
-- website PDF output falls back to `/tmp/job-pdfs` on Vercel
+Because `open` is an internal vacancy status, not a website publication state.
 
-Useful hosted endpoints:
+### "Some public apply links work and some do not"
 
-- backend health: `/health`
-- backend docs: `/docs`
+Usually one of these:
 
-If a new database is connected on Vercel and the app still behaves like the old one:
+- `PUBLIC_APPLY_BASE_URL` points to the wrong frontend domain
+- the vacancy has not been published to the website
+- the website publication mapping is missing or stale
 
-1. confirm the env vars were saved in the correct project
-2. redeploy the project
-3. temporarily enable `RUN_DB_INIT_ON_STARTUP=1` for the backend
+### "Parsing is broken because n8n is off"
 
-## Troubleshooting
+Usually false for the current app flow.
 
-### Dashboard shows zeros even though the database has data
+Check these first instead:
 
-This does not always mean the HR database is empty.
+- backend health
+- file size and file type
+- Vertex / AI configuration
+- resume storage permissions
+- parsing exceptions in backend logs
 
-Current frontend behavior:
+## Suggested First Read For A New Developer
 
-- some dashboard fetches fall back to empty arrays / zero-like values when the API request fails
-- more explicit screens may show `Could not reach the API: Failed to fetch`
+If you are new to this codebase, read these files in this order:
 
-Start by checking:
+1. `app/main.py`
+2. `app/routes/__init__.py`
+3. `app/routes/hiring_requests.py`
+4. `app/routes/vacancies.py`
+5. `app/routes/applications.py`
+6. `app/routes/candidates.py`
+7. `app/services/hiring_request_service.py`
+8. `app/services/cv_pipeline_service.py`
+9. `app/services/application_service.py`
+10. `app/services/website_publish_service.py`
+11. `frontend/lib/api/client.ts`
+12. `frontend/components/recruitment/candidate-upload-panel.tsx`
+13. `frontend/components/recruitment/public-apply-form.tsx`
+14. `frontend/components/recruitment/website-publish-card.tsx`
+15. `frontend/app/careers/[id]/page.tsx`
 
-- `NEXT_PUBLIC_API_BASE_URL`
-- backend `/health`
-- backend `/docs`
-- browser Network tab for failed API requests
+## Current Mental Model To Keep
 
-### `Publish to Website` fails with `IntegrityError`
+If you remember only five things, remember these:
 
-The most common current causes are:
-
-- `WEBSITE_DATABASE_URL` points to the wrong database
-- `WEBSITE_PUBLISHER_USER_ID` does not exist in the website DB `users` table
-- `jobs_infos.title` already exists and the unique title constraint rejects the insert
-- the backend was not redeployed after changing environment variables
-
-Helpful checks:
-
-- verify a manual insert into `jobs_infos` works with the chosen `created_by`
-- check whether the same title already exists in `jobs_infos`
-- check the HR-side `website_publication` mapping table
-
-### Public website applications are not appearing inside the HR app
-
-Current recovery path:
-
-- confirm `WEBSITE_DATABASE_URL` points to the real website DB
-- confirm the website/admin app forwards `legacy_application_id` and `website_job_info_id`
-- use `POST /api/integrations/website/sync-applications` to backfill or recover website-side applications without relying on an n8n polling workflow
-
-## Known Current Constraints
-
-- The backend uses runtime schema bootstrap instead of formal migrations.
-- The internal login model is intentionally lightweight and not enterprise-grade yet.
-- The frontend only exposes personal settings even though the backend has broader settings infrastructure.
-- There are multiple apps and older folders in the repository; not all of them are equally current.
-- Public/site integration logic is spread across the backend and secondary website-side code.
-
-## Recommended Starting Points For New Developers
-
-If you are new to the codebase, read these first:
-
-1. [app/main.py](app/main.py)
-2. [app/config.py](app/config.py)
-3. [app/db.py](app/db.py)
-4. [app/routes/__init__.py](app/routes/__init__.py)
-5. [frontend/lib/api/client.ts](frontend/lib/api/client.ts)
-6. [frontend/components/providers/role-provider.tsx](frontend/components/providers/role-provider.tsx)
-7. [frontend/components/recruitment/vacancy-detail.tsx](frontend/components/recruitment/vacancy-detail.tsx)
-8. [frontend/components/recruitment/linkedin-preview-card.tsx](frontend/components/recruitment/linkedin-preview-card.tsx)
-9. [app/services/openai_service.py](app/services/openai_service.py)
-10. [app/services/settings_service.py](app/services/settings_service.py)
-
-## Maintenance Guidance
-
-When making changes, be especially careful around:
-
-- auth cookie behavior
-- apply-link generation
-- website publication fields
-- public route URL bases
-- Vercel-only path behavior
-- settings bootstrap side effects
-
-Those are the parts of the system most likely to break across environments.
+1. The main app is `app/` plus `frontend/`.
+2. Parsing is now backend code plus database, not n8n queueing.
+3. Vacancy `open` is not the same as website `published`.
+4. Public careers pages depend on correct website publication mapping and correct frontend base URLs.
+5. The safest way to debug "why isn't this live?" is to check status, publication mapping, env vars, and the actual route being called, in that order.
