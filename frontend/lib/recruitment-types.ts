@@ -481,6 +481,31 @@ export type HRDashboardActivityResponseApiRecord = {
   items: DashboardActivityApiRecord[];
 };
 
+export type WorkspaceVacancyApiRecord = {
+  id: number;
+  title: string;
+  status: VacancyStatus;
+  created_at: string;
+};
+
+export type WorkspaceCandidateApiRecord = CandidateApiRecord;
+
+export type WorkspaceApplicationApiRecord = ApplicationApiRecord;
+
+export type PipelineBoardApiRecord = {
+  applications: WorkspaceApplicationApiRecord[];
+  candidates: WorkspaceCandidateApiRecord[];
+  vacancies: WorkspaceVacancyApiRecord[];
+};
+
+export type HRWorkspaceApiRecord = {
+  summary: HRDashboardSummaryApiRecord;
+  activity: DashboardActivityApiRecord[];
+  applications: WorkspaceApplicationApiRecord[];
+  candidates: WorkspaceCandidateApiRecord[];
+  vacancies: WorkspaceVacancyApiRecord[];
+};
+
 export type LinkedInPreviewApiRecord = {
   success: boolean;
   dry_run: boolean;

@@ -44,7 +44,8 @@ app.mount(
 @app.on_event("startup")
 def on_startup() -> None:
     if os.getenv("VERCEL") == "1":
-        init_db()
+        if os.getenv("RUN_DB_INIT_ON_STARTUP") == "1":
+            init_db()
         return
 
     Thread(target=_run_init_db_background, daemon=True).start()

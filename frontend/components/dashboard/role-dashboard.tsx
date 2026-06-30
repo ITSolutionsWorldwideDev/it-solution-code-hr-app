@@ -14,12 +14,12 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { apiRequest } from "@/lib/api/client";
 import { getDashboardData } from "@/lib/mock/dashboard";
 import type {
-  ApplicationApiRecord,
-  CandidateApiRecord,
   DashboardActivityApiRecord,
-  HRDashboardActivityResponseApiRecord,
   HRDashboardSummaryApiRecord,
-  VacancyApiRecord,
+  HRWorkspaceApiRecord,
+  WorkspaceApplicationApiRecord,
+  WorkspaceCandidateApiRecord,
+  WorkspaceVacancyApiRecord,
 } from "@/lib/recruitment-types";
 
 export function RoleDashboard() {
@@ -45,9 +45,9 @@ export function RoleDashboard() {
           : "HR owns intake, AI-assisted screening, candidate review, and the handoff into technical evaluation.";
   const [hrSummary, setHrSummary] = useState<HRDashboardSummaryApiRecord | null>(null);
   const [hrActivity, setHrActivity] = useState<DashboardActivityApiRecord[] | null>(null);
-  const [hrApplications, setHrApplications] = useState<ApplicationApiRecord[]>([]);
-  const [hrCandidates, setHrCandidates] = useState<CandidateApiRecord[]>([]);
-  const [hrVacancies, setHrVacancies] = useState<VacancyApiRecord[]>([]);
+  const [hrApplications, setHrApplications] = useState<WorkspaceApplicationApiRecord[]>([]);
+  const [hrCandidates, setHrCandidates] = useState<WorkspaceCandidateApiRecord[]>([]);
+  const [hrVacancies, setHrVacancies] = useState<WorkspaceVacancyApiRecord[]>([]);
 
   useEffect(() => {
     if (!isHr && !isTechnical) {
@@ -63,30 +63,15 @@ export function RoleDashboard() {
 
     const loadHrDashboard = async () => {
       try {
-        const [summaryResult, activityResult, applicationsResult, candidatesResult, vacanciesResult] =
-          await Promise.allSettled([
-          apiRequest<HRDashboardSummaryApiRecord>({
-            path: "/dashboard/hr-summary",
-          }),
-          apiRequest<HRDashboardActivityResponseApiRecord>({
-            path: "/dashboard/hr-activity",
-          }),
-            apiRequest<ApplicationApiRecord[]>({
-              path: "/applications/",
-            }),
-            apiRequest<CandidateApiRecord[]>({
-              path: "/candidates/",
-            }),
-            apiRequest<VacancyApiRecord[]>({
-              path: "/vacancies/",
-            }),
-          ]);
+        const workspace = await apiRequest<HRWorkspaceApiRecord>({
+          path: "/dashboard/hr-workspace",
+        });
         if (!cancelled) {
-          setHrSummary(summaryResult.status === "fulfilled" ? summaryResult.value : null);
-          setHrActivity(activityResult.status === "fulfilled" ? activityResult.value.items : null);
-          setHrApplications(applicationsResult.status === "fulfilled" ? applicationsResult.value : []);
-          setHrCandidates(candidatesResult.status === "fulfilled" ? candidatesResult.value : []);
-          setHrVacancies(vacanciesResult.status === "fulfilled" ? vacanciesResult.value : []);
+          setHrSummary(workspace.summary);
+          setHrActivity(workspace.activity);
+          setHrApplications(workspace.applications);
+          setHrCandidates(workspace.candidates);
+          setHrVacancies(workspace.vacancies);
         }
       } catch {
         if (!cancelled) {

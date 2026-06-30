@@ -9,13 +9,14 @@ import { apiRequest } from "@/lib/api/client";
 import { mapApplicationToPipelineCandidate } from "@/lib/pipeline";
 import type { AppRole } from "@/lib/session";
 import type {
-  ApplicationApiRecord,
   ApplicationStageApi,
-  CandidateApiRecord,
+  PipelineBoardApiRecord,
   PipelineCandidateRecord,
   PipelineStage,
   UserApiRecord,
-  VacancyApiRecord,
+  WorkspaceApplicationApiRecord,
+  WorkspaceCandidateApiRecord,
+  WorkspaceVacancyApiRecord,
 } from "@/lib/recruitment-types";
 
 const stageSets: Record<string, PipelineStage[]> = {
@@ -72,7 +73,7 @@ const roleToUserRole = {
   Admin: "Admin",
 } as const;
 
-function canRoleViewApplication(role: AppRole, application: ApplicationApiRecord): boolean {
+function canRoleViewApplication(role: AppRole, application: WorkspaceApplicationApiRecord): boolean {
   if (role === "Admin") {
     return true;
   }
@@ -249,7 +250,7 @@ function applicationStageForPipelineStage(targetStage: PipelineStage, role: AppR
 }
 
 function targetApplicationStageForPipelineDrop(
-  application: ApplicationApiRecord,
+  application: WorkspaceApplicationApiRecord,
   targetStage: PipelineStage,
   role: AppRole,
 ): ApplicationStageApi | null {
@@ -294,9 +295,9 @@ export function RolePipelineView() {
   const { role, name } = useRole();
   const content = roleCopy[role];
   const visibleStages = stageSets[role];
-  const [applications, setApplications] = useState<ApplicationApiRecord[]>([]);
-  const [candidateRecords, setCandidateRecords] = useState<CandidateApiRecord[]>([]);
-  const [vacancies, setVacancies] = useState<VacancyApiRecord[]>([]);
+  const [applications, setApplications] = useState<WorkspaceApplicationApiRecord[]>([]);
+  const [candidateRecords, setCandidateRecords] = useState<WorkspaceCandidateApiRecord[]>([]);
+  const [vacancies, setVacancies] = useState<WorkspaceVacancyApiRecord[]>([]);
   const [currentUser, setCurrentUser] = useState<UserApiRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyApplicationId, setBusyApplicationId] = useState<string | null>(null);
@@ -309,18 +310,16 @@ export function RolePipelineView() {
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const loadPipeline = async () => {
-    const [applicationResponse, candidateResponse, vacancyResponse] = await Promise.all([
-      apiRequest<ApplicationApiRecord[]>({ path: "/applications/" }),
-      apiRequest<CandidateApiRecord[]>({ path: "/candidates/" }),
-      apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" }),
-    ]);
+    const pipelineBoard = await apiRequest<PipelineBoardApiRecord>({
+      path: "/applications/pipeline-board",
+    });
 
-    setApplications(applicationResponse);
-    setCandidateRecords(candidateResponse);
-    setVacancies(vacancyResponse);
+    setApplications(pipelineBoard.applications);
+    setCandidateRecords(pipelineBoard.candidates);
+    setVacancies(pipelineBoard.vacancies);
   };
 
-  const updateApplicationInState = (updatedApplication: ApplicationApiRecord) => {
+  const updateApplicationInState = (updatedApplication: WorkspaceApplicationApiRecord) => {
     startTransition(() => {
       setApplications((current) =>
         current.map((application) => (application.id === updatedApplication.id ? updatedApplication : application)),
@@ -329,7 +328,7 @@ export function RolePipelineView() {
   };
 
   const loadSingleApplication = async (applicationId: number) => {
-    const refreshedApplication = await apiRequest<ApplicationApiRecord>({
+    const refreshedApplication = await apiRequest<WorkspaceApplicationApiRecord>({
       path: `/applications/${applicationId}`,
     });
     updateApplicationInState(refreshedApplication);
@@ -437,7 +436,7 @@ export function RolePipelineView() {
         return;
       }
 
-      const updatedApplication = await apiRequest<ApplicationApiRecord>({
+      const updatedApplication = await apiRequest<WorkspaceApplicationApiRecord>({
         path: `/applications/${application.id}/stage`,
         method: "PATCH",
         body: JSON.stringify({
@@ -469,7 +468,7 @@ export function RolePipelineView() {
 
     try {
       const user = await ensureCurrentUser();
-      const updatedApplication = await apiRequest<ApplicationApiRecord>({
+      const updatedApplication = await apiRequest<WorkspaceApplicationApiRecord>({
         path: `/applications/${application.id}/reject`,
         method: "PATCH",
         body: JSON.stringify({
@@ -507,7 +506,7 @@ export function RolePipelineView() {
 
     try {
       const user = await ensureCurrentUser();
-      const updatedApplication = await apiRequest<ApplicationApiRecord>({
+      const updatedApplication = await apiRequest<WorkspaceApplicationApiRecord>({
         path: `/applications/${application.id}/stage`,
         method: "PATCH",
         body: JSON.stringify({
@@ -622,7 +621,7 @@ export function RolePipelineView() {
 
     try {
       const user = await ensureCurrentUser();
-      const updatedApplication = await apiRequest<ApplicationApiRecord>({
+      const updatedApplication = await apiRequest<WorkspaceApplicationApiRecord>({
         path: `/applications/${application.id}/stage`,
         method: "PATCH",
         body: JSON.stringify({

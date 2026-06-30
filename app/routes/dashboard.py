@@ -18,6 +18,12 @@ from app.schemas.dashboard import (
     HRDashboardActivityResponseRead,
     HRDashboardSummaryRead,
 )
+from app.schemas.workspace import HRWorkspaceResponseRead
+from app.services.workspace_service import (
+    list_workspace_applications,
+    list_workspace_candidates,
+    list_workspace_vacancies,
+)
 
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
@@ -224,6 +230,24 @@ def get_hr_dashboard_activity(
     ]
 
     return HRDashboardActivityResponseRead(items=sorted_items)
+
+
+@router.get(
+    "/hr-workspace",
+    response_model=HRWorkspaceResponseRead,
+    summary="Get compact HR dashboard workspace payload",
+    description="Return dashboard summary, activity, and lightweight workspace records in one response.",
+)
+def get_hr_dashboard_workspace(session: Session = Depends(get_session)):
+    summary = get_hr_dashboard_summary(session=session)
+    activity = get_hr_dashboard_activity(session=session).items
+    return HRWorkspaceResponseRead(
+        summary=summary,
+        activity=activity,
+        applications=list_workspace_applications(session),
+        candidates=list_workspace_candidates(session),
+        vacancies=list_workspace_vacancies(session),
+    )
 
 
 def _count(session: Session, statement) -> int:

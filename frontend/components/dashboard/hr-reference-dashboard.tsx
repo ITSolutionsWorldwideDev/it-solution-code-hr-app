@@ -29,10 +29,10 @@ import { useRole } from "@/components/providers/role-provider";
 import { buildVisibleCandidateDatabase, isPlaceholderCandidate } from "@/lib/candidate-utils";
 import { roleProfiles } from "@/lib/session";
 import type {
-  ApplicationApiRecord,
-  CandidateApiRecord,
   DashboardActivityApiRecord,
-  VacancyApiRecord,
+  WorkspaceApplicationApiRecord,
+  WorkspaceCandidateApiRecord,
+  WorkspaceVacancyApiRecord,
 } from "@/lib/recruitment-types";
 import type { ActivityItem, DashboardData } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -40,9 +40,9 @@ import { cn } from "@/lib/utils";
 type HRReferenceDashboardProps = {
   data: DashboardData;
   hrActivity: DashboardActivityApiRecord[];
-  applications: ApplicationApiRecord[];
-  candidates: CandidateApiRecord[];
-  vacancies: VacancyApiRecord[];
+  applications: WorkspaceApplicationApiRecord[];
+  candidates: WorkspaceCandidateApiRecord[];
+  vacancies: WorkspaceVacancyApiRecord[];
 };
 
 const technicalAndBeyondStages = new Set([
@@ -110,7 +110,7 @@ function getTimeValue(value?: string | null) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
 }
 
-function getCandidateParsedTime(candidate: CandidateApiRecord) {
+function getCandidateParsedTime(candidate: WorkspaceCandidateApiRecord) {
   const parsedAt =
     typeof candidate.parsed_data?.parsed_at === "string"
       ? candidate.parsed_data.parsed_at
@@ -118,7 +118,7 @@ function getCandidateParsedTime(candidate: CandidateApiRecord) {
   return getTimeValue(parsedAt);
 }
 
-function getCandidateFitScore(candidate: CandidateApiRecord) {
+function getCandidateFitScore(candidate: WorkspaceCandidateApiRecord) {
   const rawValue = candidate.parsed_data?.fit_score ?? candidate.match_score ?? null;
   if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
     return rawValue;
@@ -132,7 +132,7 @@ function getCandidateFitScore(candidate: CandidateApiRecord) {
   return null;
 }
 
-function buildCandidateGrowthSeries(candidates: CandidateApiRecord[], numberOfDays = 14) {
+function buildCandidateGrowthSeries(candidates: WorkspaceCandidateApiRecord[], numberOfDays = 14) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -155,7 +155,7 @@ function buildCandidateGrowthSeries(candidates: CandidateApiRecord[], numberOfDa
 }
 
 function countCandidatesWithinWindow(
-  candidates: CandidateApiRecord[],
+  candidates: WorkspaceCandidateApiRecord[],
   startOffsetInDays: number,
   endOffsetInDays: number,
 ) {
@@ -173,7 +173,7 @@ function countCandidatesWithinWindow(
   }).length;
 }
 
-function buildCandidateReadinessBreakdown(candidates: CandidateApiRecord[]) {
+function buildCandidateReadinessBreakdown(candidates: WorkspaceCandidateApiRecord[]) {
   const counts = {
     strongMatch: 0,
     potentialFit: 0,
@@ -220,7 +220,7 @@ function buildCandidateReadinessBreakdown(candidates: CandidateApiRecord[]) {
   ];
 }
 
-function buildChartSeries(applications: ApplicationApiRecord[]) {
+function buildChartSeries(applications: WorkspaceApplicationApiRecord[]) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -244,7 +244,10 @@ function buildChartSeries(applications: ApplicationApiRecord[]) {
   });
 }
 
-function buildTopVacancyRows(applications: ApplicationApiRecord[], vacancies: VacancyApiRecord[]) {
+function buildTopVacancyRows(
+  applications: WorkspaceApplicationApiRecord[],
+  vacancies: WorkspaceVacancyApiRecord[],
+) {
   const counts = new Map<number, number>();
 
   for (const application of applications) {
@@ -261,7 +264,7 @@ function buildTopVacancyRows(applications: ApplicationApiRecord[], vacancies: Va
     .slice(0, 4);
 }
 
-function buildTalentPoolChartSeries(candidates: CandidateApiRecord[]) {
+function buildTalentPoolChartSeries(candidates: WorkspaceCandidateApiRecord[]) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -291,7 +294,7 @@ function buildTalentPoolChartSeries(candidates: CandidateApiRecord[]) {
   });
 }
 
-function buildTalentPoolVacancyRows(candidates: CandidateApiRecord[]) {
+function buildTalentPoolVacancyRows(candidates: WorkspaceCandidateApiRecord[]) {
   const counts = new Map<string, number>();
 
   for (const candidate of candidates) {
@@ -315,7 +318,11 @@ function buildTalentPoolVacancyRows(candidates: CandidateApiRecord[]) {
     .slice(0, 4);
 }
 
-function buildRecentApplicants(applications: ApplicationApiRecord[], candidates: CandidateApiRecord[], vacancies: VacancyApiRecord[]) {
+function buildRecentApplicants(
+  applications: WorkspaceApplicationApiRecord[],
+  candidates: WorkspaceCandidateApiRecord[],
+  vacancies: WorkspaceVacancyApiRecord[],
+) {
   return [...applications]
     .sort((left, right) => (getTimeValue(right.created_at) ?? 0) - (getTimeValue(left.created_at) ?? 0))
     .map((application) => {
@@ -344,7 +351,7 @@ function buildRecentApplicants(applications: ApplicationApiRecord[], candidates:
     .slice(0, 5);
 }
 
-function buildRecentTalentPoolCandidates(candidates: CandidateApiRecord[]) {
+function buildRecentTalentPoolCandidates(candidates: WorkspaceCandidateApiRecord[]) {
   return [...candidates]
     .sort((left, right) => (getCandidateParsedTime(right) ?? 0) - (getCandidateParsedTime(left) ?? 0))
     .slice(0, 5)
@@ -372,7 +379,10 @@ function buildRecentTalentPoolCandidates(candidates: CandidateApiRecord[]) {
     });
 }
 
-function buildReminders(applications: ApplicationApiRecord[], vacancies: VacancyApiRecord[]) {
+function buildReminders(
+  applications: WorkspaceApplicationApiRecord[],
+  vacancies: WorkspaceVacancyApiRecord[],
+) {
   const shortlistQueue = applications.filter((application) =>
     ["ranked", "primary_shortlist", "reserve_shortlist", "hr_invite_selected"].includes(application.stage),
   ).length;

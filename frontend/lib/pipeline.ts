@@ -1,10 +1,10 @@
 import type {
-  ApplicationApiRecord,
   ApplicationStageApi,
-  CandidateApiRecord,
   PipelineCandidateRecord,
   PipelineStage,
-  VacancyApiRecord,
+  WorkspaceApplicationApiRecord,
+  WorkspaceCandidateApiRecord,
+  WorkspaceVacancyApiRecord,
 } from "@/lib/recruitment-types";
 
 export const pipelineStageOrder: PipelineStage[] = [
@@ -47,7 +47,7 @@ export const pipelineStageLabels: Record<PipelineStage, string> = {
   rejected: "Rejected",
 };
 
-export function mapApplicationStageToPipelineStage(application: ApplicationApiRecord): PipelineStage | null {
+export function mapApplicationStageToPipelineStage(application: WorkspaceApplicationApiRecord): PipelineStage | null {
   if (
     application.invite_sent_at &&
     (application.stage === "primary_shortlist" ||
@@ -93,9 +93,9 @@ export function mapApplicationStageToPipelineStage(application: ApplicationApiRe
 }
 
 export function mapApplicationToPipelineCandidate(
-  application: ApplicationApiRecord,
-  candidate: CandidateApiRecord | null,
-  vacancy: VacancyApiRecord | null,
+  application: WorkspaceApplicationApiRecord,
+  candidate: WorkspaceCandidateApiRecord | null,
+  vacancy: WorkspaceVacancyApiRecord | null,
 ): PipelineCandidateRecord | null {
   const stage = mapApplicationStageToPipelineStage(application);
 
@@ -182,8 +182,8 @@ export function mapApplicationToPipelineCandidate(
 }
 
 function resolveParsedData(
-  application: ApplicationApiRecord,
-  candidate: CandidateApiRecord | null,
+  application: WorkspaceApplicationApiRecord,
+  candidate: WorkspaceCandidateApiRecord | null,
 ): Record<string, unknown> {
   const applicationParsedData =
     application.parsed_data && typeof application.parsed_data === "object"

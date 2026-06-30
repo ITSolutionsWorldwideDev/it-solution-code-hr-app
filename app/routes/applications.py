@@ -23,6 +23,7 @@ from app.schemas.application import (
     ApplicationTimelineRead,
     ApplicationUpdate,
 )
+from app.schemas.workspace import PipelineBoardResponseRead
 from app.services import crud
 from app.services.application_service import create_application
 from app.services.application_workflow_service import (
@@ -42,6 +43,7 @@ from app.services.cv_pipeline_service import (
     upsert_placeholder_candidate,
 )
 from app.services.hr_invite_service import dispatch_application_email, dispatch_hr_invite
+from app.services.workspace_service import get_pipeline_board_payload
 
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
@@ -50,6 +52,16 @@ router = APIRouter(prefix="/applications", tags=["Applications"])
 @router.get("/", response_model=list[ApplicationRead], summary="List applications", description="Return all applications that link candidates to vacancies.")
 def list_applications(session: Session = Depends(get_session)):
     return crud.get_all(session, Application)
+
+
+@router.get(
+    "/pipeline-board",
+    response_model=PipelineBoardResponseRead,
+    summary="Get compact pipeline board payload",
+    description="Return the pipeline workspace data in one compact response to reduce frontend round trips.",
+)
+def get_pipeline_board(session: Session = Depends(get_session)):
+    return get_pipeline_board_payload(session)
 
 
 @router.get(
