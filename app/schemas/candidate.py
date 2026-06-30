@@ -159,30 +159,6 @@ class CandidateCVBatchParseResponse(BaseSchema):
     )
 
 
-class CandidateCVQueueJobRead(BaseSchema):
-    parse_job_id: int = Field(description="Created parse job id.")
-    vacancy_id: int = Field(description="Vacancy linked to the uploaded CV.")
-    file_name: str = Field(description="Stored filename for the uploaded PDF.")
-    original_file_name: Optional[str] = Field(default=None, description="Original uploaded filename for the PDF.")
-    file_path: str = Field(description="Stored path for the uploaded PDF.")
-    status: str = Field(description="Current parse job status.")
-    candidate_id: Optional[int] = Field(default=None, description="Created candidate id once parsing succeeds.")
-    application_id: Optional[int] = Field(default=None, description="Created application id once workflow linking succeeds.")
-    error_message: Optional[str] = Field(default=None, description="Error message if parsing failed.")
-    created_at: Optional[str] = Field(default=None, description="When the parse job was created.")
-    updated_at: Optional[str] = Field(default=None, description="When the parse job was last updated.")
-    parsed_at: Optional[str] = Field(default=None, description="When the parse job finished parsing.")
-
-
-class CandidateCVQueueBatchResponse(BaseSchema):
-    total_files: int = Field(description="Number of uploaded files received.")
-    queued_count: int = Field(description="Number of files queued for parsing.")
-    jobs: list[CandidateCVQueueJobRead] = Field(
-        default_factory=list,
-        description="Queued parse jobs.",
-    )
-
-
 class CandidateManualImportItem(BaseSchema):
     filename: str = Field(description="Original uploaded file name.")
     parse_status: str = Field(description="Final parse status for this file.")

@@ -14,14 +14,11 @@ from sqlmodel import Session, select
 from app.config import settings
 from app.db import engine, get_session
 from app.models.candidate import Candidate
-from app.models.parse_job import ParseJob
 from app.models.vacancy import Vacancy
 from app.schemas.candidate_role_suggestion import CandidateRoleSuggestionRead
 from app.schemas.candidate import (
     CandidateDatabaseResponseRead,
     CandidateCVBatchParseFailure,
-    CandidateCVQueueBatchResponse,
-    CandidateCVQueueJobRead,
     CandidateCVBatchParseResponse,
     CandidateCVParseResponse,
     CandidateCreate,
@@ -54,23 +51,6 @@ def _format_batch_error(error: str) -> str:
     if len(compact) <= 220:
         return compact
     return compact[:219].rstrip() + "..."
-
-
-def _serialize_parse_job(job: ParseJob) -> CandidateCVQueueJobRead:
-    return CandidateCVQueueJobRead(
-        parse_job_id=job.id,
-        vacancy_id=job.vacancy_id,
-        file_name=job.file_name,
-        original_file_name=job.original_file_name,
-        file_path=job.file_path,
-        status=job.status,
-        candidate_id=job.candidate_id,
-        application_id=job.application_id,
-        error_message=job.error_message,
-        created_at=job.created_at.isoformat() if job.created_at else None,
-        updated_at=job.updated_at.isoformat() if job.updated_at else None,
-        parsed_at=job.parsed_at.isoformat() if job.parsed_at else None,
-    )
 
 
 def _derive_filename_from_url(url: str, response: requests.Response) -> str:
@@ -206,64 +186,6 @@ def _find_candidate_resume_by_checksum(session: Session, file_checksum: str) -> 
     return None
 
 
-def _get_or_create_parse_job(
-    *,
-    session: Session,
-    vacancy_id: int,
-    upload_data: dict,
-    uploaded_by: str | None,
-) -> ParseJob:
-    statement = (
-        select(ParseJob)
-        .where(
-            ParseJob.vacancy_id == vacancy_id,
-            ParseJob.file_path == upload_data["resume_path"],
-        )
-        .order_by(ParseJob.id.desc())
-    )
-    existing_job = session.exec(statement).first()
-    if existing_job:
-        existing_job.file_name = Path(upload_data["resume_path"]).name
-        existing_job.original_file_name = upload_data["original_filename"]
-        existing_job.file_checksum = upload_data["file_checksum"]
-        existing_job.mime_type = upload_data["content_type"]
-        existing_job.file_size_bytes = upload_data["file_size_bytes"]
-        existing_job.file_blob_data = upload_data["file_bytes"]
-        existing_job.uploaded_by = uploaded_by
-        existing_job.source = "manual_upload"
-        if existing_job.status == "failed":
-            existing_job.status = "uploaded"
-            existing_job.error_message = None
-            existing_job.candidate_id = None
-            existing_job.application_id = None
-            existing_job.raw_text = None
-            existing_job.parsed_data = {}
-            existing_job.parsed_at = None
-            existing_job.updated_at = datetime.utcnow()
-        session.add(existing_job)
-        session.commit()
-        session.refresh(existing_job)
-        return existing_job
-
-    parse_job = ParseJob(
-        vacancy_id=vacancy_id,
-        file_name=Path(upload_data["resume_path"]).name,
-        original_file_name=upload_data["original_filename"],
-        file_path=upload_data["resume_path"],
-        file_checksum=upload_data["file_checksum"],
-        mime_type=upload_data["content_type"],
-        file_size_bytes=upload_data["file_size_bytes"],
-        file_blob_data=upload_data["file_bytes"],
-        status="uploaded",
-        source="manual_upload",
-        uploaded_by=uploaded_by,
-    )
-    session.add(parse_job)
-    session.commit()
-    session.refresh(parse_job)
-    return parse_job
-
-
 @router.get("/", response_model=list[CandidateRead], summary="List candidates", description="Return all candidates.")
 def list_candidates(session: Session = Depends(get_session)):
     return crud.get_all(session, Candidate)
@@ -319,128 +241,6 @@ def backfill_hidden_potentials(
     session: Session = Depends(get_session),
 ):
     return backfill_candidate_hidden_potentials(session, candidate_id=candidate_id)
-
-
-@router.get(
-    "/parse-jobs",
-    response_model=list[CandidateCVQueueJobRead],
-    summary="List parse jobs",
-    description="Return stored parse jobs, optionally filtered by vacancy.",
-)
-def list_parse_jobs(
-    vacancy_id: int | None = Query(default=None),
-    limit: int = Query(default=25, ge=1, le=200),
-    session: Session = Depends(get_session),
-):
-    query = session.query(ParseJob)
-    if vacancy_id is not None:
-        query = query.filter(ParseJob.vacancy_id == vacancy_id)
-
-    jobs = (
-        query.order_by(ParseJob.created_at.desc())
-        .limit(limit)
-        .all()
-    )
-    return [_serialize_parse_job(job) for job in jobs]
-
-
-@router.post(
-    "/queue-parse-cv",
-    response_model=CandidateCVQueueJobRead,
-    status_code=status.HTTP_201_CREATED,
-    summary="Upload CV and create parse job",
-    description="Store one PDF and create a parse_jobs record so n8n can process it asynchronously.",
-)
-async def queue_candidate_cv_parse(
-    file: UploadFile = File(...),
-    vacancy_id: int = Form(...),
-    uploaded_by: str | None = Form(default=None),
-    candidate_email: str = Form(...),
-    location: str | None = Form(default=None),
-    work_authorization: str | None = Form(default=None),
-    notice_period: str | None = Form(default=None),
-    session: Session = Depends(get_session),
-):
-    crud.get_or_404(session, Vacancy, vacancy_id)
-    upload_data = await store_pdf_upload(file)
-    parse_job = _get_or_create_parse_job(
-        session=session,
-        vacancy_id=vacancy_id,
-        upload_data=upload_data,
-        uploaded_by=uploaded_by,
-    )
-    intake_metadata = {
-        "candidate_email": candidate_email,
-        "location": location,
-        "work_authorization": work_authorization,
-        "notice_period": notice_period,
-    }
-    parse_job.parsed_data = {
-        **(parse_job.parsed_data or {}),
-        "intake_metadata": {key: value for key, value in intake_metadata.items() if value},
-    }
-    session.add(parse_job)
-    session.commit()
-    session.refresh(parse_job)
-    return _serialize_parse_job(parse_job)
-
-
-@router.post(
-    "/queue-parse-cv-batch",
-    response_model=CandidateCVQueueBatchResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Upload CVs and create parse jobs",
-    description="Store multiple PDFs and create parse_jobs rows so n8n can process them asynchronously.",
-)
-async def queue_candidate_cv_parse_batch(
-    files: list[UploadFile] = File(...),
-    vacancy_id: int = Form(...),
-    uploaded_by: str | None = Form(default=None),
-    candidate_email: str | None = Form(default=None),
-    location: str | None = Form(default=None),
-    work_authorization: str | None = Form(default=None),
-    notice_period: str | None = Form(default=None),
-    session: Session = Depends(get_session),
-):
-    crud.get_or_404(session, Vacancy, vacancy_id)
-    if not files:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one PDF must be uploaded.",
-        )
-
-    jobs: list[CandidateCVQueueJobRead] = []
-    for file in files:
-        try:
-            upload_data = await store_pdf_upload(file)
-        finally:
-            await file.close()
-        parse_job = _get_or_create_parse_job(
-            session=session,
-            vacancy_id=vacancy_id,
-            upload_data=upload_data,
-            uploaded_by=uploaded_by,
-        )
-        intake_metadata = {
-            "candidate_email": candidate_email,
-            "location": location,
-            "work_authorization": work_authorization,
-            "notice_period": notice_period,
-        }
-        parse_job.parsed_data = {
-            **(parse_job.parsed_data or {}),
-            "intake_metadata": {key: value for key, value in intake_metadata.items() if value},
-        }
-        session.add(parse_job)
-        session.commit()
-        session.refresh(parse_job)
-        jobs.append(_serialize_parse_job(parse_job))
-
-    return CandidateCVQueueBatchResponse(
-        total_files=len(files),
-        queued_count=len(jobs),
-        jobs=jobs,
-    )
 
 
 @router.post(

@@ -376,27 +376,6 @@ export type CandidateBatchParseResponse = {
   failures: CandidateBatchParseFailure[];
 };
 
-export type CandidateQueueParseJobResponse = {
-  parse_job_id: number;
-  vacancy_id: number;
-  file_name: string;
-  original_file_name?: string | null;
-  file_path: string;
-  status: string;
-  candidate_id?: number | null;
-  application_id?: number | null;
-  error_message?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  parsed_at?: string | null;
-};
-
-export type CandidateQueueParseBatchResponse = {
-  total_files: number;
-  queued_count: number;
-  jobs: CandidateQueueParseJobResponse[];
-};
-
 export type CandidateManualImportItem = {
   filename: string;
   parse_status: string;
