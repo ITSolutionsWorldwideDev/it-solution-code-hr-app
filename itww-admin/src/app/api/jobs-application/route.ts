@@ -66,6 +66,8 @@ async function resolveWebsiteJobForApplication(jobCategoryId: number) {
 
 async function forwardApplicationToTalentGenie(args: {
   vacancyId: number;
+  websiteJobInfoId: number;
+  legacyApplicationId: number;
   name: string;
   email: string;
   phone: string | null;
@@ -79,6 +81,8 @@ async function forwardApplicationToTalentGenie(args: {
 
   formData.append("file", args.resume);
   formData.append("vacancy_id", String(args.vacancyId));
+  formData.append("website_job_info_id", String(args.websiteJobInfoId));
+  formData.append("legacy_application_id", String(args.legacyApplicationId));
   formData.append("candidate_email", args.email);
   formData.append("candidate_name", args.name);
   if (args.phone) {
@@ -307,8 +311,20 @@ export async function POST(req: NextRequest) {
       websiteJobId: websiteJob.job_info_id,
     });
 
+    if (!legacyApplicationId) {
+      return NextResponse.json(
+        {
+          error: "Website application could not be persisted before HR sync.",
+          request_id: requestId,
+        },
+        { status: 500 },
+      );
+    }
+
     const talentGenieResponse = await forwardApplicationToTalentGenie({
       vacancyId: websiteJob.hr_vacancy_id,
+      websiteJobInfoId: websiteJob.job_info_id,
+      legacyApplicationId,
       name,
       email,
       phone,

@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.db import get_session
+from app.models.user import User
 from app.models.vacancy import Vacancy
 from app.schemas.website_publish import WebsitePublishRead, WebsitePublishRequest
+from app.services.auth_service import require_admin_user
 from app.services.crud import get_or_404
 from app.services.website_publish_service import (
     build_website_publish_preview,
@@ -11,9 +14,15 @@ from app.services.website_publish_service import (
     generate_website_pdf_preview,
     publish_vacancy_to_website,
 )
+from app.services.website_application_sync_service import sync_website_job_applications
 
 
 router = APIRouter(prefix="/integrations/website", tags=["Website Integrations"])
+
+
+class WebsiteApplicationSyncRequest(BaseModel):
+    limit: int = 25
+    legacy_application_ids: list[int] | None = None
 
 
 @router.post(
@@ -77,4 +86,20 @@ def delete_website_vacancy(
         session=session,
         vacancy=vacancy,
         public_base_url=str(request.base_url).rstrip("/"),
+    )
+
+
+@router.post(
+    "/sync-applications",
+    summary="Sync website job applications directly from the website database",
+)
+def sync_website_applications(
+    payload: WebsiteApplicationSyncRequest,
+    _user: User = Depends(require_admin_user),
+    session: Session = Depends(get_session),
+):
+    return sync_website_job_applications(
+        session=session,
+        limit=payload.limit,
+        legacy_application_ids=payload.legacy_application_ids,
     )

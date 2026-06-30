@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.config import settings
 from app.db import get_session
@@ -25,7 +25,7 @@ from app.schemas.application import (
 )
 from app.schemas.workspace import PipelineBoardResponseRead
 from app.services import crud
-from app.services.application_service import create_application
+from app.services.application_service import create_application, ingest_public_application
 from app.services.application_workflow_service import (
     advance_stage,
     delete_application_from_pipeline,
@@ -36,12 +36,7 @@ from app.services.application_workflow_service import (
     update_shortlist_bucket,
 )
 from app.services.calendar_availability_service import get_public_schedule_context, list_public_interview_slots
-from app.services.cv_pipeline_service import (
-    create_parse_job_for_application,
-    process_candidate_file,
-    store_resume_upload,
-    upsert_placeholder_candidate,
-)
+from app.services.cv_pipeline_service import store_resume_upload
 from app.services.hr_invite_service import dispatch_application_email, dispatch_hr_invite
 from app.services.workspace_service import get_pipeline_board_payload
 
@@ -144,23 +139,13 @@ async def submit_public_application(
     work_authorization: str | None = Form(default=None),
     notice_period: str | None = Form(default=None),
     source_label: str | None = Form(default=None),
+    legacy_application_id: int | None = Form(default=None),
+    website_job_info_id: int | None = Form(default=None),
     session: Session = Depends(get_session),
 ):
     vacancy = crud.get_or_404(session, Vacancy, vacancy_id)
     stored_resume = await store_resume_upload(file)
     submitted_email = candidate_email.strip()
-    intake_metadata = {
-        "candidate_name": candidate_name,
-        "candidate_phone": candidate_phone,
-        "address": address,
-        "how_did_you_hear": how_did_you_hear,
-        "cover_letter": cover_letter,
-        "candidate_email": submitted_email,
-        "location": location,
-        "work_authorization": work_authorization,
-        "notice_period": notice_period,
-        "source_label": source_label or "public_apply_page",
-    }
     print(
         "[public-submit] received application",
         {
@@ -168,79 +153,30 @@ async def submit_public_application(
             "candidate_email": submitted_email,
             "candidate_name": candidate_name,
             "candidate_phone": candidate_phone,
-            "source_label": intake_metadata["source_label"],
+            "source_label": source_label or "public_apply_page",
+            "legacy_application_id": legacy_application_id,
+            "website_job_info_id": website_job_info_id,
             "filename": stored_resume.original_filename,
         },
     )
-
-    candidate = upsert_placeholder_candidate(
-        session,
-        email=submitted_email,
-        original_filename=stored_resume.original_filename,
-        source="job_application",
-        source_reference_id=vacancy.id,
-        intake_metadata=intake_metadata,
-    )
-    existing_application = session.exec(
-        select(Application).where(
-            Application.candidate_id == candidate.id,
-            Application.vacancy_id == vacancy.id,
-        )
-    ).first()
-    if existing_application is not None:
-        existing_application.parsed_data = {
-            **(existing_application.parsed_data or {}),
-            "parse_status": "pending",
-            "match_status": "pending",
-            "intake_metadata": intake_metadata,
-        }
-        session.add(existing_application)
-        session.commit()
-        session.refresh(existing_application)
-        application = existing_application
-    else:
-        application = create_application(
-            session,
-            ApplicationCreate(
-                candidate_id=candidate.id,
-                vacancy_id=vacancy.id,
-                parsed_data={"parse_status": "pending", "match_status": "pending"},
-            ),
-        )
-    parse_job = create_parse_job_for_application(
+    application, result = ingest_public_application(
         session=session,
-        application=application,
+        vacancy=vacancy,
         stored_resume=stored_resume,
-        uploaded_by="public_apply_page",
-    )
-    result = process_candidate_file(
-        session=session,
-        stored_resume=stored_resume,
-        source="job_application",
-        source_reference_id=application.id,
-        candidate_id=candidate.id,
-        application_id=application.id,
-        vacancy_id=vacancy.id,
-        submitted_email=submitted_email,
-        intake_metadata=intake_metadata,
-        parse_job=parse_job,
+        candidate_email=submitted_email,
+        candidate_name=candidate_name,
+        candidate_phone=candidate_phone,
+        address=address,
+        how_did_you_hear=how_did_you_hear,
+        cover_letter=cover_letter,
+        location=location,
+        work_authorization=work_authorization,
+        notice_period=notice_period,
+        source_label=source_label or "public_apply_page",
+        legacy_application_id=legacy_application_id,
+        website_job_info_id=website_job_info_id,
     )
     candidate_record = result.candidate
-    candidate_changed = False
-    if candidate_name and (
-        not candidate_record.name
-        or candidate_record.name == "Pending Candidate"
-        or candidate_record.name == "Unknown Candidate"
-    ):
-        candidate_record.name = candidate_name.strip()
-        candidate_changed = True
-    if candidate_phone and not candidate_record.phone:
-        candidate_record.phone = candidate_phone.strip()
-        candidate_changed = True
-    if candidate_changed:
-        session.add(candidate_record)
-        session.commit()
-        session.refresh(candidate_record)
 
     print(
         "[public-submit] application parsed",
@@ -250,7 +186,7 @@ async def submit_public_application(
             "parse_status": result.parse_status,
             "match_status": result.match_status,
             "vacancy_id": vacancy.id,
-            "source_label": intake_metadata["source_label"],
+            "source_label": source_label or "public_apply_page",
         },
     )
 
