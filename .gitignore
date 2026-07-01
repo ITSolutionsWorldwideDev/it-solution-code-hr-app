@@ -29,3 +29,4 @@ Thumbs.db
 .vercel
 .env*
 itww-admin/env*
+!itww-admin/.env.example

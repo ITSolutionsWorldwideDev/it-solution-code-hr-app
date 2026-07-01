@@ -27,14 +27,16 @@ Other folders exist, but they are secondary:
 
 - `itww-admin/`
   older/secondary website-side admin code
-- `design-sandbox/`
-  UI experiments
 - `storage/`
   local runtime file output
 - `resumes/`
   legacy/local resume files
 
 If you are fixing the live recruitment product, start in `app/` and `frontend/`.
+
+For final project handover notes, see `docs/developer-handover.md`.
+
+For final project handover notes, see `docs/developer-handover.md`.
 
 ## High-Level Product Flow
 
@@ -59,7 +61,6 @@ Important: a vacancy being `open` is not the same as a vacancy being published t
 |- app/                    FastAPI backend
 |- frontend/               Next.js app
 |- itww-admin/             Secondary website/admin code
-|- design-sandbox/         UI sandbox
 |- storage/                Local generated files
 |- resumes/                Local resume samples
 |- requirements.txt        Backend dependencies

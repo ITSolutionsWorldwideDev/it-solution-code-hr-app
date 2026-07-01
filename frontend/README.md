@@ -240,4 +240,3 @@ Once frontend and backend are running:
 
 - Some older dashboard areas still reference mock data in `lib/mock/`
 - Recruitment flows primarily use the real backend through `lib/api/client.ts`
-- The `design-sandbox/` folder is a separate UI playground and is not the main application runtime
