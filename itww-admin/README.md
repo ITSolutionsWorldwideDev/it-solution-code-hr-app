@@ -27,4 +27,5 @@ UPLOADTHING_TOKEN=""
 
 - This app is separate from the main recruitment runtime in `app/` plus `frontend/`.
 - Prisma schema lives in `itww-admin/prisma/schema.prisma`.
+- The Prisma/database account currently used for this app is managed under `itww.hr@gmail.com`.
 - Website-side static media and uploaded files are intentionally tracked under `public/`.

@@ -359,6 +359,7 @@ What stands out from the code:
 - it has its own JWT logic in `itww-admin/src/lib/auth.ts`
 - its auth route is separate from the main app auth
 - it uses Prisma schema plus direct SQL routes
+- the Prisma/database account currently used for this app is managed under `itww.hr@gmail.com`
 
 It appears to be a secondary website/admin surface around website jobs, applications, media, and blogs.
 
