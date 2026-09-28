@@ -179,8 +179,12 @@ function writeCandidateDatabaseCache(payload: CandidateDatabaseResponseApi) {
   if (typeof window === "undefined") {
     return;
   }
-
-  window.sessionStorage.setItem(CANDIDATE_DATABASE_CACHE_KEY, JSON.stringify(payload));
+  try {
+    window.sessionStorage.setItem(CANDIDATE_DATABASE_CACHE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    // SessionStorage quota exceeded when candidate list is large - safely ignore
+    console.warn("Candidate database exceeded storage quota, skipped cache:", error);
+  }
 }
 
 function clearCandidateDatabaseCache() {
