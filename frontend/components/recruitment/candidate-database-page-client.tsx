@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Expand, Filter, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Expand, Filter, Trash2, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
 import { CandidateUploadPanel } from "@/components/recruitment/candidate-upload-panel";
@@ -698,6 +698,30 @@ export function CandidateDatabasePageClient() {
   const [dateFilter, setDateFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
+  const [isDeletingCandidate, setIsDeletingCandidate] = useState(false);
+
+  const handleDeleteCandidate = async (candidateId: number) => {
+    if (!window.confirm("Are you sure you want to delete this candidate and their CV data from the database?")) {
+      return;
+    }
+
+    setIsDeletingCandidate(true);
+    try {
+      await apiRequest({
+        path: `/candidates/${candidateId}`,
+        method: "DELETE",
+      });
+      setDatabaseRecords((current) => current.filter((candidate) => candidate.id !== candidateId));
+      if (selectedCandidateId === candidateId) {
+        setSelectedCandidateId(null);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to delete candidate.");
+    } finally {
+      setIsDeletingCandidate(false);
+    }
+  };
+
 
   const applyDatabasePayload = (payload: CandidateDatabaseResponseApi) => {
     setDatabaseRecords(payload.records.map(mapDatabaseRecord));
@@ -1094,6 +1118,19 @@ export function CandidateDatabasePageClient() {
                       View Profile
                     </span>
                     <Expand className="h-4 w-4 text-[#a9e9ff]" />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDeleteCandidate(candidate.id);
+                      }}
+                      disabled={isDeletingCandidate}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-300 transition hover:border-red-500/50 hover:bg-red-500/25 hover:text-white disabled:opacity-30"
+                      title="Delete candidate and CV"
+                      aria-label="Delete candidate"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                     <span
                       className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${getStagePillTone(
                         candidate.stage
@@ -1190,14 +1227,26 @@ export function CandidateDatabasePageClient() {
                   {selectedCandidate.email}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedCandidateId(null)}
-                className="rounded-lg border border-white/10 p-3 text-[#dae3ee] transition hover:border-[#a9e9ff]/40 hover:text-[#a9e9ff]"
-                aria-label="Close parsed profile"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteCandidate(selectedCandidate.id)}
+                  disabled={isDeletingCandidate}
+                  className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-sm font-semibold text-red-300 transition hover:border-red-500/60 hover:bg-red-500/20 disabled:opacity-50"
+                  title="Delete candidate and CV from database"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>{isDeletingCandidate ? "Deleting..." : "Delete Candidate"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCandidateId(null)}
+                  className="rounded-lg border border-white/10 p-2.5 text-[#dae3ee] transition hover:border-[#a9e9ff]/40 hover:text-[#a9e9ff]"
+                  aria-label="Close parsed profile"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="grid flex-1 gap-0 overflow-hidden lg:grid-cols-[420px_minmax(0,1fr)]">

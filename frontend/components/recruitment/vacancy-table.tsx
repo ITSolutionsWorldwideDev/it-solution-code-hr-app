@@ -1,5 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import { ArrowUpRight, Eye } from "lucide-react";
+import { ArrowUpRight, Eye, Trash2 } from "lucide-react";
 
 import { StatusPill } from "@/components/ui/status-pill";
 import type { VacancyRecord } from "@/lib/recruitment-types";
@@ -9,6 +11,7 @@ type VacancyTableProps = {
   selectedIds?: string[];
   onToggleSelect?: (vacancyId: string, checked: boolean) => void;
   onToggleAll?: (checked: boolean) => void;
+  onDeleteVacancy?: (vacancyId: string) => void;
 };
 
 const toneMap = {
@@ -17,12 +20,18 @@ const toneMap = {
   closed: "slate",
 } as const;
 
-export function VacancyTable({ items, selectedIds = [], onToggleSelect, onToggleAll }: VacancyTableProps) {
+export function VacancyTable({
+  items,
+  selectedIds = [],
+  onToggleSelect,
+  onToggleAll,
+  onDeleteVacancy,
+}: VacancyTableProps) {
   const allSelected = items.length > 0 && items.every((item) => selectedIds.includes(item.id));
 
   return (
     <div className="overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03)_0%,rgba(255,255,255,0.015)_100%)] shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-      <div className="grid grid-cols-[0.18fr_1.35fr_0.9fr_0.6fr_0.4fr] gap-4 border-b border-white/8 px-6 py-4 text-sm font-medium text-[#eef5fb]">
+      <div className="grid grid-cols-[0.18fr_1.35fr_0.9fr_0.6fr_0.5fr] gap-4 border-b border-white/8 px-6 py-4 text-sm font-medium text-[#eef5fb]">
         <label className="flex items-center justify-center">
           <input
             type="checkbox"
@@ -34,13 +43,13 @@ export function VacancyTable({ items, selectedIds = [], onToggleSelect, onToggle
         <span>Title</span>
         <span>Department</span>
         <span>Status</span>
-        <span>View</span>
+        <span>Actions</span>
       </div>
 
       {items.map((item) => (
         <div
           key={item.id}
-          className="grid grid-cols-[0.18fr_1.35fr_0.9fr_0.6fr_0.4fr] gap-4 border-b border-white/6 px-6 py-5 last:border-b-0"
+          className="grid grid-cols-[0.18fr_1.35fr_0.9fr_0.6fr_0.5fr] items-center gap-4 border-b border-white/6 px-6 py-5 last:border-b-0"
         >
           <label className="flex items-start justify-center pt-1">
             <input
@@ -60,16 +69,27 @@ export function VacancyTable({ items, selectedIds = [], onToggleSelect, onToggle
           <div>
             <StatusPill status={item.status} tone={toneMap[item.status]} />
           </div>
-          <div>
+          <div className="flex items-center gap-2">
             <Link
               href={`/vacancies/${item.id}`}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-[#f4f8fb] transition hover:border-[#7eb9df]/30 hover:bg-[#466d8a]/18 hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-[#f4f8fb] transition hover:border-[#7eb9df]/30 hover:bg-[#466d8a]/18 hover:text-white"
               aria-label={`View vacancy ${item.title}`}
             >
-              <Eye className="h-4 w-4 text-[#c9e2f2]" />
+              <Eye className="h-3.5 w-3.5 text-[#c9e2f2]" />
               <span>View</span>
-              <ArrowUpRight className="h-4 w-4 text-[#c9d8e3]" />
+              <ArrowUpRight className="h-3.5 w-3.5 text-[#c9d8e3]" />
             </Link>
+            {onDeleteVacancy ? (
+              <button
+                type="button"
+                onClick={() => onDeleteVacancy(item.id)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-red-500/20 bg-red-500/10 text-red-300 transition hover:border-red-500/50 hover:bg-red-500/25 hover:text-white"
+                title={`Delete ${item.title}`}
+                aria-label={`Delete vacancy ${item.title}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
         </div>
       ))}

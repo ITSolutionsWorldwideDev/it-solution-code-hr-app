@@ -762,3 +762,43 @@ def _merge_candidate_records(
     session.commit()
     session.refresh(target_candidate)
     return target_candidate
+
+
+def delete_candidate_with_dependencies(session: Session, candidate_id: int) -> None:
+    from app.services.application_workflow_service import delete_application_from_pipeline
+
+    candidate = get_or_404(session, Candidate, candidate_id)
+
+    application_ids = list(
+        session.exec(
+            select(Application.id).where(Application.candidate_id == candidate_id)
+        ).all()
+    )
+    for application_id in application_ids:
+        delete_application_from_pipeline(session, application_id)
+
+    matches = list(session.exec(select(CandidateMatch).where(CandidateMatch.candidate_id == candidate_id)).all())
+    for match in matches:
+        session.delete(match)
+
+    potential_matches = list(session.exec(select(PotentialMatch).where(PotentialMatch.candidate_id == candidate_id)).all())
+    for match in potential_matches:
+        session.delete(match)
+
+    role_suggestions = list(session.exec(select(CandidateRoleSuggestion).where(CandidateRoleSuggestion.candidate_id == candidate_id)).all())
+    for suggestion in role_suggestions:
+        session.delete(suggestion)
+
+    employees = list(session.exec(select(Employee).where(Employee.candidate_id == candidate_id)).all())
+    for emp in employees:
+        emp.candidate_id = None
+        session.add(emp)
+
+    parse_jobs = list(session.exec(select(ParseJob).where(ParseJob.candidate_id == candidate_id)).all())
+    for pj in parse_jobs:
+        pj.candidate_id = None
+        session.add(pj)
+
+    session.delete(candidate)
+    session.commit()
+

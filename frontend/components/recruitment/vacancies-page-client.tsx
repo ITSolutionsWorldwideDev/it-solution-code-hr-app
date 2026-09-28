@@ -119,6 +119,30 @@ export function VacanciesPageClient() {
     window.localStorage.removeItem(HIDDEN_VACANCY_IDS_KEY);
   };
 
+    const handleDeleteSingleVacancy = async (vacancyId: string) => {
+    if (!window.confirm("Are you sure you want to delete this vacancy and all its pipeline data from the database?")) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      await apiRequest({
+        path: `/vacancies/${vacancyId}`,
+        method: "DELETE",
+      });
+      setVacancies((current) => current.filter((vacancy) => String(vacancy.id) !== vacancyId));
+      setSelectedVacancyIds((current) => current.filter((id) => id !== vacancyId));
+      setSuccessMessage("Vacancy was successfully deleted from the database.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to delete vacancy.");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const handleDeleteSelectedVacancies = async () => {
     if (selectedVacancyIds.length === 0) {
       return;
