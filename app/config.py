@@ -16,7 +16,8 @@ DEFAULT_FRONTEND_ORIGINS = (
     "http://127.0.0.1:3001,"
     "https://frontend-hr-app-six.vercel.app,"
     "https://frontend-hr-app-git-main-manish-079s-projects.vercel.app,"
-    "https://it-solution-code-hr-app.vercel.app"
+    "https://it-solution-code-hr-app.vercel.app,"
+    "https://talentgenie.vercel.app"
 )
 
 
@@ -169,7 +170,7 @@ class Settings(BaseModel):
     ]
     cors_origin_regex: str | None = os.getenv(
         "CORS_ORIGIN_REGEX",
-        r"^https?://((localhost|127\.0\.0\.1)(:\d+)?|(frontend-hr-app.*|it-solution-code-hr-app.*)\.vercel\.app)$",
+        r"^https?://((localhost|127\.0\.0\.1)(:\d+)?|(frontend-hr-app.*|it-solution-code-hr-app.*|talentgenie.*)\.vercel\.app)$",
     )
 
 

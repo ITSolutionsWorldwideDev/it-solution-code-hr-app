@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -173,8 +173,17 @@ def update_vacancy(
 
 @router.delete("/{vacancy_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete vacancy", description="Delete a vacancy by ID.")
 def delete_vacancy(vacancy_id: int, session: Session = Depends(get_session)):
-    delete_vacancy_with_dependencies(session, vacancy_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    try:
+        delete_vacancy_with_dependencies(session, vacancy_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete vacancy: {str(exc)}",
+        ) from exc
 
 
 @router.post(

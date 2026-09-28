@@ -806,6 +806,16 @@ def delete_application_from_pipeline(session: Session, application_id: int) -> N
     for interview in interviews:
         session.delete(interview)
 
+    from app.models.parse_job import ParseJob
+    parse_jobs = list(
+        session.exec(
+            select(ParseJob).where(ParseJob.application_id == application_id)
+        ).all()
+    )
+    for pj in parse_jobs:
+        pj.application_id = None
+        session.add(pj)
+
     session.delete(application)
     session.commit()
 
