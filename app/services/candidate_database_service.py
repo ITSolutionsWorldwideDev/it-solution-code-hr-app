@@ -358,8 +358,7 @@ def get_candidate_database_payload(session: Session) -> CandidateDatabaseRespons
     records.sort(
         key=lambda record: (
             -_sort_time_value(record["raw_added_at"]),
-            -(record["experience_years"] if record["experience_years"] is not None else -1),
-            record["name"],
+            -record["id"],
         ),
     )
 

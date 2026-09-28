@@ -593,15 +593,11 @@ function buildDatabaseRecords(
     .sort((left, right) => {
       const rightTime = parseApiDate(right.rawAddedAt)?.getTime() ?? 0;
       const leftTime = parseApiDate(left.rawAddedAt)?.getTime() ?? 0;
-      if (rightTime !== leftTime) {
+      if (rightTime !== leftTime && rightTime > 0 && leftTime > 0) {
         return rightTime - leftTime;
       }
-
-      const stageDiff = (right.experienceYears ?? -1) - (left.experienceYears ?? -1);
-      if (stageDiff !== 0) {
-        return stageDiff;
-      }
-      return left.name.localeCompare(right.name);
+      // Newest candidate ID first
+      return right.id - left.id;
     });
 
   const dedupedByIdentity = new Map<string, CandidateDatabaseRecord>();
@@ -636,7 +632,16 @@ function buildDatabaseRecords(
     }
   }
 
-  return [...dedupedByCandidate.values()].filter((record) => !record.isPlaceholder);
+  return [...dedupedByCandidate.values()]
+    .filter((record) => !record.isPlaceholder)
+    .sort((left, right) => {
+      const rightTime = parseApiDate(right.rawAddedAt)?.getTime() ?? 0;
+      const leftTime = parseApiDate(left.rawAddedAt)?.getTime() ?? 0;
+      if (rightTime !== leftTime && rightTime > 0 && leftTime > 0) {
+        return rightTime - leftTime;
+      }
+      return right.id - left.id;
+    });
 }
 
 function ScoreRing({ value, tone = "primary" }: { value: number | null; tone?: "primary" | "muted" }) {
@@ -792,6 +797,13 @@ export function CandidateDatabasePageClient() {
       }
 
       return true;
+    }).sort((left, right) => {
+      const rightTime = parseApiDate(right.rawAddedAt)?.getTime() ?? 0;
+      const leftTime = parseApiDate(left.rawAddedAt)?.getTime() ?? 0;
+      if (rightTime !== leftTime && rightTime > 0 && leftTime > 0) {
+        return rightTime - leftTime;
+      }
+      return right.id - left.id;
     });
   }, [databaseRecords, dateFilter, experienceBand, matchScoreFilter, readinessFilter, searchQuery, selectedVacancyId]);
 
