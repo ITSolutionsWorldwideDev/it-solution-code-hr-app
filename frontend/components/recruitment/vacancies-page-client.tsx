@@ -53,7 +53,8 @@ function mapVacancyToRecord(
 export function VacanciesPageClient() {
   const [vacancies, setVacancies] = useState<VacancyApiRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>(fallbackDepartments);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [hiddenVacancyIds, setHiddenVacancyIds] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -75,23 +76,23 @@ export function VacanciesPageClient() {
     }
   }, []);
 
+  const loadData = async () => {
+    try {
+      const [vacancyResponse, departmentResponse] = await Promise.all([
+        apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" }),
+        apiRequest<DepartmentOption[]>({ path: "/departments/" }).catch(() => fallbackDepartments),
+      ]);
+
+      setVacancies(vacancyResponse);
+      setDepartments(departmentResponse.length > 0 ? departmentResponse : fallbackDepartments);
+      setLoadError(null);
+    } catch (error) {
+      setVacancies([]);
+      setLoadError(error instanceof Error ? error.message : "Failed to load vacancies.");
+    }
+  };
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [vacancyResponse, departmentResponse] = await Promise.all([
-          apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" }),
-          apiRequest<DepartmentOption[]>({ path: "/departments/" }).catch(() => fallbackDepartments),
-        ]);
-
-        setVacancies(vacancyResponse);
-        setDepartments(departmentResponse.length > 0 ? departmentResponse : fallbackDepartments);
-        setErrorMessage(null);
-      } catch (error) {
-        setVacancies([]);
-        setErrorMessage(error instanceof Error ? error.message : "Failed to load vacancies.");
-      }
-    };
-
     void loadData();
   }, []);
 
@@ -119,13 +120,13 @@ export function VacanciesPageClient() {
     window.localStorage.removeItem(HIDDEN_VACANCY_IDS_KEY);
   };
 
-    const handleDeleteSingleVacancy = async (vacancyId: string) => {
+  const handleDeleteSingleVacancy = async (vacancyId: string) => {
     if (!window.confirm("Are you sure you want to delete this vacancy and all its pipeline data from the database?")) {
       return;
     }
 
     setDeleteLoading(true);
-    setErrorMessage(null);
+    setActionError(null);
     setSuccessMessage(null);
 
     try {
@@ -137,7 +138,7 @@ export function VacanciesPageClient() {
       setSelectedVacancyIds((current) => current.filter((id) => id !== vacancyId));
       setSuccessMessage("Vacancy was successfully deleted from the database.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete vacancy.");
+      setActionError(error instanceof Error ? error.message : "Failed to delete vacancy.");
     } finally {
       setDeleteLoading(false);
     }
@@ -149,7 +150,7 @@ export function VacanciesPageClient() {
     }
 
     setDeleteLoading(true);
-    setErrorMessage(null);
+    setActionError(null);
     setSuccessMessage(null);
 
     try {
@@ -171,7 +172,7 @@ export function VacanciesPageClient() {
         `${selectedVacancyIds.length} ${selectedVacancyIds.length === 1 ? "vacancy was" : "vacancies were"} deleted from the database.`,
       );
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete vacancies.");
+      setActionError(error instanceof Error ? error.message : "Failed to delete vacancies.");
     } finally {
       setDeleteLoading(false);
     }
@@ -193,16 +194,31 @@ export function VacanciesPageClient() {
     setSelectedVacancyIds((current) => [...new Set([...current, ...visibleItems.map((item) => item.id)])]);
   };
 
-  if (errorMessage) {
+  if (loadError) {
     return (
-      <div className="rounded-[24px] border border-[#b85b68]/35 bg-[rgba(184,91,104,0.12)] px-5 py-4 text-sm font-medium text-[#f0b6bf]">
-        {errorMessage}
+      <div className="flex items-center justify-between gap-4 rounded-[24px] border border-[#b85b68]/35 bg-[rgba(184,91,104,0.12)] px-5 py-4 text-sm font-medium text-[#f0b6bf]">
+        <span>{loadError}</span>
+        <Button type="button" variant="secondary" onClick={() => void loadData()}>
+          Retry
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      {actionError ? (
+        <div className="flex items-center justify-between gap-4 rounded-[24px] border border-[#b85b68]/35 bg-[rgba(184,91,104,0.12)] px-5 py-4 text-sm font-medium text-[#f0b6bf]">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            className="text-xs font-semibold text-[#f0b6bf] underline hover:text-white"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       <div className="flex flex-wrap justify-end gap-3">
         <Button
           type="button"
@@ -293,6 +309,7 @@ export function VacanciesPageClient() {
           selectedIds={selectedVacancyIds}
           onToggleSelect={handleToggleVacancySelect}
           onToggleAll={handleToggleAllVisible}
+          onDeleteVacancy={handleDeleteSingleVacancy}
         />
       )}
 
