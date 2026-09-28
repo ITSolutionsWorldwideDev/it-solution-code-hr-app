@@ -664,7 +664,7 @@ def update_candidate(candidate_id: int, payload: CandidateUpdate, session: Sessi
 
 
 @router.delete("/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete candidate", description="Delete a candidate by ID.")
-def delete_candidate(candidate_id: int, session: Session = Depends(get_session)):\r
-    from app.services.candidate_service import delete_candidate_with_dependencies\r
-    delete_candidate_with_dependencies(session, candidate_id)\r
-    return Response(status_code=status.HTTP_204_NO_CONTENT)\r
+def delete_candidate(candidate_id: int, session: Session = Depends(get_session)):
+    from app.services.candidate_service import delete_candidate_with_dependencies
+    delete_candidate_with_dependencies(session, candidate_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
