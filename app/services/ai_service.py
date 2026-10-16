@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import re
 from io import BytesIO
 from pathlib import Path
@@ -234,6 +236,7 @@ def calculate_match_score(parsed_candidate: dict, vacancy: Vacancy | None = None
 def build_parsed_data(pdf_content: dict, parsed_candidate: dict, vacancy: Vacancy | None = None) -> dict:
     return sanitize_payload({
         "source": "pdf_cv_upload",
+        "parsed_at": datetime.utcnow().isoformat(),
         "resume_path": pdf_content.get("resume_path"),
         "filename": pdf_content.get("filename"),
         "file_checksum": pdf_content.get("file_checksum"),

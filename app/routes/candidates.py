@@ -493,6 +493,7 @@ async def parse_candidate_cv(
     file: UploadFile = File(...),
     vacancy_id: int | None = Form(default=None),
     candidate_id: int | None = Form(default=None),
+    candidate_email: str | None = Form(default=None),
     session: Session = Depends(get_session),
 ):
     pdf_content = await extract_pdf_content_from_upload(file)
@@ -509,6 +510,7 @@ async def parse_candidate_cv(
             session=session,
             pdf_content=pdf_content,
             vacancy_id=vacancy_id,
+            submitted_email=candidate_email,
         )
 
     return CandidateCVParseResponse(

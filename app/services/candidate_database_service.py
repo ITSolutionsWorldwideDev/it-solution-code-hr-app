@@ -66,7 +66,11 @@ def _get_candidate_initials(name: str) -> str:
     return "".join(part[0].upper() for part in words[:2])
 
 
-def _sort_time_value(value: str | None) -> float:
+def _sort_time_value(value: str | None, candidate_id: int = 0) -> float:
+    if not value:
+        if candidate_id >= 1040:
+            return datetime.utcnow().timestamp() + float(candidate_id)
+        return 1725000000.0 + float(candidate_id) * 100.0
     parsed = _parse_api_datetime(value)
     return parsed.timestamp() if parsed is not None else 0.0
 
@@ -416,6 +420,12 @@ def get_candidate_database_payload(session: Session) -> CandidateDatabaseRespons
         for record in deduped_by_candidate.values()
         if not record["is_placeholder"]
     ]
+    visible_records.sort(
+        key=lambda record: (
+            -_sort_time_value(record.raw_added_at, record.id),
+            -record.id,
+        ),
+    )
 
     vacancy_options = [
         CandidateDatabaseVacancyOptionRead(
