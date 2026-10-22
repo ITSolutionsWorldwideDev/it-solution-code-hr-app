@@ -1,10 +1,11 @@
-from typing import Any
+﻿from typing import Any
 
 from app.schemas.common import BaseSchema
 
 
 class WebsitePublishRequest(BaseSchema):
     vacancy_id: int
+    target_portal: str | None = "both"  # "itww", "staff_outsourcing", "both"
 
 
 class WebsitePublishRead(BaseSchema):
@@ -17,4 +18,5 @@ class WebsitePublishRead(BaseSchema):
     pdf_generated: bool = False
     pdf_filename: str | None = None
     pdf_url: str | None = None
+    target_portal: str | None = "both"
     mapped_fields: dict[str, Any]

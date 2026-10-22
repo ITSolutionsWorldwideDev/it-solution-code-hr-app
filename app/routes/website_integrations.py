@@ -27,7 +27,7 @@ def preview_website_publish(
     session: Session = Depends(get_session),
 ):
     vacancy = get_or_404(session, Vacancy, payload.vacancy_id)
-    return build_website_publish_preview(vacancy, public_base_url=str(request.base_url).rstrip("/"))
+    return build_website_publish_preview(vacancy, public_base_url=str(request.base_url).rstrip("/"), target_portal=payload.target_portal or "both")
 
 
 @router.post(
@@ -59,6 +59,7 @@ def publish_website_vacancy(
         session=session,
         vacancy=vacancy,
         public_base_url=str(request.base_url).rstrip("/"),
+        target_portal=payload.target_portal or "both",
     )
 
 

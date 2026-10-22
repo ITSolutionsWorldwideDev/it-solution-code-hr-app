@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 
@@ -22,3 +22,7 @@ class WebsiteJobRead(BaseModel):
     location: str | None = None
     employment_type: str | None = None
     pdf_url: str | None = None
+    target_portal: str | None = "both"
+    role_overview: str | None = None
+    responsibilities: list[str] = []
+    requirements: list[str] = []

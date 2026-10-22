@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Copy, Eye, FileText, Globe, Send, Trash2 } from "lucide-react";
+import { Copy, Eye, FileText, Globe, Send, Trash2, Building, Building2, Layers } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { apiRequest } from "@/lib/api/client";
@@ -13,6 +13,7 @@ type WebsitePublishCardProps = {
 };
 
 type ActionState = "preview" | "generate-pdf" | "publish" | "delete" | null;
+type TargetPortal = "both" | "staff_outsourcing" | "itww";
 
 function formatMappedValue(value: unknown) {
   if (value === null || value === undefined || value === "") {
@@ -37,6 +38,7 @@ function buildDefaultResult(vacancy: VacancyRecord): WebsitePublishApiRecord {
     pdf_generated: false,
     pdf_filename: null,
     pdf_url: "",
+    target_portal: "both",
     mapped_fields: {
       title: vacancy.title,
       location: vacancy.location,
@@ -54,6 +56,12 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Initial target portal from vacancy parsed data or default to "both"
+  const initialPortal = ((vacancy?.parsedData?.target_portal as string) || "both").toLowerCase() as TargetPortal;
+  const [targetPortal, setTargetPortal] = useState<TargetPortal>(
+    ["both", "staff_outsourcing", "itww"].includes(initialPortal) ? initialPortal : "both"
+  );
+
   const displayResult = useMemo(() => result ?? buildDefaultResult(vacancy), [result, vacancy]);
 
   const runAction = async (action: Exclude<ActionState, null>, path: string, fallbackMessage: string) => {
@@ -66,6 +74,7 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
         method: "POST",
         body: JSON.stringify({
           vacancy_id: Number(vacancyId),
+          target_portal: targetPortal,
         }),
       });
       setResult(response);
@@ -93,6 +102,12 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
 
   const pdfUrl = String(displayResult.mapped_fields.pdf_url || displayResult.pdf_url || "").trim();
 
+  const portalLabels: Record<TargetPortal, string> = {
+    both: "Both Platforms",
+    staff_outsourcing: "Staff Outsourcing",
+    itww: "ITWW Only",
+  };
+
   return (
     <div className="overflow-hidden rounded-2xl border border-[#3c4948]/40 bg-[#17202b] shadow-[0_16px_30px_rgba(0,0,0,0.14)]">
       <div className="p-7">
@@ -108,7 +123,54 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
           </span>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-2">
+        {/* Portal Destination Selector */}
+        <div className="mt-5 rounded-xl border border-[#3c4948]/50 bg-[#101721] p-3.5">
+          <label className="block text-[10px] font-bold uppercase tracking-[0.16em] text-[#859491] mb-2.5">
+            Publish To (Target Portal)
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setTargetPortal("both")}
+              className={`flex flex-col items-center justify-center gap-1 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
+                targetPortal === "both"
+                  ? "border-[#62f9ee] bg-[#62f9ee]/15 text-[#62f9ee] shadow-sm shadow-[#62f9ee]/10"
+                  : "border-[#3c4948]/40 bg-[#1c2430] text-[#9bb0bf] hover:bg-[#253040] hover:text-[#dae3f2]"
+              }`}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <span>Both</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTargetPortal("staff_outsourcing")}
+              className={`flex flex-col items-center justify-center gap-1 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
+                targetPortal === "staff_outsourcing"
+                  ? "border-[#62f9ee] bg-[#62f9ee]/15 text-[#62f9ee] shadow-sm shadow-[#62f9ee]/10"
+                  : "border-[#3c4948]/40 bg-[#1c2430] text-[#9bb0bf] hover:bg-[#253040] hover:text-[#dae3f2]"
+              }`}
+            >
+              <Building className="h-3.5 w-3.5" />
+              <span>Staff Outsourcing</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTargetPortal("itww")}
+              className={`flex flex-col items-center justify-center gap-1 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
+                targetPortal === "itww"
+                  ? "border-[#62f9ee] bg-[#62f9ee]/15 text-[#62f9ee] shadow-sm shadow-[#62f9ee]/10"
+                  : "border-[#3c4948]/40 bg-[#1c2430] text-[#9bb0bf] hover:bg-[#253040] hover:text-[#dae3f2]"
+              }`}
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              <span>ITWW Only</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() =>
@@ -146,7 +208,7 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
             className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-[#62f9ee] px-4 py-3 text-sm font-bold text-[#00201e] transition hover:bg-[#3cdcd1] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Send className="h-4 w-4" />
-            {loadingAction === "publish" ? "Publishing..." : "Publish to Website"}
+            {loadingAction === "publish" ? "Publishing..." : `Publish to ${portalLabels[targetPortal]}`}
           </button>
 
           <button
@@ -179,6 +241,10 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
             <span className="font-mono text-[#dae3f2]">{displayResult.action}</span>
             <span className="text-[#859491]">Published:</span>
             <span className="font-mono text-[#dae3f2]">{displayResult.published ? "Yes" : "No"}</span>
+            <span className="text-[#859491]">Target Portal:</span>
+            <span className="font-mono text-[#62f9ee] uppercase font-bold">
+              {displayResult.target_portal || targetPortal}
+            </span>
             <span className="text-[#859491]">Job Info ID:</span>
             <span className="font-mono text-[#dae3f2]">{displayResult.job_info_id ?? "Not created yet"}</span>
             <span className="text-[#859491]">PDF Generated:</span>

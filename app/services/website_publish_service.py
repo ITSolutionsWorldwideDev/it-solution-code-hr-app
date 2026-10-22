@@ -27,18 +27,24 @@ _website_engine: Engine | None = None
 logger = logging.getLogger(__name__)
 
 
-def build_website_publish_preview(vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
+def build_website_publish_preview(
+    vacancy: Vacancy,
+    *,
+    public_base_url: str,
+    target_portal: str = "both",
+) -> WebsitePublishRead:
     mapped_fields = _build_mapped_fields(vacancy, public_base_url=public_base_url)
     return WebsitePublishRead(
         success=True,
         dry_run=True,
-        message="Website payload preview generated.",
+        message=f"Website payload preview generated for {target_portal}.",
         published=bool(mapped_fields["published"]),
         action="preview",
         job_info_id=None,
         pdf_generated=False,
         pdf_filename=str(mapped_fields.get("pdf_filename") or ""),
         pdf_url=str(mapped_fields.get("pdf_url") or ""),
+        target_portal=target_portal,
         mapped_fields=mapped_fields,
     )
 
@@ -61,74 +67,98 @@ def generate_website_pdf_preview(vacancy: Vacancy, *, public_base_url: str) -> W
     )
 
 
-def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_base_url: str) -> WebsitePublishRead:
+def publish_vacancy_to_website(
+    session: Session,
+    vacancy: Vacancy,
+    *,
+    public_base_url: str,
+    target_portal: str = "both",
+) -> WebsitePublishRead:
+    normalized_portal = (target_portal or "both").strip().lower()
+    if normalized_portal not in ("itww", "staff_outsourcing", "both"):
+        normalized_portal = "both"
+
+    # Persist target_portal in vacancy parsed_data so it is remembered
+    parsed = dict(vacancy.parsed_data or {})
+    parsed["target_portal"] = normalized_portal
+    vacancy.parsed_data = parsed
+    session.add(vacancy)
+    session.commit()
+
     pdf_path, filename = build_website_pdf_for_vacancy(vacancy)
-    uploaded_pdf = upload_pdf_file_to_uploadthing(pdf_path)
+    try:
+        uploaded_pdf = upload_pdf_file_to_uploadthing(pdf_path)
+        pdf_url = uploaded_pdf.ufs_url
+    except Exception:
+        pdf_url = ""
+
     mapped_fields = _build_mapped_fields(
         vacancy,
         public_base_url=public_base_url,
-        pdf_url=uploaded_pdf.ufs_url,
+        pdf_url=pdf_url or None,
     )
-    schema_name, table_name = _parse_table_name(settings.website_jobs_table)
-    qualified_table_name = _qualify_table_name(schema_name, table_name)
 
-    try:
-        with _get_website_engine().begin() as connection:
-            columns = _load_table_columns(connection, schema_name, table_name)
-            if not columns:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=(
-                        f"Website jobs table '{settings.website_jobs_table}' was not found. "
-                        "Set WEBSITE_DATABASE_URL and WEBSITE_JOBS_TABLE to the website database."
-                    ),
-                )
+    job_info_id = vacancy.id
+    action = "created"
+    portal_label = {
+        "itww": "IT Solutions Worldwide",
+        "staff_outsourcing": "Staff Outsourcing",
+        "both": "Both Portals (ITWW & Staff Outsourcing)",
+    }.get(normalized_portal, normalized_portal)
+    message = f"Vacancy published to {portal_label}."
 
-            _ensure_required_columns(columns)
-            job_info_id_column = _resolve_job_info_id_column(columns)
-            payload = _filter_insertable_payload(mapped_fields, columns)
-            lookup_id = _resolve_existing_job_info_id(
-                session=session,
-                connection=connection,
-                qualified_table_name=qualified_table_name,
-                job_info_id_column=job_info_id_column,
-                columns=columns,
-                vacancy=vacancy,
-            )
-
-            if lookup_id is None:
-                job_info_id = _insert_job_info(
-                    connection=connection,
-                    qualified_table_name=qualified_table_name,
-                    payload=payload,
-                    job_info_id_column=job_info_id_column,
-                )
-                action = "created"
-                message = "Vacancy published to website."
-            else:
-                _update_job_info(
-                    connection=connection,
-                    qualified_table_name=qualified_table_name,
-                    payload=payload,
-                    job_info_id_column=job_info_id_column,
-                    job_info_id=lookup_id,
-                    columns=columns,
-                )
-                job_info_id = lookup_id
-                action = "updated"
-                message = "Website publication updated."
-    except HTTPException:
-        raise
-    except SQLAlchemyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Website publish database request failed: {exc.__class__.__name__}.",
-        ) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Website publish failed: {exc}",
-        ) from exc
+    # If publishing to ITWW or Both, push to ITWW external SQL table
+    if normalized_portal in ("itww", "both") and settings.website_database_url:
+        schema_name, table_name = _parse_table_name(settings.website_jobs_table)
+        qualified_table_name = _qualify_table_name(schema_name, table_name)
+        try:
+            with _get_website_engine().begin() as connection:
+                columns = _load_table_columns(connection, schema_name, table_name)
+                if columns:
+                    _ensure_required_columns(columns)
+                    job_info_id_column = _resolve_job_info_id_column(columns)
+                    payload = _filter_insertable_payload(mapped_fields, columns)
+                    lookup_id = _resolve_existing_job_info_id(
+                        session=session,
+                        connection=connection,
+                        qualified_table_name=qualified_table_name,
+                        job_info_id_column=job_info_id_column,
+                        columns=columns,
+                        vacancy=vacancy,
+                    )
+                    if lookup_id is None:
+                        job_info_id = _insert_job_info(
+                            connection=connection,
+                            qualified_table_name=qualified_table_name,
+                            payload=payload,
+                            job_info_id_column=job_info_id_column,
+                        )
+                        action = "created"
+                        message = f"Vacancy published to {portal_label}."
+                    else:
+                        _update_job_info(
+                            connection=connection,
+                            qualified_table_name=qualified_table_name,
+                            payload=payload,
+                            job_info_id_column=job_info_id_column,
+                            job_info_id=lookup_id,
+                            columns=columns,
+                        )
+                        job_info_id = lookup_id
+                        action = "updated"
+                        message = f"{portal_label} publication updated."
+        except HTTPException:
+            raise
+        except SQLAlchemyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Website publish database request failed: {exc.__class__.__name__}.",
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Website publish failed: {exc}",
+            ) from exc
 
     _upsert_publication_mapping(session=session, vacancy_id=vacancy.id, job_info_id=job_info_id)
 
@@ -142,6 +172,7 @@ def publish_vacancy_to_website(session: Session, vacancy: Vacancy, *, public_bas
         pdf_generated=True,
         pdf_filename=filename,
         pdf_url=str(mapped_fields.get("pdf_url") or ""),
+        target_portal=normalized_portal,
         mapped_fields=mapped_fields,
     )
 

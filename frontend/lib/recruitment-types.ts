@@ -444,6 +444,10 @@ export type PublishedWebsiteJobApiRecord = {
   location?: string | null;
   employment_type?: string | null;
   pdf_url?: string | null;
+  target_portal?: string | null;
+  role_overview?: string | null;
+  responsibilities?: string[];
+  requirements?: string[];
 };
 
 export type JobDescriptionGenerateResponse = {
@@ -498,4 +502,5 @@ export type WebsitePublishApiRecord = {
   pdf_filename?: string | null;
   pdf_url?: string | null;
   mapped_fields: Record<string, unknown>;
+  target_portal?: string | null;
 };
