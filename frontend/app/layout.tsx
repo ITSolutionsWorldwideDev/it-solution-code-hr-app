@@ -1,21 +1,9 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppScaleProvider } from "@/components/providers/app-scale-provider";
 import { RoleProvider } from "@/components/providers/role-provider";
 
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
-
-const jetBrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-jetbrains-mono",
-});
 
 export const metadata: Metadata = {
   title: "Talent Genie",
@@ -29,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${jetBrainsMono.variable}`}>
+      <body className="font-sans antialiased">
         <RoleProvider>
           <AppScaleProvider>{children}</AppScaleProvider>
         </RoleProvider>

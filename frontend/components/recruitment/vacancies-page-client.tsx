@@ -47,6 +47,7 @@ function mapVacancyToRecord(
     description: vacancy.description,
     requirements: vacancy.required_skills,
     summary: vacancy.ai_summary ?? "No AI summary available yet.",
+    parsedData,
   };
 }
 
@@ -130,13 +131,24 @@ export function VacanciesPageClient() {
     setSuccessMessage(null);
 
     try {
+      const target = vacancies.find((v) => String(v.id) === vacancyId);
+      // Direct unpublish from ITWW, ISH, and Staff Outsourcing
+      await apiRequest({
+        path: "/integrations/website/delete",
+        method: "POST",
+        body: JSON.stringify({
+          vacancy_id: Number(vacancyId),
+          title: target?.title || "",
+        }),
+      }).catch((e) => console.warn("Website unpublish warning:", e));
+
       await apiRequest({
         path: `/vacancies/${vacancyId}`,
         method: "DELETE",
       });
       setVacancies((current) => current.filter((vacancy) => String(vacancy.id) !== vacancyId));
       setSelectedVacancyIds((current) => current.filter((id) => id !== vacancyId));
-      setSuccessMessage("Vacancy was successfully deleted from the database.");
+      setSuccessMessage("Vacancy was successfully deleted from the database and career portals.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Failed to delete vacancy.");
     } finally {
@@ -155,12 +167,22 @@ export function VacanciesPageClient() {
 
     try {
       await Promise.all(
-        selectedVacancyIds.map((vacancyId) =>
-          apiRequest({
+        selectedVacancyIds.map(async (vacancyId) => {
+          const target = vacancies.find((v) => String(v.id) === vacancyId);
+          await apiRequest({
+            path: "/integrations/website/delete",
+            method: "POST",
+            body: JSON.stringify({
+              vacancy_id: Number(vacancyId),
+              title: target?.title || "",
+            }),
+          }).catch((e) => console.warn("Website unpublish warning:", e));
+
+          return apiRequest({
             path: `/vacancies/${vacancyId}`,
             method: "DELETE",
-          }),
-        ),
+          });
+        })
       );
       setVacancies((current) => current.filter((vacancy) => !selectedVacancyIds.includes(String(vacancy.id))));
       setHiddenVacancyIds([]);
@@ -169,7 +191,7 @@ export function VacanciesPageClient() {
       setSelectedVacancyIds([]);
       window.localStorage.removeItem(HIDDEN_VACANCY_IDS_KEY);
       setSuccessMessage(
-        `${selectedVacancyIds.length} ${selectedVacancyIds.length === 1 ? "vacancy was" : "vacancies were"} deleted from the database.`,
+        `${selectedVacancyIds.length} ${selectedVacancyIds.length === 1 ? "vacancy was" : "vacancies were"} deleted from database and career portals.`,
       );
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Failed to delete vacancies.");

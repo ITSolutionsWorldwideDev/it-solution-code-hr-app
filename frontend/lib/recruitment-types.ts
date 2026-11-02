@@ -49,6 +49,7 @@ export type VacancyRecord = {
   description: string;
   requirements: string[];
   summary: string;
+  parsedData?: Record<string, unknown>;
 };
 
 export type HiddenPotentialRecord = {
@@ -498,9 +499,12 @@ export type WebsitePublishApiRecord = {
   published: boolean;
   action: "preview" | "created" | "updated" | "deleted" | string;
   job_info_id?: number | null;
+  itww_job_info_id?: number | null;
+  ish_job_info_id?: number | null;
+  dinel_job_info_id?: number | null;
   pdf_generated: boolean;
   pdf_filename?: string | null;
   pdf_url?: string | null;
   mapped_fields: Record<string, unknown>;
-  target_portal?: string | null;
+  target_portal?: "all" | "both" | "itww" | "ish" | "dinel" | string | null;
 };

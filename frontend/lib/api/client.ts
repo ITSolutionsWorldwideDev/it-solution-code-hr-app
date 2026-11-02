@@ -40,7 +40,7 @@ function extractErrorMessage(payload: unknown): string | null {
 export async function apiRequest<T>({ path, ...options }: RequestOptions): Promise<T> {
   const isFormData = options.body instanceof FormData;
   let response: Response;
-  const apiBaseUrl = resolveApiBaseUrl();
+  const apiBaseUrl = path.startsWith("/integrations/website") ? "/api" : resolveApiBaseUrl();
 
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {

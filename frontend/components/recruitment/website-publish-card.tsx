@@ -13,7 +13,7 @@ type WebsitePublishCardProps = {
 };
 
 type ActionState = "preview" | "generate-pdf" | "publish" | "delete" | null;
-type TargetPortal = "both" | "staff_outsourcing" | "itww";
+type TargetPortal = "all" | "itww" | "ish" | "dinel";
 
 function formatMappedValue(value: unknown) {
   if (value === null || value === undefined || value === "") {
@@ -35,17 +35,20 @@ function buildDefaultResult(vacancy: VacancyRecord): WebsitePublishApiRecord {
     published: false,
     action: "idle",
     job_info_id: null,
+    itww_job_info_id: null,
+    ish_job_info_id: null,
+    dinel_job_info_id: null,
     pdf_generated: false,
     pdf_filename: null,
     pdf_url: "",
-    target_portal: "both",
+    target_portal: "all",
     mapped_fields: {
       title: vacancy.title,
       location: vacancy.location,
       type: vacancy.employmentType,
       pdf_url: "",
       published: 0,
-      created_by: 101,
+      created_by: 1,
     },
   };
 }
@@ -56,11 +59,17 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Initial target portal from vacancy parsed data or default to "both"
-  const initialPortal = ((vacancy?.parsedData?.target_portal as string) || "both").toLowerCase() as TargetPortal;
-  const [targetPortal, setTargetPortal] = useState<TargetPortal>(
-    ["both", "staff_outsourcing", "itww"].includes(initialPortal) ? initialPortal : "both"
-  );
+  // Initial target portal from vacancy parsed data or default to "all"
+  const rawPortal = ((vacancy?.parsedData?.target_portal as string) || "all").toLowerCase();
+  const initialPortal: TargetPortal =
+    rawPortal === "itww"
+      ? "itww"
+      : rawPortal === "ish"
+      ? "ish"
+      : rawPortal === "dinel" || rawPortal === "staff_outsourcing"
+      ? "dinel"
+      : "all";
+  const [targetPortal, setTargetPortal] = useState<TargetPortal>(initialPortal);
 
   const displayResult = useMemo(() => result ?? buildDefaultResult(vacancy), [result, vacancy]);
 
@@ -75,6 +84,15 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
         body: JSON.stringify({
           vacancy_id: Number(vacancyId),
           target_portal: targetPortal,
+          portals: targetPortal === "all" ? ["itww", "ish", "dinel"] : [targetPortal],
+          title: vacancy?.title || "Untitled Vacancy",
+          about_role: (vacancy?.parsedData?.about_role as string) || (vacancy?.parsedData?.aboutRole as string) || vacancy?.description || "",
+          responsibilities: vacancy?.parsedData?.responsibilities || [],
+          requirements: vacancy?.parsedData?.requirements || vacancy?.requirements || [],
+          nice_to_have: vacancy?.parsedData?.nice_to_have || vacancy?.parsedData?.offer_information || [],
+          location: vacancy?.location || "Amsterdam, Netherlands",
+          employment_type: (vacancy?.parsedData?.employment_type as string) || "Full-time",
+          work_model: (vacancy?.parsedData?.work_model as string) || "Hybrid",
         }),
       });
       setResult(response);
@@ -103,9 +121,10 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
   const pdfUrl = String(displayResult.mapped_fields.pdf_url || displayResult.pdf_url || "").trim();
 
   const portalLabels: Record<TargetPortal, string> = {
-    both: "Both Platforms",
-    staff_outsourcing: "Staff Outsourcing",
-    itww: "ITWW Only",
+    all: "All 3 Portals (ITWW, ISH, Staff Outsourcing)",
+    itww: "IT Solutions Worldwide (ITWW)",
+    ish: "IT Solutions Hub (ISH)",
+    dinel: "Staff Outsourcing",
   };
 
   return (
@@ -128,37 +147,24 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
           <label className="block text-[10px] font-bold uppercase tracking-[0.16em] text-[#859491] mb-2.5">
             Publish To (Target Portal)
           </label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setTargetPortal("both")}
-              className={`flex flex-col items-center justify-center gap-1 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
-                targetPortal === "both"
+              onClick={() => setTargetPortal("all")}
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
+                targetPortal === "all"
                   ? "border-[#62f9ee] bg-[#62f9ee]/15 text-[#62f9ee] shadow-sm shadow-[#62f9ee]/10"
                   : "border-[#3c4948]/40 bg-[#1c2430] text-[#9bb0bf] hover:bg-[#253040] hover:text-[#dae3f2]"
               }`}
             >
               <Layers className="h-3.5 w-3.5" />
-              <span>Both</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTargetPortal("staff_outsourcing")}
-              className={`flex flex-col items-center justify-center gap-1 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
-                targetPortal === "staff_outsourcing"
-                  ? "border-[#62f9ee] bg-[#62f9ee]/15 text-[#62f9ee] shadow-sm shadow-[#62f9ee]/10"
-                  : "border-[#3c4948]/40 bg-[#1c2430] text-[#9bb0bf] hover:bg-[#253040] hover:text-[#dae3f2]"
-              }`}
-            >
-              <Building className="h-3.5 w-3.5" />
-              <span>Staff Outsourcing</span>
+              <span>All 3 Portals</span>
             </button>
 
             <button
               type="button"
               onClick={() => setTargetPortal("itww")}
-              className={`flex flex-col items-center justify-center gap-1 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
                 targetPortal === "itww"
                   ? "border-[#62f9ee] bg-[#62f9ee]/15 text-[#62f9ee] shadow-sm shadow-[#62f9ee]/10"
                   : "border-[#3c4948]/40 bg-[#1c2430] text-[#9bb0bf] hover:bg-[#253040] hover:text-[#dae3f2]"
@@ -166,6 +172,32 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
             >
               <Building2 className="h-3.5 w-3.5" />
               <span>ITWW Only</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTargetPortal("ish")}
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
+                targetPortal === "ish"
+                  ? "border-[#62f9ee] bg-[#62f9ee]/15 text-[#62f9ee] shadow-sm shadow-[#62f9ee]/10"
+                  : "border-[#3c4948]/40 bg-[#1c2430] text-[#9bb0bf] hover:bg-[#253040] hover:text-[#dae3f2]"
+              }`}
+            >
+              <Building className="h-3.5 w-3.5" />
+              <span>ISH Only</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTargetPortal("dinel")}
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2.5 px-2 text-[11px] font-bold border transition text-center ${
+                targetPortal === "dinel"
+                  ? "border-[#62f9ee] bg-[#62f9ee]/15 text-[#62f9ee] shadow-sm shadow-[#62f9ee]/10"
+                  : "border-[#3c4948]/40 bg-[#1c2430] text-[#9bb0bf] hover:bg-[#253040] hover:text-[#dae3f2]"
+              }`}
+            >
+              <Globe className="h-3.5 w-3.5" />
+              <span>Staff Outsourcing</span>
             </button>
           </div>
         </div>
@@ -245,8 +277,32 @@ export function WebsitePublishCard({ vacancyId, vacancy }: WebsitePublishCardPro
             <span className="font-mono text-[#62f9ee] uppercase font-bold">
               {displayResult.target_portal || targetPortal}
             </span>
-            <span className="text-[#859491]">Job Info ID:</span>
-            <span className="font-mono text-[#dae3f2]">{displayResult.job_info_id ?? "Not created yet"}</span>
+            <span className="text-[#859491]">ITWW Job ID:</span>
+            <span className="font-mono text-[#dae3f2]">
+              {displayResult.itww_job_info_id
+                ? `#${displayResult.itww_job_info_id}`
+                : displayResult.target_portal === "ish" || displayResult.target_portal === "dinel"
+                ? "N/A"
+                : displayResult.job_info_id
+                ? `#${displayResult.job_info_id}`
+                : "Not created yet"}
+            </span>
+            <span className="text-[#859491]">ISH Job ID:</span>
+            <span className="font-mono text-[#dae3f2]">
+              {displayResult.ish_job_info_id
+                ? `#${displayResult.ish_job_info_id}`
+                : displayResult.target_portal === "itww" || displayResult.target_portal === "dinel"
+                ? "N/A"
+                : "Not created yet"}
+            </span>
+            <span className="text-[#859491]">Staff Outsourcing ID:</span>
+            <span className="font-mono text-[#dae3f2]">
+              {displayResult.dinel_job_info_id
+                ? `#${displayResult.dinel_job_info_id}`
+                : displayResult.target_portal === "itww" || displayResult.target_portal === "ish"
+                ? "N/A"
+                : "Not created yet"}
+            </span>
             <span className="text-[#859491]">PDF Generated:</span>
             <span className="font-mono text-[#dae3f2]">{displayResult.pdf_generated ? "Yes" : "No"}</span>
           </div>

@@ -15,11 +15,17 @@ from app.models.department import Department
 
 database_url = settings.database_url
 engine = create_engine(database_url, echo=False)
-website_engine = (
-    create_engine(settings.website_database_url, echo=False)
-    if settings.website_database_url
+itww_engine = (
+    create_engine(settings.itww_database_url, echo=False)
+    if settings.itww_database_url
     else None
 )
+ish_engine = (
+    create_engine(settings.ish_database_url, echo=False)
+    if settings.ish_database_url
+    else None
+)
+website_engine = itww_engine
 DEFAULT_DEPARTMENTS = (
     ("Human Resources (HR)", "Recruitment, people operations, talent management, and employee support."),
     ("Information Technology (IT) & Software Development", "Software engineering, systems administration, ERP, BI, SAP, web, and platform delivery."),
@@ -119,6 +125,22 @@ def ensure_default_departments(session: Session) -> None:
 
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE website_publication
+                    ADD COLUMN IF NOT EXISTS itww_job_info_id INTEGER,
+                    ADD COLUMN IF NOT EXISTS ish_job_info_id INTEGER,
+                    ADD COLUMN IF NOT EXISTS dinel_job_info_id INTEGER,
+                    ADD COLUMN IF NOT EXISTS target_portal VARCHAR(50) DEFAULT 'all'
+                    """
+                )
+            )
+    except Exception:
+        pass
+
     ensure_website_jobs_table()
 
     with Session(engine) as session:

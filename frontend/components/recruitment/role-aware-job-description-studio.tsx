@@ -10,7 +10,7 @@ import { JobDescriptionStudio } from "@/components/recruitment/job-description-s
 export function RoleAwareJobDescriptionStudio() {
   const { role } = useRole();
 
-  if (role === "HR") {
+  if (role === "HR" || role === "Admin") {
     return <JobDescriptionStudio />;
   }
 

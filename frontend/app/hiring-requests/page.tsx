@@ -10,10 +10,10 @@ export default function HiringRequestsPage() {
             Recruitment Command Center
           </div>
           <h1 className="mt-5 text-[2.7rem] font-semibold tracking-[-0.04em] text-white">
-            Job Description
+            Job Description & Vacancy Studio
           </h1>
           <p className="mt-3 max-w-3xl text-[1.05rem] leading-8 text-[#95a8b8]">
-            Use AI to turn a short role brief into a polished job description draft and start the HR intake flow.
+            Post vacancies using AI-generated drafts or open manual entry with all fields (Title, Department, Location, Type, PDF URL, and Publishing).
           </p>
         </div>
 

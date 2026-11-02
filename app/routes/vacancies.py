@@ -146,8 +146,15 @@ def add_talent_pool_candidate_to_shortlist_route(
 
 
 @router.post("/", response_model=VacancyRead, status_code=status.HTTP_201_CREATED, summary="Create vacancy", description="Create a new vacancy.")
-def create_vacancy(payload: VacancyCreate, session: Session = Depends(get_session)):
-    return crud.create(session, Vacancy, payload.model_dump())
+def create_vacancy(payload: VacancyCreate, request: Request, session: Session = Depends(get_session)):
+    vacancy = crud.create(session, Vacancy, payload.model_dump())
+    if vacancy.status == VacancyStatus.OPEN:
+        auto_publish_vacancy_to_website(
+            session,
+            vacancy,
+            public_base_url=str(request.base_url).rstrip("/"),
+        )
+    return vacancy
 
 
 @router.put("/{vacancy_id}", response_model=VacancyRead, summary="Update vacancy", description="Update an existing vacancy.")

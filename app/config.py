@@ -112,12 +112,33 @@ class Settings(BaseModel):
         if os.getenv("WEBSITE_DATABASE_URL")
         else None
     )
-    website_jobs_table: str = os.getenv("WEBSITE_JOBS_TABLE", "jobs_infos")
-    website_publisher_user_id: int | None = (
-        int(os.getenv("WEBSITE_PUBLISHER_USER_ID"))
-        if os.getenv("WEBSITE_PUBLISHER_USER_ID")
-        else None
+    itww_database_url: str = normalize_database_url(
+        os.getenv(
+            "ITWW_DATABASE_URL",
+            os.getenv(
+                "WEBSITE_DATABASE_URL",
+                "postgres://8318713cb0d8fc7b492ee917ee62bcb0a2a10eda5e99794369eca1fff80b4e17:sk_SRM1POUuNC_SnPSmPgTVp@db.prisma.io:5432/postgres?sslmode=require",
+            ),
+        )
     )
+    ish_database_url: str = normalize_database_url(
+        os.getenv(
+            "ISH_DATABASE_URL",
+            "postgres://4f12bd4952a67d7969aebaee6864ff94ae50db4700263e3ec8edb0c50d0017c5:sk_RbH_MG5MmBB4KbcYxqdWD@db.prisma.io:5432/postgres?sslmode=require",
+        )
+    )
+    dinel_database_url: str = normalize_database_url(
+        os.getenv(
+            "DINEL_DATABASE_URL",
+            os.getenv(
+                "STAFF_OUTSOURCING_DATABASE_URL",
+                "postgres://f0aef56452ba5ecb7b48f454bd6fc4820851b61fc3f6d92f72eb606984e6772d:sk_cqqYXsHjVidW3kfqJSUuL@db.prisma.io:5432/postgres?sslmode=require",
+            ),
+        )
+    )
+    website_jobs_table: str = os.getenv("WEBSITE_JOBS_TABLE", "jobs_infos")
+    dinel_jobs_table: str = os.getenv("DINEL_JOBS_TABLE", "jobs")
+    website_publisher_user_id: int = int(os.getenv("WEBSITE_PUBLISHER_USER_ID", "1"))
     uploadthing_app_id: str | None = os.getenv("UPLOADTHING_APP_ID")
     uploadthing_secret: str | None = os.getenv("UPLOADTHING_SECRET")
     uploadthing_token: str | None = os.getenv("UPLOADTHING_TOKEN")

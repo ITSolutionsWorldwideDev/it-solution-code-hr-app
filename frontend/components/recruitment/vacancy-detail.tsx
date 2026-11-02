@@ -75,6 +75,52 @@ export function VacancyDetail({ vacancy }: VacancyDetailProps) {
                   <h1 className="text-[32px] font-bold leading-[1.15] tracking-[-0.02em] text-white">
                     {vacancy.title}
                   </h1>
+                  {(() => {
+                    const parsed = vacancy.parsedData ?? {};
+                    const target = String(parsed.target_portal || parsed.targetPortal || "").toLowerCase().trim();
+                    const isPub = parsed.published === 1 || parsed.published === true || Boolean(parsed.itww_job_info_id || parsed.ish_job_info_id || parsed.dinel_job_info_id);
+                    if (!isPub && (!target || target === "none")) {
+                      return (
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#859491]">Sites:</span>
+                          <span className="inline-flex items-center rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-xs text-[#859491]">
+                            Not Published
+                          </span>
+                        </div>
+                      );
+                    }
+                    const hasItww = target === "all" || target === "all_portals" || target === "both" || target.includes("itww") || Boolean(parsed.itww_job_info_id);
+                    const hasIsh = target === "all" || target === "all_portals" || target === "both" || target.includes("ish") || target.includes("itsh") || Boolean(parsed.ish_job_info_id);
+                    const hasDinel = target === "all" || target === "all_portals" || target.includes("dinel") || target.includes("staff") || target.includes("outsourcing") || Boolean(parsed.dinel_job_info_id);
+
+                    const badges: { label: string; color: string; dot: string }[] = [];
+                    if (hasItww) badges.push({ label: "ITWW", color: "bg-sky-500/15 text-sky-300 border-sky-500/30", dot: "bg-sky-400" });
+                    if (hasIsh) badges.push({ label: "ITSH", color: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30", dot: "bg-indigo-400" });
+                    if (hasDinel) badges.push({ label: "Staff Outsourcing", color: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", dot: "bg-emerald-400" });
+
+                    if (badges.length === 0 && isPub) {
+                      badges.push(
+                        { label: "ITWW", color: "bg-sky-500/15 text-sky-300 border-sky-500/30", dot: "bg-sky-400" },
+                        { label: "ITSH", color: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30", dot: "bg-indigo-400" },
+                        { label: "Staff Outsourcing", color: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", dot: "bg-emerald-400" }
+                      );
+                    }
+
+                    return (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-[#859491]">Live Sites:</span>
+                        {badges.map((b) => (
+                          <span
+                            key={b.label}
+                            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-semibold border ${b.color}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${b.dot}`} />
+                            {b.label}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex flex-col items-start gap-3 lg:items-end">

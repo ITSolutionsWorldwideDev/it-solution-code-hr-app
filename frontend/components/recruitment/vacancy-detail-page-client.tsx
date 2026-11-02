@@ -48,6 +48,7 @@ function mapVacancyToRecord(
     description: vacancy.description,
     requirements: vacancy.required_skills,
     summary: vacancy.ai_summary ?? "No AI summary available yet.",
+    parsedData,
   };
 }
 

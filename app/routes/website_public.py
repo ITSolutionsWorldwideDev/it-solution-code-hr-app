@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -150,7 +150,7 @@ def _build_website_job(*, vacancy: Vacancy, publication: WebsitePublication) -> 
 
 @router.get("/", response_model=list[WebsiteJobRead], summary="List published website jobs")
 def list_website_jobs(
-    portal: str | None = Query(None, description="Filter by target portal: 'itww', 'staff_outsourcing', or 'both'"),
+    portal: str | None = Query(None, description="Filter by target portal: 'itww', 'ish', or 'both'"),
     session: Session = Depends(get_session),
 ):
     publications = list(
