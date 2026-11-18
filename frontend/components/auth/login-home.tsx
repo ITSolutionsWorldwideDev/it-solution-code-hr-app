@@ -3,7 +3,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, BriefcaseBusiness, Building2, ShieldCheck, Sparkles, Users } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  BriefcaseBusiness,
+  Building2,
+  LoaderCircle,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { useRole } from "@/components/providers/role-provider";
@@ -46,6 +55,8 @@ export function LoginHome() {
   const [password, setPassword] = useState("");
   const [selectedRole, setSelectedRole] = useState<AppRole>("HR");
   const [nextRoute, setNextRoute] = useState(roleLandingRoutes.HR);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const canLogin = email.trim().length > 0 && password.trim().length > 0;
 
   useEffect(() => {
@@ -57,17 +68,53 @@ export function LoginHome() {
     setNextRoute(requestedRoute || roleLandingRoutes[selectedRole]);
   }, [selectedRole]);
 
-  const handleLogin = () => {
-    if (!canLogin) {
+  const handleLogin = async () => {
+    if (!canLogin || isLoading) {
       return;
     }
 
-    const displayName = getDisplayNameFromEmail(email) || roleProfiles[selectedRole].name;
-    setSession({
-      role: selectedRole,
-      name: displayName,
-    });
-    router.push(nextRoute);
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password: password.trim(),
+          role: selectedRole,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setErrorMessage(data?.error || "Login failed. Please check your credentials.");
+        setIsLoading(false);
+        return;
+      }
+
+      const displayName =
+        data?.user?.name ||
+        getDisplayNameFromEmail(email) ||
+        roleProfiles[selectedRole].name;
+
+      setSession({
+        role: data?.user?.role || selectedRole,
+        name: displayName,
+      });
+
+      router.push(nextRoute);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to connect to authentication service."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -131,7 +178,11 @@ export function LoginHome() {
                     <Input
                       type="email"
                       value={email}
-                      onChange={(event) => setEmail(event.target.value)}
+                      disabled={isLoading}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
                       placeholder="bob@itsolutions.com"
                       className="h-14"
                     />
@@ -141,7 +192,11 @@ export function LoginHome() {
                     <Input
                       type="password"
                       value={password}
-                      onChange={(event) => setPassword(event.target.value)}
+                      disabled={isLoading}
+                      onChange={(event) => {
+                        setPassword(event.target.value);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
                       placeholder="password123"
                       className="h-14"
                       onKeyDown={(event) => {
@@ -155,6 +210,7 @@ export function LoginHome() {
                     <label className="block text-sm font-semibold text-[#dbe8f2]">Workspace</label>
                     <Select
                       value={selectedRole}
+                      disabled={isLoading}
                       onChange={(event) => setSelectedRole(event.target.value as AppRole)}
                       className="h-14"
                     >
@@ -168,16 +224,32 @@ export function LoginHome() {
                   <button
                     type="button"
                     onClick={handleLogin}
-                    disabled={!canLogin}
+                    disabled={!canLogin || isLoading}
                     className="inline-flex h-[68px] items-center justify-center gap-3 rounded-full bg-[linear-gradient(135deg,#63e7ff_0%,#93efff_100%)] px-9 text-[1.08rem] font-semibold text-[#06141c] shadow-[0_16px_36px_rgba(0,0,0,0.22)] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100 lg:h-14 lg:text-[1rem]"
                   >
-                    Log in
-                    <ArrowRight className="h-5 w-5" />
+                    {isLoading ? (
+                      <>
+                        <LoaderCircle className="h-5 w-5 animate-spin" />
+                        Signing in...
+                      </>
+                    ) : (
+                      <>
+                        Log in
+                        <ArrowRight className="h-5 w-5" />
+                      </>
+                    )}
                   </button>
                 </div>
 
+                {errorMessage ? (
+                  <div className="mt-4 flex items-center gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300 backdrop-blur">
+                    <AlertCircle className="h-5 w-5 shrink-0 text-rose-400" />
+                    <span>{errorMessage}</span>
+                  </div>
+                ) : null}
+
                 <p className="mt-4 text-sm text-[#8fa2b5]">
-                  Choose a temporary workspace for the prototype. HR manages intake and shortlists, Technical reviews interview candidates, and Management handles final selection and offers.
+                  Select your role workspace. Access is authenticated against authorized organization credentials.
                 </p>
 
               </div>

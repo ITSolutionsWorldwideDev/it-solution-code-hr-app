@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Search } from "lucide-react";
+import { LogOut, Search } from "lucide-react";
 
 import { useRole } from "@/components/providers/role-provider";
 import { getInitialsFromName, roleProfiles } from "@/lib/session";
@@ -12,9 +12,22 @@ export function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { role, name } = useRole();
+  const { role, name, clearSession } = useRole();
   const profile = roleProfiles[role];
   const [searchValue, setSearchValue] = useState("");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // ignore
+    } finally {
+      clearSession();
+      router.push("/");
+    }
+  };
 
   useEffect(() => {
     if (pathname?.startsWith("/candidates")) {
@@ -73,6 +86,16 @@ export function TopBar() {
               <p className="truncate text-sm font-semibold text-[#dae3f2]">{name}</p>
               <p className="truncate text-xs text-[#8ea2b3]">{profile.title}</p>
             </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              title="Log out"
+              aria-label="Log out"
+              className="ml-1 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#17202b] text-[#93a6b8] transition hover:border-rose-500/40 hover:bg-rose-500/10 hover:text-rose-400"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </div>
