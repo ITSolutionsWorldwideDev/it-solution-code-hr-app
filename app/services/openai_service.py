@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from fastapi import HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import requests
 
 from app.config import settings
@@ -42,9 +42,25 @@ class CandidateParseResult(BaseModel):
     vacancy_matches: list["VacancyPortfolioMatchResult"] = Field(default_factory=list)
     pros: list[str] = Field(default_factory=list)
     cons: list[str] = Field(default_factory=list)
-    experience_years: int = 0
+    experience_years: float = 0.0
     selected_vacancy_id: int | None = None
     selected_vacancy_title: str | None = None
+
+    @field_validator("experience_years", mode="before")
+    @classmethod
+    def _validate_experience_years(cls, value: Any) -> float:
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return max(0.0, float(value))
+        if isinstance(value, str):
+            match = re.search(r"(\d+(?:\.\d+)?)", value)
+            if match:
+                try:
+                    return max(0.0, float(match.group(1)))
+                except ValueError:
+                    return 0.0
+        return 0.0
 
 
 class ConsolidatedParserResponse(BaseModel):
@@ -54,13 +70,29 @@ class ConsolidatedParserResponse(BaseModel):
     skills: list[str] = Field(default_factory=list)
     experience: str | None = None
     education: str | None = None
-    experience_years: int = 0
+    experience_years: float = 0.0
     executive_summary: str
     fit_score: float | None = None
     pros: list[str] = Field(default_factory=list)
     cons: list[str] = Field(default_factory=list)
     selected_vacancy_id: int | None = None
     selected_vacancy_title: str | None = None
+
+    @field_validator("experience_years", mode="before")
+    @classmethod
+    def _validate_experience_years(cls, value: Any) -> float:
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return max(0.0, float(value))
+        if isinstance(value, str):
+            match = re.search(r"(\d+(?:\.\d+)?)", value)
+            if match:
+                try:
+                    return max(0.0, float(match.group(1)))
+                except ValueError:
+                    return 0.0
+        return 0.0
 
 
 class VacancyPortfolioMatchResult(BaseModel):
@@ -1144,7 +1176,7 @@ Return JSON only."""
             talent_insights=TalentInsightsResult(
                 overall_score=fit_score,
                 top_skills_identified=matched_skills[:5],
-                seniority_level=_infer_seniority_level(max(0, int(parsed_payload.experience_years))),
+                seniority_level=_infer_seniority_level(max(0, int(round(float(parsed_payload.experience_years or 0))))),
             ),
         )
 
@@ -1171,7 +1203,7 @@ Return JSON only."""
         vacancy_matches=vacancy_matches,
         pros=_normalize_bullet_items(parsed_payload.pros, limit=3),
         cons=_normalize_bullet_items(parsed_payload.cons, limit=2),
-        experience_years=max(0, int(parsed_payload.experience_years)),
+        experience_years=max(0, int(round(float(parsed_payload.experience_years or 0)))),
         selected_vacancy_id=selected_vacancy_id,
         selected_vacancy_title=selected_vacancy_title,
     )

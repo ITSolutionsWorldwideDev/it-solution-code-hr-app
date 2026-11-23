@@ -86,7 +86,7 @@ class CandidateDatabaseRecordRead(BaseSchema):
     vacancy_title: str
     vacancy_label: str
     potential_role: str | None = None
-    experience_years: int | None = None
+    experience_years: float | int | None = None
     applied_match_score: float | None = None
     overall_talent_score: float | None = None
     stage: str

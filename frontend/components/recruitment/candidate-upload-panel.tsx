@@ -828,19 +828,37 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
     preservedIds?: string[],
     fallbackRecords?: StoredCandidateRecord[]
   ) => {
-    const vacancyFilter = selectedVacancyId ?? vacancyId;
+    const rawFilter = (selectedVacancyId !== undefined ? selectedVacancyId : vacancyId).trim();
 
     setStoredCandidatesLoading(true);
 
     try {
       const vacanciesForLookup = vacancyRecords ?? vacancies;
+
+      // Extract a numeric vacancy ID if one exists, otherwise null
+      let numericVacancyId: string | null = null;
+      if (/^\d+$/.test(rawFilter)) {
+        numericVacancyId = rawFilter;
+      } else if (rawFilter.startsWith("portal:")) {
+        const [, portalKey, jobIdStr] = rawFilter.split(":");
+        const jobId = Number(jobIdStr);
+        const existing = vacanciesForLookup.find(
+          (v) =>
+            v.parsed_data?.source_portal === portalKey &&
+            Number(v.parsed_data?.portal_job_id) === jobId
+        );
+        if (existing) {
+          numericVacancyId = String(existing.id);
+        }
+      }
+
       const [candidateResponse, applicationResponse, matchResponse] = await Promise.all([
         apiRequest<CandidateApiRecord[]>({ path: "/candidates/" }),
-        vacancyFilter
-          ? apiRequest<ApplicationApiRecord[]>({ path: `/vacancies/${vacancyFilter}/applications` })
+        numericVacancyId
+          ? apiRequest<ApplicationApiRecord[]>({ path: `/vacancies/${numericVacancyId}/applications` })
           : apiRequest<ApplicationApiRecord[]>({ path: "/applications/" }),
-        vacancyFilter
-          ? apiRequest<CandidateMatchApiRecord[]>({ path: `/vacancies/${vacancyFilter}/matches` })
+        numericVacancyId
+          ? apiRequest<CandidateMatchApiRecord[]>({ path: `/vacancies/${numericVacancyId}/matches` })
           : Promise.resolve([] as CandidateMatchApiRecord[]),
       ]);
 
@@ -851,7 +869,9 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       const fetchedPreservedCandidates = await loadCandidatesByIds(missingPreservedIds);
       const mergedCandidates = [...candidateResponse, ...fetchedPreservedCandidates];
 
-      const vacancy = vacanciesForLookup.find((record) => String(record.id) === vacancyFilter);
+      const vacancy = numericVacancyId
+        ? vacanciesForLookup.find((record) => String(record.id) === numericVacancyId)
+        : null;
       const scopedMatches = matchResponse.map((match) => ({
         ...match,
         vacancy_title: vacancy?.title ?? `Vacancy #${match.vacancy_id}`,
@@ -861,7 +881,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
         applicationResponse,
         scopedMatches,
         vacanciesForLookup,
-        vacancyFilter,
+        numericVacancyId ?? "",
         preservedIdList
       );
       const resolvedCandidates = nextCandidates.length > 0 ? nextCandidates : fallbackRecords ?? [];
@@ -1038,6 +1058,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
               vacancies
             );
             effectiveVacancyId = String(syncedVacancy.id);
+            setVacancyId(effectiveVacancyId);
             setVacancies((prev) =>
               prev.some((v) => v.id === syncedVacancy.id) ? prev : [...prev, syncedVacancy]
             );
@@ -1155,7 +1176,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       const immediateStoredCandidates = buildImmediateStoredCandidatesFromImport(
         aggregatedResults,
         vacancies,
-        vacancyId
+        effectiveVacancyId
       );
       setSessionCandidateIds(parsedCandidateIds);
       setRecentParsedCandidates(immediateStoredCandidates);
@@ -1163,7 +1184,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       const failedCount = aggregatedResults.length - successCount;
       const nextSuccessMessage = `${successCount} CV${
         successCount === 1 ? "" : "s"
-      } parsed successfully${vacancyId ? " for the selected vacancy" : " without a linked vacancy"} across ${
+      } parsed successfully${effectiveVacancyId ? " for the selected vacancy" : " without a linked vacancy"} across ${
         uploadBatches.length
       } batch${uploadBatches.length === 1 ? "" : "es"}${
         failedCount > 0 ? `, with ${failedCount} file${failedCount === 1 ? "" : "s"} automatically isolated after retry.` : "."
@@ -1173,7 +1194,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       if (immediateStoredCandidates.length > 0) {
         setStoredCandidates(immediateStoredCandidates);
       }
-      await loadStoredCandidates(vacancyId, undefined, parsedCandidateIds, immediateStoredCandidates);
+      await loadStoredCandidates(effectiveVacancyId, undefined, parsedCandidateIds, immediateStoredCandidates);
       await onCandidatesImported?.();
       if (parsedCandidateIds.length > 0) {
         setSelectedCandidateId(parsedCandidateIds[0]);
