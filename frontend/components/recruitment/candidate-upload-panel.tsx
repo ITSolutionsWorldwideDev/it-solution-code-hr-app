@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 
 import { apiRequest } from "@/lib/api/client";
+import { ensureVacancyFromPortalJob } from "@/lib/portal-sync";
+import type { PortalJob } from "@/components/recruitment/portal-jobs-table";
 import type {
   ApplicationApiRecord,
   CandidateApiRecord,
@@ -39,9 +41,9 @@ type StoredCandidateViewModel = StoredCandidateRecord & {
 const BULK_PARSE_SESSION_STORAGE_KEY = "itsw-bulk-parse-session-results";
 const BULK_PARSE_SESSION_IDS_STORAGE_KEY = "itsw-bulk-parse-session-candidate-ids";
 const BULK_PARSE_SELECTED_CANDIDATE_STORAGE_KEY = "itsw-bulk-parse-selected-candidate";
-const MAX_UPLOAD_BATCH_FILES = 5;
+const MAX_UPLOAD_BATCH_FILES = 50;
 const MAX_UPLOAD_BATCH_BYTES = 4 * 1024 * 1024;
-const MAX_SINGLE_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_PARALLEL_UPLOAD_BATCHES = 2;
 const MIN_RECOVERY_BATCH_SIZE = 1;
 
@@ -702,7 +704,13 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const storedCandidatesSectionRef = useRef<HTMLDivElement | null>(null);
   const [vacancies, setVacancies] = useState<VacancyApiRecord[]>([]);
+  const [portalJobs, setPortalJobs] = useState<{
+    itww: PortalJob[];
+    ish: PortalJob[];
+    dinel: PortalJob[];
+  }>({ itww: [], ish: [], dinel: [] });
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [vacancyId, setVacancyId] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -868,10 +876,27 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
   };
 
   useEffect(() => {
-    const loadVacancies = async () => {
+    const loadVacanciesAndPortals = async () => {
       try {
-        const response = await apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" });
+        const [response, portalData] = await Promise.all([
+          apiRequest<VacancyApiRecord[]>({ path: "/vacancies/" }),
+          fetch("/api/integrations/website/jobs")
+            .then((r) => (r.ok ? r.json() : { itww: [], ish: [], dinel: [] }))
+            .catch(() => ({ itww: [], ish: [], dinel: [] })),
+        ]);
         setVacancies(response);
+        setPortalJobs(portalData);
+
+        // Pre-select vacancy if passed in URL query param
+        if (typeof window !== "undefined") {
+          const urlVacancyId = new URLSearchParams(window.location.search).get("vacancy_id");
+          if (urlVacancyId) {
+            setVacancyId(urlVacancyId);
+            await loadStoredCandidates(urlVacancyId, response);
+            return;
+          }
+        }
+
         await loadStoredCandidates("", response);
       } catch {
         setVacancies([]);
@@ -879,7 +904,7 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
       }
     };
 
-    void loadVacancies();
+    void loadVacanciesAndPortals();
   }, []);
 
   useEffect(() => {
@@ -991,14 +1016,45 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
     setBatchFailures([]);
 
     try {
+      let effectiveVacancyId = vacancyId;
+
+      // If user selected a portal job (e.g., "portal:itww:12")
+      if (vacancyId.startsWith("portal:")) {
+        const [, portalKey, jobIdStr] = vacancyId.split(":");
+        const jobId = Number(jobIdStr);
+        const allPortalList = [
+          ...portalJobs.itww,
+          ...portalJobs.ish,
+          ...portalJobs.dinel,
+        ];
+        const targetPortalJob = allPortalList.find(
+          (j) => j.portal === portalKey && j.id === jobId
+        );
+
+        if (targetPortalJob) {
+          try {
+            const syncedVacancy = await ensureVacancyFromPortalJob(
+              targetPortalJob,
+              vacancies
+            );
+            effectiveVacancyId = String(syncedVacancy.id);
+            setVacancies((prev) =>
+              prev.some((v) => v.id === syncedVacancy.id) ? prev : [...prev, syncedVacancy]
+            );
+          } catch (err) {
+            console.warn("Could not sync portal job to vacancy:", err);
+          }
+        }
+      }
+
       const uploadBatches = splitFilesIntoUploadBatches(files);
       const aggregatedResults: CandidateManualImportResponse["results"] = [];
       let processedFiles = 0;
 
       const uploadBatch = async (batch: File[]) => {
         const formData = new FormData();
-        if (vacancyId) {
-          formData.append("vacancy_id", vacancyId);
+        if (effectiveVacancyId && !effectiveVacancyId.startsWith("portal:")) {
+          formData.append("vacancy_id", effectiveVacancyId);
         }
         for (const file of batch) {
           formData.append("files", file);
@@ -1203,45 +1259,154 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
         accept={acceptedFileTypes}
         multiple
         className="hidden"
-        onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+        onChange={(event) => {
+          const incoming = Array.from(event.target.files ?? []);
+          if (incoming.length > 0) {
+            setFiles((prev) => [...prev, ...incoming]);
+          }
+          event.target.value = "";
+        }}
       />
 
       <section className="grid grid-cols-12 gap-6">
         <div className="col-span-12 rounded-xl border border-white/5 bg-[#182028] p-8 lg:col-span-8">
-          <div className="relative overflow-hidden rounded-xl border border-white/5 bg-[#182028]">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              setIsDragging(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragging(false);
+              const dropped = Array.from(e.dataTransfer.files ?? []);
+              if (dropped.length > 0) {
+                setFiles((prev) => [...prev, ...dropped]);
+              }
+            }}
+            className={`relative overflow-hidden rounded-xl border transition ${
+              isDragging
+                ? "border-[#72d0ed] bg-[#1d2b36] shadow-[0_0_35px_rgba(114,208,237,0.25)]"
+                : files.length > 0
+                ? "border-emerald-500/40 bg-[#142322]"
+                : "border-white/5 bg-[#182028]"
+            }`}
+          >
             <div className="pointer-events-none absolute right-6 top-6 text-[#2d363e]">
               <CloudUpload className="h-24 w-24" strokeWidth={1.2} />
             </div>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="group flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#3e484c] bg-[#1b232c]/50 px-6 py-14 text-center transition hover:border-[#72d0ed]/50 hover:bg-[#222b33]"
-            >
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#72d0ed]/10 text-[#a9e9ff] transition group-hover:scale-110">
-                <FileUp className="h-8 w-8" />
+
+            {files.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="group flex w-full flex-col items-center justify-center px-6 py-14 text-center transition hover:bg-[#222b33]"
+              >
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#72d0ed]/10 text-[#a9e9ff] transition group-hover:scale-110">
+                  <FileUp className="h-8 w-8" />
+                </div>
+                <h3 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
+                  Drag and drop resumes here
+                </h3>
+                <p className="mt-2 text-[1rem] text-[#bdc8cd]">
+                  or <span className="text-[#a9e9ff] underline font-medium">browse your files</span>
+                </p>
+                <div className="mt-7 flex items-center gap-4 text-[0.78rem] font-medium uppercase tracking-[0.16em] text-[#889297]">
+                  <span>PDF</span>
+                  <span>•</span>
+                  <span>DOCX</span>
+                  <span>•</span>
+                  <span>RTF</span>
+                  <span>•</span>
+                  <span className="text-[#a9e9ff] font-semibold">Recommended: Up to 50 CVs</span>
+                </div>
+              </button>
+            ) : (
+              <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 ring-4 ring-emerald-500/10">
+                  <CheckCircle2 className="h-8 w-8" />
+                </div>
+                <h3 className="text-[2rem] font-bold text-white tracking-tight">
+                  {files.length} {files.length === 1 ? "Resume" : "Resumes"} Selected
+                </h3>
+                <p className="mt-2 text-sm font-medium text-emerald-300">
+                  Total {(files.reduce((sum, f) => sum + f.size, 0) / (1024 * 1024)).toFixed(1)} MB ready for AI parsing
+                </p>
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-white/20"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add More CVs</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiles([])}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/20"
+                  >
+                    <X className="h-4 w-4" />
+                    <span>Clear Selection</span>
+                  </button>
+                </div>
               </div>
-              <h3 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#dae3ee]">
-                Drag and drop resumes here
-              </h3>
-              <p className="mt-2 text-[1rem] text-[#bdc8cd]">
-                or <span className="text-[#a9e9ff] underline">browse your files</span>
-              </p>
-              <div className="mt-7 flex items-center gap-4 text-[0.78rem] font-medium uppercase tracking-[0.16em] text-[#889297]">
-                <span>PDF</span>
-                <span>•</span>
-                <span>DOCX</span>
-                <span>•</span>
-                <span>RTF</span>
-              </div>
-            </button>
+            )}
           </div>
+
+          {files.length > 0 && (
+            <div className="mt-4 rounded-xl border border-white/10 bg-[#121920] p-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/8 text-xs font-semibold uppercase tracking-wider text-[#9bb0bf]">
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                  Selected CVs ({files.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFiles([])}
+                  className="text-xs text-red-400 hover:underline capitalize font-medium"
+                >
+                  Clear all
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+                {files.map((file, idx) => (
+                  <span
+                    key={`${file.name}-${idx}`}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-[#dae3ee]"
+                  >
+                    <span className="font-semibold text-sky-400 text-[11px]">
+                      {file.name.endsWith(".docx") ? "DOCX" : file.name.endsWith(".doc") ? "DOC" : "PDF"}
+                    </span>
+                    <span className="max-w-[220px] truncate" title={file.name}>
+                      {file.name}
+                    </span>
+                    <span className="text-[10px] text-[#728696]">
+                      ({(file.size / 1024).toFixed(0)} KB)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setFiles((prev) => prev.filter((_, i) => i !== idx))}
+                      className="ml-1 text-white/40 hover:text-red-400"
+                      title="Remove file"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="mt-6 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div className="flex-1">
               <div className="flex items-start gap-2 text-[#bdc8cd]">
-                <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                <p className="text-[1rem]">
-                  Direct parsing on Vercel works best in small batches. The uploader now sends up to 5 files per request, keeps each request under roughly 4 MB, and runs up to 2 batches in parallel.
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#72d0ed]" />
+                <p className="text-[0.95rem]">
+                  <span className="font-semibold text-white">Bulk CV Parsing:</span> Upload up to 50 resumes per batch for best performance. The system automatically processes files in safe parallel batches to prevent timeouts and ensure 100% accurate AI candidate extraction.
                 </p>
               </div>
               {!vacancies.some((vacancy) => vacancy.status === "open") ? (
@@ -1249,19 +1414,50 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                   No open vacancies are available right now. CVs can still be parsed, but talent-pool scoring and potential-role matching will stay empty until at least one vacancy is marked as open.
                 </div>
               ) : null}
-              <p className="mt-3 text-sm text-[#889297]">
+              <p className="mt-3 text-sm font-medium text-emerald-400">
                 {files.length > 0
-                  ? `${files.length} file${files.length === 1 ? "" : "s"} selected for direct parsing.`
+                  ? `✓ ${files.length} file${files.length === 1 ? "" : "s"} selected and ready for AI parsing.`
                   : "PDF, DOCX and DOC files are supported for direct parsing into the Talent Pool."}
               </p>
               <div className="mt-4 max-w-[340px]">
                 <Select value={vacancyId} onChange={(event) => setVacancyId(event.target.value)} className="h-11 rounded-lg border-white/10 bg-[#0f171f]">
                   <option value="">No vacancy / Talent pool</option>
-                  {vacancies.map((vacancy) => (
-                    <option key={vacancy.id} value={vacancy.id}>
-                      {vacancy.title}
-                    </option>
-                  ))}
+                  {vacancies.length > 0 && (
+                    <optgroup label="System Vacancies">
+                      {vacancies.map((vacancy) => (
+                        <option key={`vac-${vacancy.id}`} value={String(vacancy.id)}>
+                          {vacancy.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {portalJobs.itww.length > 0 && (
+                    <optgroup label="ITWW Career Portal">
+                      {portalJobs.itww.map((j) => (
+                        <option key={`itww-${j.id}`} value={`portal:itww:${j.id}`}>
+                          [ITWW] {j.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {portalJobs.ish.length > 0 && (
+                    <optgroup label="ITSH Career Portal">
+                      {portalJobs.ish.map((j) => (
+                        <option key={`ish-${j.id}`} value={`portal:ish:${j.id}`}>
+                          [ITSH] {j.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {portalJobs.dinel.length > 0 && (
+                    <optgroup label="Staff Outsourcing Career Portal">
+                      {portalJobs.dinel.map((j) => (
+                        <option key={`dinel-${j.id}`} value={`portal:dinel:${j.id}`}>
+                          [Staff Outsourcing] {j.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </Select>
               </div>
             </div>
@@ -1281,9 +1477,13 @@ export function CandidateUploadPanel({ onCandidatesImported }: CandidateUploadPa
                 icon={isUploading ? LoaderCircle : Sparkles}
                 onClick={handleUpload}
                 disabled={files.length === 0 || isUploading}
-                className="rounded-lg bg-[#72d0ed] px-8 py-3 text-[#003642] shadow-[0_20px_30px_rgba(114,208,237,0.14)] hover:bg-[#8adcf4]"
+                className="rounded-lg bg-[#72d0ed] px-8 py-3 text-[#003642] shadow-[0_20px_30px_rgba(114,208,237,0.14)] hover:bg-[#8adcf4] font-semibold"
               >
-                {isUploading ? "Parsing resumes..." : "Parse Resumes Now"}
+                {isUploading
+                  ? "Parsing resumes..."
+                  : files.length > 0
+                  ? `Parse ${files.length} Resume${files.length === 1 ? "" : "s"} Now`
+                  : "Parse Resumes Now"}
               </Button>
             </div>
           </div>

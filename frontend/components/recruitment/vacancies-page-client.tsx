@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Eye, EyeOff, History, Trash2 } from "lucide-react";
 
 import { apiRequest } from "@/lib/api/client";
 import type { DepartmentOption, VacancyApiRecord, VacancyRecord } from "@/lib/recruitment-types";
 import { Button } from "@/components/ui/button";
 import { VacancyTable } from "@/components/recruitment/vacancy-table";
+import { PortalJobsSection, type PortalJob } from "@/components/recruitment/portal-jobs-table";
+
+type PortalJobsData = {
+  itww: PortalJob[];
+  ish: PortalJob[];
+  dinel: PortalJob[];
+  total: number;
+};
 
 const HIDDEN_VACANCY_IDS_KEY = "vacancies-hidden-view-ids";
 
@@ -63,6 +71,26 @@ export function VacanciesPageClient() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedVacancyIds, setSelectedVacancyIds] = useState<string[]>([]);
 
+  // Portal jobs state
+  const [portalJobs, setPortalJobs] = useState<PortalJobsData | null>(null);
+  const [portalLoading, setPortalLoading] = useState(true);
+  const [portalError, setPortalError] = useState<string | null>(null);
+
+  const loadPortalJobs = useCallback(async () => {
+    setPortalLoading(true);
+    setPortalError(null);
+    try {
+      const res = await fetch("/api/integrations/website/jobs");
+      if (!res.ok) throw new Error(`Portal API returned ${res.status}`);
+      const data = (await res.json()) as PortalJobsData;
+      setPortalJobs(data);
+    } catch (err) {
+      setPortalError(err instanceof Error ? err.message : "Failed to load portal jobs");
+    } finally {
+      setPortalLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const storedHiddenIds = window.localStorage.getItem(HIDDEN_VACANCY_IDS_KEY);
     if (!storedHiddenIds) {
@@ -95,6 +123,7 @@ export function VacanciesPageClient() {
 
   useEffect(() => {
     void loadData();
+    void loadPortalJobs();
   }, []);
 
   const items = useMemo(
@@ -218,11 +247,23 @@ export function VacanciesPageClient() {
 
   if (loadError) {
     return (
-      <div className="flex items-center justify-between gap-4 rounded-[24px] border border-[#b85b68]/35 bg-[rgba(184,91,104,0.12)] px-5 py-4 text-sm font-medium text-[#f0b6bf]">
-        <span>{loadError}</span>
-        <Button type="button" variant="secondary" onClick={() => void loadData()}>
-          Retry
-        </Button>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-4 rounded-[24px] border border-[#b85b68]/35 bg-[rgba(184,91,104,0.12)] px-5 py-4 text-sm font-medium text-[#f0b6bf]">
+          <span>{loadError}</span>
+          <Button type="button" variant="secondary" onClick={() => void loadData()}>
+            Retry
+          </Button>
+        </div>
+
+        {/* Still show portal jobs even when main vacancies fail */}
+        <div className="mt-8 border-t border-white/8 pt-8">
+          <PortalJobsSection
+            data={portalJobs}
+            loading={portalLoading}
+            error={portalError}
+            onRetry={() => void loadPortalJobs()}
+          />
+        </div>
       </div>
     );
   }
@@ -340,6 +381,16 @@ export function VacanciesPageClient() {
           {successMessage}
         </div>
       ) : null}
+
+      {/* Career Portal Jobs — ITWW, ITSH, Staff Outsourcing */}
+      <div className="mt-8 border-t border-white/8 pt-8">
+        <PortalJobsSection
+          data={portalJobs}
+          loading={portalLoading}
+          error={portalError}
+          onRetry={() => void loadPortalJobs()}
+        />
+      </div>
     </div>
   );
 }
