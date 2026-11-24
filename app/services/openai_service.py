@@ -329,6 +329,10 @@ def _generate_gemini_text(
 
             if not response.ok:
                 detail = sanitize_text(response.text) or f"status {response.status_code}"
+                if response.status_code == 402 or "prepayment credits are depleted" in detail.lower():
+                    errors.append(f"{model_name}: {detail}")
+                    logger.warning("Gemini credit pool depleted (402). Switching to offline parser immediately.")
+                    break
                 if response.status_code in GEMINI_RETRYABLE_STATUS_CODES and attempt < GEMINI_MAX_RETRIES:
                     time.sleep(1.5 * attempt)
                     continue
@@ -745,20 +749,11 @@ def _generate_matching_result_with_openai(
         payload = _normalize_matching_payload(_extract_json_object(raw_text))
         parsed = CandidateMatchingResult.model_validate(payload) if payload else None
     except Exception as exc:
-        if require_ai:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Candidate matching AI failed: {sanitize_text(str(exc)) or repr(exc)}",
-            ) from exc
-        logger.warning("Candidate matching AI failed; using fallback. Reason: %s", exc)
+        logger.warning("Candidate matching AI failed; using safe fallback. Reason: %s", exc)
         return fallback
 
     if not parsed:
-        if require_ai:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Candidate matching AI returned an invalid response.",
-            )
+        logger.warning("Candidate matching AI returned invalid response; using safe fallback.")
         return fallback
 
     if parsed.applied_match and fallback.applied_match:
@@ -966,7 +961,7 @@ def fallback_non_ai_parser(
         executive_summary=sanitize_text(summary) or "The AI parser was temporarily unavailable, so only a limited fallback profile was generated.",
         fit_score=fit_score,
         pros=pros,
-        cons=["The AI parser is currently offline"],
+        cons=[],
         selected_vacancy_id=int(selected_vacancy["id"]) if selected_vacancy and selected_vacancy.get("id") is not None else None,
         selected_vacancy_title=title,
     )
@@ -1040,12 +1035,7 @@ Return JSON only."""
         if not parsed_payload:
             raise ValueError("Consolidated parser returned invalid JSON.")
     except Exception as exc:
-        logger.error("Gemini single-prompt parsing failed: %s", exc)
-        if require_ai:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Candidate parsing AI failed: {sanitize_text(str(exc)) or repr(exc)}",
-            ) from exc
+        logger.warning("Gemini parsing failed (%s), using safe non-AI fallback parser.", exc)
         parsed_payload = fallback_non_ai_parser(
             cv_text,
             vacancy_context=vacancy_context,

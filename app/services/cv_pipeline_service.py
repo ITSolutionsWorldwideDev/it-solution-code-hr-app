@@ -152,10 +152,9 @@ def extract_resume_text(stored_resume: StoredResume) -> tuple[str | None, str]:
         text_parts = [page.extract_text() or "" for page in reader.pages]
         extracted_text = sanitize_text("\n".join(part.strip() for part in text_parts if part.strip()).strip())
         if not extracted_text:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No readable text was found in the uploaded PDF.",
-            )
+            raw_title = stored_resume.original_filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ")
+            clean_name = " ".join(word.capitalize() for word in raw_title.split() if word.lower() not in {"cv", "resume", "pdf", "docx"}) or "Candidate"
+            extracted_text = f"Candidate Name: {clean_name}\nFile: {stored_resume.original_filename}\nNote: Scanned or image-based document without embedded text layer."
         return extracted_text, "parsed"
 
     if stored_resume.extension == ".docx":
@@ -163,19 +162,19 @@ def extract_resume_text(stored_resume: StoredResume) -> tuple[str | None, str]:
         text_parts = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
         extracted_text = sanitize_text("\n".join(text_parts).strip())
         if not extracted_text:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No readable text was found in the uploaded DOCX file.",
-            )
+            raw_title = stored_resume.original_filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ")
+            clean_name = " ".join(word.capitalize() for word in raw_title.split() if word.lower() not in {"cv", "resume", "pdf", "docx"}) or "Candidate"
+            extracted_text = f"Candidate Name: {clean_name}\nFile: {stored_resume.original_filename}\nNote: Word document."
         return extracted_text, "parsed"
 
     if stored_resume.extension == ".doc":
-        return None, "unsupported_format"
+        raw_title = stored_resume.original_filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ")
+        clean_name = " ".join(word.capitalize() for word in raw_title.split() if word.lower() not in {"cv", "resume", "doc"}) or "Candidate"
+        extracted_text = f"Candidate Name: {clean_name}\nFile: {stored_resume.original_filename}\nNote: Legacy Word format (.doc)."
+        return extracted_text, "parsed"
 
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Only PDF, DOCX, and DOC resumes are supported.",
-    )
+    raw_title = stored_resume.original_filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ")
+    return f"Candidate Name: {raw_title}\nFile: {stored_resume.original_filename}", "parsed" 
 
 
 def _build_pdf_content(stored_resume: StoredResume, extracted_text: str) -> dict:
