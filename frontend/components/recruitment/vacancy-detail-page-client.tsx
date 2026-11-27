@@ -10,6 +10,7 @@ import type {
   VacancyRecord,
 } from "@/lib/recruitment-types";
 import { VacancyDetail } from "@/components/recruitment/vacancy-detail";
+import { EditVacancyModal } from "@/components/recruitment/edit-vacancy-modal";
 
 const fallbackDepartments: DepartmentOption[] = [
   { id: 1, name: "Engineering" },
@@ -57,6 +58,7 @@ export function VacancyDetailPageClient({ id }: { id: string }) {
   const [departments, setDepartments] = useState<DepartmentOption[]>(fallbackDepartments);
   const [missing, setMissing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -107,5 +109,18 @@ export function VacancyDetailPageClient({ id }: { id: string }) {
     );
   }
 
-  return <VacancyDetail vacancy={vacancyRecord} />;
+  return (
+    <>
+      <VacancyDetail vacancy={vacancyRecord} onEditVacancy={() => setIsEditing(true)} />
+      {vacancy && (
+        <EditVacancyModal
+          vacancy={vacancy}
+          departments={departments}
+          isOpen={isEditing}
+          onClose={() => setIsEditing(false)}
+          onSuccess={(updated) => setVacancy(updated)}
+        />
+      )}
+    </>
+  );
 }

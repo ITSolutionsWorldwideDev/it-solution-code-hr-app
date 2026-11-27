@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileUp, LoaderCircle } from "lucide-react";
+import { FileUp, LoaderCircle, Pencil } from "lucide-react";
 import { ensureVacancyFromPortalJob } from "@/lib/portal-sync";
+import { EditPortalJobModal } from "@/components/recruitment/edit-portal-job-modal";
 
 export type PortalJob = {
   id: number;
@@ -88,12 +89,26 @@ function statusTone(status: string): string {
 type PortalJobsTableProps = {
   portalKey: string;
   jobs: PortalJob[];
+  onJobUpdated?: (updatedJob: PortalJob) => void;
 };
 
-export function PortalJobsTable({ portalKey, jobs }: PortalJobsTableProps) {
+export function PortalJobsTable({ portalKey, jobs, onJobUpdated }: PortalJobsTableProps) {
   const router = useRouter();
   const [syncingJobId, setSyncingJobId] = useState<number | null>(null);
+  const [editingJob, setEditingJob] = useState<PortalJob | null>(null);
+  const [localJobs, setLocalJobs] = useState<PortalJob[]>(jobs);
   const config = PORTAL_CONFIGS[portalKey] ?? PORTAL_CONFIGS.itww;
+
+  useEffect(() => {
+    setLocalJobs(jobs);
+  }, [jobs]);
+
+  const handleJobUpdated = (updated: PortalJob) => {
+    setLocalJobs((prev) =>
+      prev.map((j) => (j.id === updated.id && j.portal === updated.portal ? updated : j))
+    );
+    onJobUpdated?.(updated);
+  };
 
   const handleParseCvsForJob = async (job: PortalJob) => {
     setSyncingJobId(job.id);
@@ -150,7 +165,7 @@ export function PortalJobsTable({ portalKey, jobs }: PortalJobsTableProps) {
       </div>
 
       {/* Rows */}
-      {jobs.map((job) => (
+      {localJobs.map((job) => (
         <div
           key={`${portalKey}-${job.id}`}
           className="grid grid-cols-[1.5fr_0.8fr_0.5fr_0.5fr_0.5fr_0.7fr] items-center gap-4 border-b border-white/6 px-6 py-4 last:border-b-0"
@@ -185,7 +200,17 @@ export function PortalJobsTable({ portalKey, jobs }: PortalJobsTableProps) {
             {formatDate(job.published_at || job.created_at)}
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditingJob(job)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-[#f4f8fb] transition hover:border-[#7eb9df]/40 hover:bg-[#466d8a]/20 hover:text-white"
+              title={`Edit this job specifically on ${config.label}`}
+            >
+              <Pencil className="h-3.5 w-3.5 text-[#c9e2f2]" />
+              <span>Edit</span>
+            </button>
+
             <button
               type="button"
               disabled={syncingJobId === job.id}
@@ -208,6 +233,15 @@ export function PortalJobsTable({ portalKey, jobs }: PortalJobsTableProps) {
           </div>
         </div>
       ))}
+
+      {editingJob && (
+        <EditPortalJobModal
+          job={editingJob}
+          isOpen={Boolean(editingJob)}
+          onClose={() => setEditingJob(null)}
+          onSuccess={handleJobUpdated}
+        />
+      )}
     </div>
   );
 }
@@ -224,6 +258,7 @@ type PortalJobsSectionProps = {
   loading: boolean;
   error: string | null;
   onRetry: () => void;
+  onJobUpdated?: (updatedJob: PortalJob) => void;
 };
 
 export function PortalJobsSection({
@@ -231,6 +266,7 @@ export function PortalJobsSection({
   loading,
   error,
   onRetry,
+  onJobUpdated,
 }: PortalJobsSectionProps) {
   if (loading) {
     return (
@@ -291,13 +327,13 @@ export function PortalJobsSection({
       </div>
 
       {data.itww.length > 0 && (
-        <PortalJobsTable portalKey="itww" jobs={data.itww} />
+        <PortalJobsTable portalKey="itww" jobs={data.itww} onJobUpdated={onJobUpdated} />
       )}
       {data.ish.length > 0 && (
-        <PortalJobsTable portalKey="ish" jobs={data.ish} />
+        <PortalJobsTable portalKey="ish" jobs={data.ish} onJobUpdated={onJobUpdated} />
       )}
       {data.dinel.length > 0 && (
-        <PortalJobsTable portalKey="dinel" jobs={data.dinel} />
+        <PortalJobsTable portalKey="dinel" jobs={data.dinel} onJobUpdated={onJobUpdated} />
       )}
     </div>
   );

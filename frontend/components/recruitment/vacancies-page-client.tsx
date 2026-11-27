@@ -8,6 +8,7 @@ import type { DepartmentOption, VacancyApiRecord, VacancyRecord } from "@/lib/re
 import { Button } from "@/components/ui/button";
 import { VacancyTable } from "@/components/recruitment/vacancy-table";
 import { PortalJobsSection, type PortalJob } from "@/components/recruitment/portal-jobs-table";
+import { EditVacancyModal } from "@/components/recruitment/edit-vacancy-modal";
 
 type PortalJobsData = {
   itww: PortalJob[];
@@ -70,6 +71,21 @@ export function VacanciesPageClient() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedVacancyIds, setSelectedVacancyIds] = useState<string[]>([]);
+  const [editingVacancy, setEditingVacancy] = useState<VacancyApiRecord | null>(null);
+
+  const handleStartEditVacancy = (item: VacancyRecord) => {
+    const target = vacancies.find((v) => String(v.id) === item.id);
+    if (target) {
+      setEditingVacancy(target);
+    }
+  };
+
+  const handleVacancySuccess = (updated: VacancyApiRecord) => {
+    setVacancies((current) =>
+      current.map((v) => (v.id === updated.id ? updated : v))
+    );
+    setSuccessMessage(`Vacancy #${updated.id} "${updated.title}" was successfully updated.`);
+  };
 
   // Portal jobs state
   const [portalJobs, setPortalJobs] = useState<PortalJobsData | null>(null);
@@ -373,6 +389,7 @@ export function VacanciesPageClient() {
           onToggleSelect={handleToggleVacancySelect}
           onToggleAll={handleToggleAllVisible}
           onDeleteVacancy={handleDeleteSingleVacancy}
+          onEditVacancy={handleStartEditVacancy}
         />
       )}
 
@@ -389,8 +406,19 @@ export function VacanciesPageClient() {
           loading={portalLoading}
           error={portalError}
           onRetry={() => void loadPortalJobs()}
+          onJobUpdated={() => void loadPortalJobs()}
         />
       </div>
+
+      {editingVacancy && (
+        <EditVacancyModal
+          vacancy={editingVacancy}
+          departments={departments}
+          isOpen={Boolean(editingVacancy)}
+          onClose={() => setEditingVacancy(null)}
+          onSuccess={handleVacancySuccess}
+        />
+      )}
     </div>
   );
 }

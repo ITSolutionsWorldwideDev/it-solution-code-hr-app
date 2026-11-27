@@ -4,6 +4,7 @@ import {
   CircleDollarSign,
   Clock3,
   MapPin,
+  Pencil,
   UserRound,
 } from "lucide-react";
 
@@ -13,6 +14,7 @@ import type { VacancyRecord } from "@/lib/recruitment-types";
 
 type VacancyDetailProps = {
   vacancy: VacancyRecord;
+  onEditVacancy?: () => void;
 };
 
 type VacancyDetailContent = {
@@ -46,7 +48,7 @@ function normalizeWorkspaceDescription(description: string) {
   return description;
 }
 
-export function VacancyDetail({ vacancy }: VacancyDetailProps) {
+export function VacancyDetail({ vacancy, onEditVacancy }: VacancyDetailProps) {
   const content = buildVacancyDetailContent(vacancy);
   const normalizedDescription = normalizeDescription(normalizeWorkspaceDescription(vacancy.description));
   const compensation =
@@ -124,10 +126,23 @@ export function VacancyDetail({ vacancy }: VacancyDetailProps) {
                 </div>
 
                 <div className="flex flex-col items-start gap-3 lg:items-end">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-[#3cdcd1]/30 bg-[#62f9ee]/10 px-4 py-2 text-[12px] font-bold text-[#62f9ee]">
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#3cdcd1]" />
-                    Open
-                  </span>
+                  <div className="flex items-center gap-2.5">
+                    {onEditVacancy ? (
+                      <button
+                        type="button"
+                        onClick={onEditVacancy}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-semibold text-[#f4f8fb] transition hover:border-[#7eb9df]/30 hover:bg-[#466d8a]/18 hover:text-white"
+                        title="Edit vacancy details"
+                      >
+                        <Pencil className="h-3.5 w-3.5 text-[#c9e2f2]" />
+                        <span>Edit Vacancy</span>
+                      </button>
+                    ) : null}
+                    <span className="inline-flex items-center gap-2 rounded-full border border-[#3cdcd1]/30 bg-[#62f9ee]/10 px-4 py-2 text-[12px] font-bold text-[#62f9ee]">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#3cdcd1]" />
+                      Open
+                    </span>
+                  </div>
                   <p className="font-mono text-[12px] text-[#859491]">Uploaded on {formatUploadedDate(vacancy.createdAt)}</p>
                 </div>
               </div>

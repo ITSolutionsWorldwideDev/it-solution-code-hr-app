@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, Eye, Trash2 } from "lucide-react";
+import { ArrowUpRight, Eye, Pencil, Trash2 } from "lucide-react";
 
 import { StatusPill } from "@/components/ui/status-pill";
 import type { VacancyRecord } from "@/lib/recruitment-types";
@@ -12,6 +12,7 @@ type VacancyTableProps = {
   onToggleSelect?: (vacancyId: string, checked: boolean) => void;
   onToggleAll?: (checked: boolean) => void;
   onDeleteVacancy?: (vacancyId: string) => void;
+  onEditVacancy?: (vacancy: VacancyRecord) => void;
 };
 
 const toneMap = {
@@ -114,6 +115,7 @@ export function VacancyTable({
   onToggleSelect,
   onToggleAll,
   onDeleteVacancy,
+  onEditVacancy,
 }: VacancyTableProps) {
   const allSelected = items.length > 0 && items.every((item) => selectedIds.includes(item.id));
 
@@ -189,6 +191,18 @@ export function VacancyTable({
                 <span>View</span>
                 <ArrowUpRight className="h-3.5 w-3.5 text-[#c9d8e3]" />
               </Link>
+              {onEditVacancy ? (
+                <button
+                  type="button"
+                  onClick={() => onEditVacancy(item)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-[#f4f8fb] transition hover:border-[#7eb9df]/30 hover:bg-[#466d8a]/18 hover:text-white"
+                  title={`Edit vacancy ${item.title}`}
+                  aria-label={`Edit vacancy ${item.title}`}
+                >
+                  <Pencil className="h-3.5 w-3.5 text-[#c9e2f2]" />
+                  <span>Edit</span>
+                </button>
+              ) : null}
               {onDeleteVacancy ? (
                 <button
                   type="button"
