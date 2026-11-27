@@ -142,8 +142,17 @@ export async function POST(req: NextRequest) {
       title,
       location,
       employment_type,
+      workplace_type,
+      work_model,
+      experience_level,
+      hours_per_week,
       status,
       department,
+      about_role,
+      responsibilities,
+      requirements,
+      offer_information,
+      additional_information,
       description,
     } = body;
 
@@ -165,9 +174,63 @@ export async function POST(req: NextRequest) {
     const numericId = Number(id);
     const loc = location ? String(location).trim() : null;
     const empType = employment_type ? String(employment_type).trim() : "Full-time";
-    const desc = description !== undefined ? String(description).trim() : null;
+    const workModelVal = workplace_type || work_model || null;
+    const expLevelVal = experience_level ? String(experience_level).trim().toUpperCase() : null;
+    const hoursVal = hours_per_week ? Number(hours_per_week) : 40;
+    const desc = description !== undefined && description !== null ? String(description).trim() : null;
     const isPublished =
       status?.toLowerCase() === "draft" ? 0 : status?.toLowerCase() === "closed" ? 0 : 1;
+
+    // Build assembled markdown content for ITWW/ISH if structured sections provided
+    let finalMarkdown = desc;
+    const hasStructured = Boolean(
+      about_role || responsibilities || requirements || offer_information || additional_information
+    );
+    if (hasStructured) {
+      const parts: string[] = [];
+      if (about_role) parts.push(`## About the Role\n${String(about_role).trim()}`);
+      if (responsibilities) {
+        const rawLines = Array.isArray(responsibilities)
+          ? responsibilities
+          : String(responsibilities).split("\n");
+        const formatted = rawLines
+          .map((r: unknown) => String(r).trim())
+          .filter(Boolean)
+          .map((r: string) => (r.startsWith("-") || r.startsWith("*") || r.startsWith("•") ? r : `- ${r}`))
+          .join("\n");
+        if (formatted) parts.push(`## Key Responsibilities\n${formatted}`);
+      }
+      if (requirements) {
+        const rawLines = Array.isArray(requirements)
+          ? requirements
+          : String(requirements).split("\n");
+        const formatted = rawLines
+          .map((r: unknown) => String(r).trim())
+          .filter(Boolean)
+          .map((r: string) => (r.startsWith("-") || r.startsWith("*") || r.startsWith("•") ? r : `- ${r}`))
+          .join("\n");
+        if (formatted) parts.push(`## Requirements\n${formatted}`);
+      }
+      if (offer_information) {
+        const rawLines = Array.isArray(offer_information)
+          ? offer_information
+          : String(offer_information).split("\n");
+        const formatted = rawLines
+          .map((r: unknown) => String(r).trim())
+          .filter(Boolean)
+          .map((r: string) => (r.startsWith("-") || r.startsWith("*") || r.startsWith("•") ? r : `- ${r}`))
+          .join("\n");
+        if (formatted) parts.push(`## What We Offer\n${formatted}`);
+      }
+      if (additional_information) {
+        parts.push(`## Additional Information\n${String(additional_information).trim()}`);
+      }
+      if (parts.length > 0) {
+        finalMarkdown = parts.join("\n\n");
+      }
+    }
+
+    const typeWithModel = workModelVal ? `${empType} • ${workModelVal}` : empType;
 
     // 1. ITWW Portal Update
     if (portal === "itww") {
@@ -180,11 +243,11 @@ export async function POST(req: NextRequest) {
             published = $4,
             updated_at = NOW()
       `;
-      const params: any[] = [trimmedTitle, loc, empType, isPublished];
+      const params: any[] = [trimmedTitle, loc, typeWithModel, isPublished];
 
-      if (desc !== null) {
+      if (finalMarkdown !== null) {
         query += `, content = $5 WHERE job_info_id = $6 RETURNING job_info_id AS id, title, location, type AS employment_type, CASE WHEN published = 1 THEN 'published' ELSE 'draft' END AS status, content AS description, updated_at`;
-        params.push(desc, numericId);
+        params.push(finalMarkdown, numericId);
       } else {
         query += ` WHERE job_info_id = $5 RETURNING job_info_id AS id, title, location, type AS employment_type, CASE WHEN published = 1 THEN 'published' ELSE 'draft' END AS status, content AS description, updated_at`;
         params.push(numericId);
@@ -217,11 +280,11 @@ export async function POST(req: NextRequest) {
             published = $4,
             updated_at = NOW()
       `;
-      const params: any[] = [trimmedTitle, loc, empType, isPublished];
+      const params: any[] = [trimmedTitle, loc, typeWithModel, isPublished];
 
-      if (desc !== null) {
+      if (finalMarkdown !== null) {
         query += `, content = $5 WHERE job_info_id = $6 RETURNING job_info_id AS id, title, location, type AS employment_type, CASE WHEN published = 1 THEN 'published' ELSE 'draft' END AS status, content AS description, updated_at`;
-        params.push(desc, numericId);
+        params.push(finalMarkdown, numericId);
       } else {
         query += ` WHERE job_info_id = $5 RETURNING job_info_id AS id, title, location, type AS employment_type, CASE WHEN published = 1 THEN 'published' ELSE 'draft' END AS status, content AS description, updated_at`;
         params.push(numericId);
@@ -260,28 +323,49 @@ export async function POST(req: NextRequest) {
       if (rawStat.includes("draft")) dinelStatus = "DRAFT";
       else if (rawStat.includes("closed") || rawStat.includes("archive")) dinelStatus = "ARCHIVED";
 
-      // Parse structured sections if description is provided
+      let dinelWorkType = "HYBRID";
+      const rawWork = String(workModelVal || "").toLowerCase();
+      if (rawWork.includes("remote")) dinelWorkType = "REMOTE";
+      else if (rawWork.includes("onsite") || rawWork.includes("on-site")) dinelWorkType = "ONSITE";
+
+      let dinelExpLevel = "MID";
+      const rawExp = String(expLevelVal || "").toLowerCase();
+      if (rawExp.includes("entry") || rawExp.includes("junior")) dinelExpLevel = "ENTRY";
+      else if (rawExp.includes("senior")) dinelExpLevel = "SENIOR";
+      else if (rawExp.includes("lead")) dinelExpLevel = "LEAD";
+      else if (rawExp.includes("exec") || rawExp.includes("director")) dinelExpLevel = "EXECUTIVE";
+
+      // If user supplied structured fields directly, use them; otherwise extract from markdown/desc
       const parsedSections = desc ? extractStructuredSectionsFromRaw(desc) : null;
-      const introText =
-        parsedSections && parsedSections.aboutRole.length > 0
-          ? parsedSections.aboutRole.join("\n\n")
-          : desc || `${trimmedTitle} position overview.`;
-      const respText =
-        parsedSections && parsedSections.responsibilities.length > 0
-          ? formatDinelLines(parsedSections.responsibilities)
-          : null;
-      const reqText =
-        parsedSections && parsedSections.requirements.length > 0
-          ? formatDinelLines(parsedSections.requirements)
-          : null;
-      const offerText =
-        parsedSections && parsedSections.offers.length > 0
-          ? formatDinelLines(parsedSections.offers)
-          : null;
-      const addText =
-        parsedSections && parsedSections.extras.length > 0
-          ? formatDinelLines(parsedSections.extras)
-          : null;
+      const introText = about_role
+        ? String(about_role).trim()
+        : parsedSections && parsedSections.aboutRole.length > 0
+        ? parsedSections.aboutRole.join("\n\n")
+        : desc || `${trimmedTitle} position overview.`;
+
+      const respText = responsibilities
+        ? formatDinelLines(responsibilities)
+        : parsedSections && parsedSections.responsibilities.length > 0
+        ? formatDinelLines(parsedSections.responsibilities)
+        : null;
+
+      const reqText = requirements
+        ? formatDinelLines(requirements)
+        : parsedSections && parsedSections.requirements.length > 0
+        ? formatDinelLines(parsedSections.requirements)
+        : null;
+
+      const offerText = offer_information
+        ? formatDinelLines(offer_information)
+        : parsedSections && parsedSections.offers.length > 0
+        ? formatDinelLines(parsedSections.offers)
+        : null;
+
+      const addText = additional_information
+        ? formatDinelLines(additional_information)
+        : parsedSections && parsedSections.extras.length > 0
+        ? formatDinelLines(parsedSections.extras)
+        : null;
 
       let res;
       try {
@@ -291,26 +375,34 @@ export async function POST(req: NextRequest) {
                slug = $2,
                location = $3,
                employment_type = $4::employment_type,
-               status = $5::job_status,
+               workplace_type = $5::workplace_type,
+               experience_level = $6::experience_level,
+               hours_per_week = $7,
+               status = $8::job_status,
                visibility = 'PUBLIC',
-               description = COALESCE($6, description),
-               intro_information = COALESCE($7, intro_information),
-               vacancy_information = COALESCE($8, vacancy_information),
-               requirements = COALESCE($9, requirements),
-               offer_information = COALESCE($10, offer_information),
-               additional_information = COALESCE($11, additional_information),
-               department = COALESCE($12, department),
-               published_at = CASE WHEN $5::job_status = 'PUBLISHED' THEN NOW() ELSE published_at END,
+               description = COALESCE($9, description),
+               intro_information = COALESCE($10, intro_information),
+               vacancy_information = COALESCE($11, vacancy_information),
+               requirements = COALESCE($12, requirements),
+               offer_information = COALESCE($13, offer_information),
+               additional_information = COALESCE($14, additional_information),
+               department = COALESCE($15, department),
+               published_at = CASE WHEN $8::job_status = 'PUBLISHED' THEN NOW() ELSE published_at END,
                updated_at = NOW()
-           WHERE id = $13
-           RETURNING id, title, slug, location, employment_type, status, department, description, updated_at`,
+           WHERE id = $16
+           RETURNING id, title, slug, location, employment_type, workplace_type, experience_level,
+                     hours_per_week, status, department, description, intro_information,
+                     vacancy_information, requirements, offer_information, additional_information, updated_at`,
           [
             trimmedTitle,
             slug,
             loc,
             dinelEmpType,
+            dinelWorkType,
+            dinelExpLevel,
+            hoursVal,
             dinelStatus,
-            desc,
+            finalMarkdown || desc,
             introText,
             respText,
             reqText,
@@ -331,10 +423,12 @@ export async function POST(req: NextRequest) {
                intro_information = COALESCE($5, intro_information),
                vacancy_information = COALESCE($6, vacancy_information),
                requirements = COALESCE($7, requirements),
+               offer_information = COALESCE($8, offer_information),
+               additional_information = COALESCE($9, additional_information),
                updated_at = NOW()
-           WHERE id = $8
+           WHERE id = $10
            RETURNING id, title, location, status, description, updated_at`,
-          [trimmedTitle, slug, loc, desc, introText, respText, reqText, numericId]
+          [trimmedTitle, slug, loc, finalMarkdown || desc, introText, respText, reqText, offerText, addText, numericId]
         );
       }
 

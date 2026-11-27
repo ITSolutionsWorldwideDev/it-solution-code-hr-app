@@ -12,9 +12,16 @@ export type PortalJob = {
   status: string;
   location: string | null;
   employment_type: string | null;
+  workplace_type?: string | null;
   experience_level: string | null;
+  hours_per_week?: number | null;
   department: string | null;
   description: string | null;
+  intro_information?: string | null;
+  vacancy_information?: string | null;
+  requirements?: string | null;
+  offer_information?: string | null;
+  additional_information?: string | null;
   created_at: string | null;
   updated_at: string | null;
   published_at: string | null;

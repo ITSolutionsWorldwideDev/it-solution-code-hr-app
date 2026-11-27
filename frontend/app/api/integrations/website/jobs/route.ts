@@ -102,29 +102,41 @@ async function fetchDinelJobs(): Promise<PortalJob[]> {
   try {
     const table = process.env.DINEL_JOBS_TABLE || "jobs";
     // The Dinel 'jobs' table may have different column names than 'jobs_infos'.
-    // Try the standard columns first; if that fails, fall back to a simpler query.
+    // Try the full structured columns first; if that fails, fall back to a simpler query.
     let result;
     try {
       result = await dinelPool.query(
-        `SELECT id, title, status, location, employment_type, experience_level,
-                department, description, created_at, updated_at, published_at
+        `SELECT id, title, status, location, employment_type, workplace_type, experience_level,
+                department, description, intro_information, vacancy_information, requirements,
+                offer_information, additional_information, hours_per_week,
+                created_at, updated_at, published_at
          FROM public."${table}"
          ORDER BY COALESCE(published_at, created_at) DESC
          LIMIT 200`
       );
     } catch {
-      // Fallback: query with only guaranteed columns
-      result = await dinelPool.query(
-        `SELECT id, title,
-                COALESCE(status, 'published') AS status,
-                NULL AS location, NULL AS employment_type, NULL AS experience_level,
-                NULL AS department, description,
-                created_at, updated_at,
-                NULL AS published_at
-         FROM public."${table}"
-         ORDER BY created_at DESC NULLS LAST
-         LIMIT 200`
-      );
+      try {
+        result = await dinelPool.query(
+          `SELECT id, title, status, location, employment_type, experience_level,
+                  department, description, created_at, updated_at, published_at
+           FROM public."${table}"
+           ORDER BY COALESCE(published_at, created_at) DESC
+           LIMIT 200`
+        );
+      } catch {
+        // Fallback: query with only guaranteed columns
+        result = await dinelPool.query(
+          `SELECT id, title,
+                  COALESCE(status, 'published') AS status,
+                  NULL AS location, NULL AS employment_type, NULL AS experience_level,
+                  NULL AS department, description,
+                  created_at, updated_at,
+                  NULL AS published_at
+           FROM public."${table}"
+           ORDER BY created_at DESC NULLS LAST
+           LIMIT 200`
+        );
+      }
     }
     return result.rows.map((row) => ({
       ...row,
