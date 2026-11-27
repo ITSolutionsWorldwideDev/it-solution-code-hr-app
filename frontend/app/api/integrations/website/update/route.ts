@@ -19,6 +19,120 @@ const dinelPool = new Pool({
     "postgres://f0aef56452ba5ecb7b48f454bd6fc4820851b61fc3f6d92f72eb606984e6772d:sk_cqqYXsHjVidW3kfqJSUuL@db.prisma.io:5432/postgres?sslmode=require",
 });
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function formatDinelLines(items: unknown): string {
+  if (Array.isArray(items)) {
+    return items
+      .map((i) => String(i).trim().replace(/^[-*•\d+.)]+\s*/, ""))
+      .filter((i) => i.length > 2 && !/^\d{1,2}$/.test(i))
+      .join("\n");
+  }
+  return String(items || "").trim();
+}
+
+function extractStructuredSectionsFromRaw(rawText: string) {
+  const lines = rawText.split("\n");
+  let currentSection = "about";
+  const aboutLines: string[] = [];
+  const resps: string[] = [];
+  const reqs: string[] = [];
+  const offers: string[] = [];
+  const extras: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const cleanHeading = trimmed.replace(/^[#*_\s]+|[#*_\s:]+$/g, "").toLowerCase();
+
+    if (
+      cleanHeading === "about the role" ||
+      cleanHeading === "position overview" ||
+      cleanHeading === "about us" ||
+      cleanHeading.startsWith("about it solutions") ||
+      cleanHeading === "functieoverzicht" ||
+      cleanHeading === "role overview"
+    ) {
+      currentSection = "about";
+      continue;
+    } else if (
+      cleanHeading === "what you'll do" ||
+      cleanHeading === "what you’ll do" ||
+      cleanHeading === "key responsibilities" ||
+      cleanHeading === "responsibilities" ||
+      cleanHeading === "core responsibilities" ||
+      cleanHeading === "taken" ||
+      cleanHeading === "taken & verantwoordelijkheden"
+    ) {
+      currentSection = "resp";
+      continue;
+    } else if (
+      cleanHeading === "what you'll bring" ||
+      cleanHeading === "what you’ll bring" ||
+      cleanHeading === "requirements" ||
+      cleanHeading === "skills & requirements" ||
+      cleanHeading === "skills" ||
+      cleanHeading === "qualifications" ||
+      cleanHeading === "vereisten" ||
+      cleanHeading === "wat wij zoeken" ||
+      cleanHeading === "wat wij vragen" ||
+      cleanHeading === "tools & platforms (preferred)"
+    ) {
+      currentSection = "req";
+      continue;
+    } else if (
+      cleanHeading === "what we offer" ||
+      cleanHeading === "nice to have" ||
+      cleanHeading === "wat wij bieden" ||
+      cleanHeading === "aanbod" ||
+      cleanHeading === "perks" ||
+      cleanHeading === "benefits"
+    ) {
+      currentSection = "offer";
+      continue;
+    } else if (
+      cleanHeading === "additional information" ||
+      cleanHeading === "additional info" ||
+      cleanHeading === "aanvullende informatie" ||
+      cleanHeading === "trainings- en ontwikkelprogramma"
+    ) {
+      currentSection = "extra";
+      continue;
+    }
+
+    if (/^\d{1,2}$/.test(trimmed)) continue;
+    const bullet = trimmed.replace(/^[-*•\d+.)]+\s*/, "").trim();
+    if (!bullet) continue;
+
+    if (currentSection === "about") {
+      if (trimmed.length > 20) aboutLines.push(trimmed);
+    } else if (currentSection === "resp") {
+      resps.push(bullet);
+    } else if (currentSection === "req") {
+      reqs.push(bullet);
+    } else if (currentSection === "offer") {
+      offers.push(bullet);
+    } else if (currentSection === "extra") {
+      extras.push(bullet);
+    }
+  }
+
+  return {
+    aboutRole: aboutLines,
+    responsibilities: resps,
+    requirements: reqs,
+    offers,
+    extras,
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -133,6 +247,7 @@ export async function POST(req: NextRequest) {
     // 3. Dinel (Staff Outsourcing) Update
     if (portal === "dinel") {
       const table = process.env.DINEL_JOBS_TABLE || "jobs";
+      const slug = slugify(trimmedTitle);
 
       let dinelEmpType = "FULL_TIME";
       const rawEmp = empType.toLowerCase();
@@ -145,33 +260,81 @@ export async function POST(req: NextRequest) {
       if (rawStat.includes("draft")) dinelStatus = "DRAFT";
       else if (rawStat.includes("closed") || rawStat.includes("archive")) dinelStatus = "ARCHIVED";
 
+      // Parse structured sections if description is provided
+      const parsedSections = desc ? extractStructuredSectionsFromRaw(desc) : null;
+      const introText =
+        parsedSections && parsedSections.aboutRole.length > 0
+          ? parsedSections.aboutRole.join("\n\n")
+          : desc || `${trimmedTitle} position overview.`;
+      const respText =
+        parsedSections && parsedSections.responsibilities.length > 0
+          ? formatDinelLines(parsedSections.responsibilities)
+          : null;
+      const reqText =
+        parsedSections && parsedSections.requirements.length > 0
+          ? formatDinelLines(parsedSections.requirements)
+          : null;
+      const offerText =
+        parsedSections && parsedSections.offers.length > 0
+          ? formatDinelLines(parsedSections.offers)
+          : null;
+      const addText =
+        parsedSections && parsedSections.extras.length > 0
+          ? formatDinelLines(parsedSections.extras)
+          : null;
+
       let res;
       try {
         res = await dinelPool.query(
           `UPDATE public."${table}"
            SET title = $1,
-               location = $2,
-               employment_type = $3::employment_type,
-               status = $4::job_status,
-               description = COALESCE($5, description),
-               intro_information = COALESCE($5, intro_information),
-               department = COALESCE($6, department),
+               slug = $2,
+               location = $3,
+               employment_type = $4::employment_type,
+               status = $5::job_status,
+               visibility = 'PUBLIC',
+               description = COALESCE($6, description),
+               intro_information = COALESCE($7, intro_information),
+               vacancy_information = COALESCE($8, vacancy_information),
+               requirements = COALESCE($9, requirements),
+               offer_information = COALESCE($10, offer_information),
+               additional_information = COALESCE($11, additional_information),
+               department = COALESCE($12, department),
+               published_at = CASE WHEN $5::job_status = 'PUBLISHED' THEN NOW() ELSE published_at END,
                updated_at = NOW()
-           WHERE id = $7
-           RETURNING id, title, location, employment_type, status, department, description, updated_at`,
-          [trimmedTitle, loc, dinelEmpType, dinelStatus, desc, department || null, numericId]
+           WHERE id = $13
+           RETURNING id, title, slug, location, employment_type, status, department, description, updated_at`,
+          [
+            trimmedTitle,
+            slug,
+            loc,
+            dinelEmpType,
+            dinelStatus,
+            desc,
+            introText,
+            respText,
+            reqText,
+            offerText,
+            addText,
+            department || null,
+            numericId,
+          ]
         );
       } catch {
-        // Fallback without enum casts if types are plain text
+        // Fallback without enum casts if types are plain text in database
         res = await dinelPool.query(
           `UPDATE public."${table}"
            SET title = $1,
-               location = $2,
-               description = COALESCE($3, description),
+               slug = $2,
+               location = $3,
+               description = COALESCE($4, description),
+               intro_information = COALESCE($5, intro_information),
+               vacancy_information = COALESCE($6, vacancy_information),
+               requirements = COALESCE($7, requirements),
                updated_at = NOW()
-           WHERE id = $4
+           WHERE id = $8
            RETURNING id, title, location, status, description, updated_at`,
-          [trimmedTitle, loc, desc, numericId]
+          [trimmedTitle, slug, loc, desc, introText, respText, reqText, numericId]
         );
       }
 
